@@ -1,0 +1,13 @@
+# Личные данные — никогда не коммитить
+master_cv.md
+.env
+data/
+output/
+*.db
+*.db-*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
