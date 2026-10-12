@@ -57,7 +57,8 @@ part-time позицию Python-разработчика: Прага (офис/�
 |---|---|---|---|
 | junior.guru | Публичный CSV `https://junior.guru/api/jobs.csv`: около 50 джуниорских IT-вакансий в Чехии с полным HTML-описанием, `external_ids` (`jobscz#…`, `startupjobs#…`, `linkedin#…`), локациями, `first_seen_at`. Обновляется примерно раз в сутки | Публичный эндпоинт сайта | **Этап 1** |
 | StartupJobs | Публичного фида нет. Внутренний API `back.startupjobs.cz` закрыт в robots.txt (`Disallow: /`), основной сайт `www` открыт (`Allow: /`). Оповещения о новых вакансиях на email требуют аккаунта | В [условиях](https://feedback.startupjobs.cz/legal/vop-b2c-en.pdf) (с 18.07.2025) запрета на автоматический доступ нет | **Этап 1**: email-оповещения по IMAP и однократная загрузка страницы каждой новой вакансии |
-| Greenhouse, Lever, Ashby, Workable | Официальные публичные API job board отдельно для каждой компании (проверено: Ashby `rohlik` отвечает) | Публичные API, предназначенные для этого | **Этап 1**: список пражских компаний в конфиге |
+| Greenhouse, Lever, Ashby | Официальные публичные API job board отдельно для каждой компании. Проверено на 16 пражских компаниях с открытыми вакансиями в Чехии | Публичные API, предназначенные для этого | **Этап 1**: список компаний в `config/companies.toml` |
+| Workable | Публичный API есть, но у всех проверенных пражских компаний (около 25) на Workable 0 открытых вакансий | — | Этап 2, если найдётся нужная компания |
 | jobs.cz, Prace.cz, Profesia.cz, Teamio (Alma Career) | RSS/API нет, `/api/` закрыт в robots.txt. jobs.cz шлёт оповещения раз в день | Общие условия Alma Career запрещают автоматическую обработку данных и data mining (п. 4.11a), передачу данных «for further machine or automated processing» (п. 4.11d), автоматическое чтение и копирование контента (п. 4.7e) | **Без автоматики.** Джуниорские вакансии jobs.cz приходят через junior.guru; на этапе 2 — сохранённые ссылки на поиск |
 | Arbeitnow, Himalayas, WeWorkRemotely (RSS), RemoteOK | Открытые JSON API или RSS для удалёнки; вакансии в основном глобальные | RemoteOK требует ссылку на источник | Этап 2 |
 | Remotive | JSON API | Не чаще 4 раз в день, ссылка на источник обязательна | Этап 2 |
@@ -92,7 +93,6 @@ part-time позицию Python-разработчика: Прага (офис/�
 - Greenhouse: `GET https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true`
 - Lever: `GET https://api.lever.co/v0/postings/{slug}?mode=json`
 - Ashby: `GET https://api.ashbyhq.com/posting-api/job-board/{slug}`
-- Workable: `GET https://apply.workable.com/api/v1/widget/accounts/{slug}`
 
 Компании отдают вакансии по всему миру, поэтому ещё до ИИ работает предфильтр по локации
 (раздел 6). Начальный список из 15–30 пражских IT-компаний составляется при планировании и
@@ -278,7 +278,7 @@ part-time`. Профиль проверяется в начале каждого
 | `runs` | `id`, `source`, `started_at`, `finished_at`, `status`, `error`, `new_count` |
 | `email_seen` | `folder`, `uidvalidity`, `uid`, `processed_at` |
 | `settings` | `key`, `value` |
-| `profile_state` | `hash`, `parsed` (JSON), `updated_at` |
+| `profile_state` | `hash`, `text` (текст последней успешно разобранной версии резюме), `updated_at` |
 
 **Статусы вакансии:** `pending_eval` → (`filtered` | `new`) → `later` | `applied` | `skipped`;
 плюс `eval_error`. Предфильтр переводит вакансию сразу в `filtered`.
@@ -333,8 +333,9 @@ part-time`. Профиль проверяется в начале каждого
   новых; статус LM Studio и профиля (`master_cv.md` разобран / ошибка); кнопка «Собрать
   сейчас»; очередь оценки. Блок сохранённых ссылок появится на этапе 2.
 - **Настройки**: порог уведомлений (4), чешский (отсев от C1+), опыт (отсев от 3 лет),
-  интервал сбора (2 ч), модель LM Studio, IMAP-сервер, логин и папка. Пароль IMAP хранится
-  только в `.env`.
+  интервал сбора (2 ч), модель LM Studio и параметры её вызова. Почта (сервер, логин, папка,
+  пароль) настраивается только в `.env`; на странице показывается, к какому ящику и папке
+  подключено приложение.
 
 **Трей:** иконка с подсказкой «Последний сбор: ЧЧ:ММ · подходящих новых: N». Меню: Открыть,
 Собрать сейчас, Приостановить/Возобновить сбор, Выход.
