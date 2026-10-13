@@ -11,11 +11,14 @@ log = logging.getLogger(__name__)
 
 
 def read_cv() -> tuple[str, str] | None:
-    """Текст master_cv.md и его SHA-256 или None, если файла нет."""
+    """Текст master_cv.md и ключ оценки или None, если файла нет.
+
+    Ключ — SHA-256 резюме вместе с правилами и моделью: если поменялось что-то из этого,
+    прежние оценки устарели и вакансии оцениваются заново."""
     if not config.CV_PATH.exists():
         return None
     text = config.CV_PATH.read_text(encoding="utf-8")
-    return text, hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return text, hashlib.sha256(f"{text}\n{llm.fingerprint()}".encode("utf-8")).hexdigest()
 
 
 def _join(summary: str, notes: list[str]) -> str:
@@ -82,7 +85,8 @@ class Worker(QObject):
                 self.model_loaded = False
 
         suitable = len(db.list_jobs(cv_hash, config.MIN_SCORE))
-        return _join(f"Готово: {suitable} подходящих", notes)
+        evaluated = db.count_evaluated(cv_hash)
+        return _join(f"Готово: {suitable} подходящих из {evaluated} оценённых", notes)
 
     def _evaluate(self, todo: list[sources.Job], cv_text: str, cv_hash: str) -> int:
         """Оценить вакансии по одной; возвращает число неудачных оценок."""

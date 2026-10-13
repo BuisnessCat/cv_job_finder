@@ -75,3 +75,13 @@ def test_list_filters_by_threshold_and_sorts():
 def test_duplicate_url_in_one_batch():
     db.save_jobs("Himalayas", [job("a", source="Himalayas"), job("a", source="Himalayas")])
     assert urls(db.pending_jobs("h1")) == ["a"]
+
+
+def test_count_evaluated_counts_current_key_only():
+    db.save_jobs("Jobicy", [job("a"), job("b"), job("c")])
+    db.save_evaluation("a", evaluation(7), "h1")
+    db.save_evaluation("b", evaluation(2), "h1")
+    db.save_evaluation("c", evaluation(8), "h2")
+    assert db.count_evaluated("h1") == 2
+    db.hide("b")
+    assert db.count_evaluated("h1") == 1

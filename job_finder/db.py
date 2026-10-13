@@ -85,6 +85,14 @@ def hide(url: str) -> None:
         conn.execute("UPDATE jobs SET hidden = 1 WHERE url = ?", (url,))
 
 
+def count_evaluated(cv_hash: str) -> int:
+    """Сколько активных нескрытых вакансий оценено с текущим ключом."""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE active = 1 AND hidden = 0 AND cv_hash = ?", (cv_hash,),
+        ).fetchone()[0]
+
+
 def make_row(job: Job, evaluation: dict) -> dict:
     """Строка для окна: поля вакансии без описания, оценка и разбор модели."""
     row = asdict(job)
