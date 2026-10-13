@@ -5,11 +5,11 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QLockFile, Qt
+from PySide6.QtCore import QLockFile
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from job_finder import config, db
+from job_finder import config, db, style
 from job_finder.window import MainWindow
 
 
@@ -30,8 +30,7 @@ def main() -> None:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("job_finder.desktop")
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(config.ICON_PATH)))
-    # Тёмная схема Qt: тёмные заголовок окна, полосы прокрутки и диалоги — под тему из style.py
-    app.styleHints().setColorScheme(Qt.ColorScheme.Dark)
+    style.apply_app_theme(app)
     # Второй двойной клик по ярлыку: два окна делили бы одну модель, и закрытие одного выгружало бы её у другого
     lock = acquire_lock(config.ROOT / "job_finder.lock")
     if lock is None:

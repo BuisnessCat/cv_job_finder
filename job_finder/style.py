@@ -1,4 +1,6 @@
 """Оформление окна: тёмная тема с зелёным акцентом. Чтобы сменить тему, достаточно поменять цвета здесь."""
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPalette
 
 COLORS = {
     "bg": "#1b1d23",           # фон окна
@@ -11,6 +13,7 @@ COLORS = {
     "accent_hover": "#15803d",
     "accent_soft": "#1e3a2b",  # выделенная строка
     "alt": "#272a33",          # чередование строк, блок «Почему такая оценка»
+    "link": "#4ade80",         # ссылки в окне «Резюме»
 }
 
 GAP = 12  # единый отступ: от краёв окна и между блоками
@@ -34,7 +37,7 @@ def score_colors(score: int) -> tuple[str, str]:
 
 
 STYLESHEET = """
-QMainWindow, QWidget#central {{ background: {bg}; }}
+QMainWindow, QWidget#central, QDialog {{ background: {bg}; }}
 QWidget {{ font-family: "Segoe UI"; font-size: 10pt; color: {text}; }}
 QPushButton {{ background: {panel}; border: 1px solid {border}; border-radius: 6px; padding: 6px 14px; }}
 QPushButton:hover {{ background: {alt}; }}
@@ -50,6 +53,8 @@ QTableWidget::item:selected {{ background: {accent_soft}; color: {text}; }}
 QHeaderView::section {{ background: {panel}; color: {muted}; font-weight: 600; border: none;
                        border-bottom: 1px solid {border}; padding: 8px; }}
 QFrame#card {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
+QTextBrowser {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 12px 16px;
+               selection-background-color: {accent_soft}; }}
 QScrollArea#detailsScroll, QWidget#details, QWidget#detailsPage, QWidget#emptyPage {{
     background: transparent; border: none; }}
 QWidget#footer {{ background: transparent; border-top: 1px solid {border}; }}
@@ -67,3 +72,13 @@ QScrollBar::handle:vertical {{ background: {scroll}; border-radius: 4px; min-hei
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 """.format(**COLORS)
+
+
+def apply_app_theme(app) -> None:
+    """Тема на уровне всего приложения: то, что не задаётся стилями окна."""
+    # Тёмная схема Qt: тёмные заголовок окна, полосы прокрутки и диалоги
+    app.styleHints().setColorScheme(Qt.ColorScheme.Dark)
+    # Ссылки из Markdown (окно «Резюме») Qt красит цветом палитры приложения, а не стилями
+    palette = app.palette()
+    palette.setColor(QPalette.Link, QColor(COLORS["link"]))
+    app.setPalette(palette)

@@ -124,3 +124,12 @@ def test_finished_reloads_rows_from_db(window):
     window.on_evaluated(row("gone", 9))  # в базе её уже нет: пропала из источника или отсеяна по месту
     window.on_finished()
     assert titles(window) == ["Job a"]
+
+
+def test_cv_button_opens_one_cv_window(window):
+    window.cv_button.click()
+    first = window.cv_window
+    assert first is not None and first.isVisible()
+    window.cv_button.click()
+    assert window.cv_window is first  # повторное нажатие не плодит окна
+    first.close()

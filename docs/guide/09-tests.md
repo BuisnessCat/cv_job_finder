@@ -2,7 +2,7 @@
 
 [← Окно и оформление](08-window-and-style.md) · [Оглавление](README.md) · [Дальше: рецепты и ограничения →](10-howto-and-limits.md)
 
-Папка: [tests/](../../tests/). 41 тест, проходят примерно за 1,5 секунды.
+Папка: [tests/](../../tests/). 46 тестов, проходят примерно за 1,5 секунды.
 
 ## Как запускать
 
@@ -55,7 +55,7 @@
 > Поэтому в [test_key_changes_with_cv_and_rules](../../tests/test_worker.py#L48) правила возвращаются
 > вручную через `setattr`, а не через `undo()`.
 
-## test_sources.py — разбор источников (10 тестов)
+## test_sources.py — разбор источников (11 тестов)
 
 Образцы ответов: CSV junior.guru, JSON Himalayas, Jobicy, Working Nomads ([строки 4-33](../../tests/test_sources.py#L4-L33)).
 
@@ -117,7 +117,7 @@
 | `test_summary_counts_suitable_and_evaluated` | итог «Готово: 2 подходящих из 3 оценённых» |
 | `test_key_changes_with_cv_and_rules` | ключ меняется при смене правил и при смене резюме, возвращается при возврате правил |
 
-## test_window.py — окно (8 тестов)
+## test_window.py — окно (10 тестов)
 
 Фикстура `window`: временная база, резюме нет (значит, список изначально пуст), `Worker.start`
 заменён пустышкой — обновление не запускается. Строки подаются через `on_evaluated(...)`, как будто
@@ -133,7 +133,19 @@
 | `test_no_risks_shows_no_blockers` | пустые риски → «Блокеров не найдено» |
 | `test_empty_state_until_row_selected` | пока ничего не выбрано — пустая страница; после «Скрыть» — снова она |
 | `test_icon_file_has_small_and_large_sizes` | в `icon.ico` есть размеры 16×16 (окно) и 256×256 (ярлык) |
+| `test_cv_button_opens_one_cv_window` | кнопка «Резюме» открывает окно; повторное нажатие не создаёт второе |
 | `test_finished_reloads_rows_from_db` | после обновления таблица перечитывается из базы: строка, которой в базе нет, исчезает |
+
+## test_cv_window.py — окно «Резюме» (4 теста)
+
+Фикстура `cv_path` подменяет путь к резюме временным файлом — настоящий `master_cv.md` тесты не трогают.
+
+| Тест | Проверяет |
+|---|---|
+| `test_shows_cv_text_path_and_skills` | текст резюме, путь к файлу, дата изменения и навыки для отсева |
+| `test_reload_shows_current_file` | после правки файла `reload()` показывает новую версию |
+| `test_missing_cv_shows_message` | без файла — понятное сообщение, «Открыть в редакторе» неактивна |
+| `test_links_use_theme_color` | ссылки из Markdown зелёные: цвет задаёт `style.apply_app_theme` |
 
 ## test_main.py и test_style.py (по 1 тесту)
 

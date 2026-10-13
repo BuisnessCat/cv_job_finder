@@ -49,6 +49,10 @@ class MainWindow(QMainWindow):
         top.addWidget(self.refresh_button)
         top.addWidget(self.status_label, 1)
         top.addWidget(self.progress)
+        self.cv_button = QPushButton("Резюме")
+        self.cv_button.clicked.connect(self.show_cv)
+        top.addWidget(self.cv_button)
+        self.cv_window = None  # окно «Резюме» создаётся при первом нажатии
 
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
@@ -305,6 +309,17 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.refresh_button.setEnabled(True)
         self.load_rows()  # убрать вакансии, которые пропали из источника или отсеяны по месту
+
+    def show_cv(self) -> None:
+        """Показать окно «Резюме» с актуальной версией файла; окно одно на всё приложение."""
+        # Импорт здесь, а не наверху: cv_window сам берёт _label из этого модуля
+        from job_finder.cv_window import CvWindow
+        if self.cv_window is None:
+            self.cv_window = CvWindow(self)
+        self.cv_window.reload()
+        self.cv_window.show()
+        self.cv_window.raise_()
+        self.cv_window.activateWindow()
 
     def open_job(self) -> None:
         QDesktopServices.openUrl(QUrl(self.current["url"]))
