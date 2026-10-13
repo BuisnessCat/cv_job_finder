@@ -25,7 +25,7 @@ class Worker(QObject):
     status = Signal(str)          # объявление: сигнал с одним аргументом-строкой
 
 worker.status.connect(label.setText)   # подписка: при сигнале вызвать label.setText(текст)
-worker.status.emit("Загружаю…")        # испускание: все подписчики получат "Загружаю…"
+worker.status.emit("Loading…")         # испускание: все подписчики получат "Loading…"
 ```
 
 Главное правило Qt: **виджеты можно трогать только из главного потока**. Изменение подписи
@@ -82,7 +82,7 @@ return text, hashlib.sha256(f"{text}\n{llm.fingerprint()}".encode("utf-8")).hexd
 ## `_join(summary, notes)` — [строка 24](../../job_finder/worker.py#L24)
 
 Склеивает итог и замечания через `"; "`:
-`"Готово: 23 подходящих из 259 оценённых; Jobicy: ошибка (…)"`.
+`"Done: 23 matches out of 259 evaluated; Jobicy: error (…)"`.
 
 ## Класс `Worker` — [строка 28](../../job_finder/worker.py#L28)
 
@@ -115,7 +115,7 @@ threading.Thread(target=self._run, daemon=True).start()
 поток ждёт ответа модели.
 
 Защиты от двух одновременных запусков в `Worker` нет. Её роль играет окно: на время обновления
-кнопка «Обновить» неактивна (`refresh()` её выключает, `on_finished()` включает).
+кнопка «Refresh» неактивна (`refresh()` её выключает, `on_finished()` включает).
 
 ### `_run()` — [строка 42](../../job_finder/worker.py#L42)
 
@@ -126,13 +126,13 @@ try:
     self.status.emit(message)
 except Exception:
     log.exception("Обновление упало")
-    self.status.emit("Ошибка обновления, подробности в job_finder.log")
+    self.status.emit("Update failed, see job_finder.log")
 finally:
     self.finished.emit()
 ```
 
 Обёртка, которая гарантирует две вещи: любое непредвиденное исключение попадёт в лог (а не
-потеряется молча в фоновом потоке), и `finished` придёт **всегда** — иначе кнопка «Обновить»
+потеряется молча в фоновом потоке), и `finished` придёт **всегда** — иначе кнопка «Refresh»
 навсегда осталась бы серой.
 
 ## `_refresh()` — одно обновление, по шагам — [строка 53](../../job_finder/worker.py#L53)
@@ -140,7 +140,7 @@ finally:
 **Шаг 1. Загрузка и запись** ([55-60](../../job_finder/worker.py#L55-L60))
 
 ```python
-self.status.emit("Загружаю вакансии…")
+self.status.emit("Loading jobs…")
 fetched, errors = sources.fetch_all()
 for name, jobs in fetched.items():
     db.save_jobs(name, jobs)
@@ -153,8 +153,8 @@ notes = [f"{name}: ошибка ({error})" for name, error in errors.items()]
 
 **Шаг 2. Резюме и навыки** ([62-68](../../job_finder/worker.py#L62-L68))
 
-Нет `master_cv.md` → возврат с сообщением «Нет файла master_cv.md, оценка не запущена».
-Нет навыков → «В master_cv.md не найден раздел Skills, оценка не запущена». Вакансии при этом уже
+Нет `master_cv.md` → возврат с сообщением «No master_cv.md, evaluation skipped».
+Нет навыков → «No Skills section in master_cv.md, evaluation skipped». Вакансии при этом уже
 загружены и записаны — пропускается только оценка.
 
 **Шаг 3. Очередь** ([69-70](../../job_finder/worker.py#L69-L70))
@@ -168,13 +168,13 @@ todo = [job for job in db.pending_jobs(cv_hash) if skills.matches(job, skill_lis
 **Шаг 4. Оценка** ([72-85](../../job_finder/worker.py#L72-L85)) — только если очередь не пуста
 
 ```python
-self.status.emit("Запускаю LM Studio…")
+self.status.emit("Starting LM Studio…")
 self.model_loaded = True
 try:
     llm.prepare()
     failed = self._evaluate(todo, cv_text, cv_hash)
     if failed:
-        notes.append(f"не удалось оценить: {failed}")
+        notes.append(f"failed to evaluate: {failed}")
 except Exception as error:
     log.exception("LM Studio недоступна")
     notes.append(f"LM Studio: {error}")
@@ -198,7 +198,7 @@ finally:
 ```python
 suitable = len(db.list_jobs(cv_hash, config.MIN_SCORE))
 evaluated = db.count_evaluated(cv_hash)
-return _join(f"Готово: {suitable} подходящих из {evaluated} оценённых", notes)
+return _join(f"Done: {suitable} matches out of {evaluated} evaluated", notes)
 ```
 
 Числа — по всей базе с текущим ключом, а не только за этот запуск: «23 подходящих из 259 оценённых»
@@ -233,29 +233,29 @@ return failed
 ## Пример того, что видно в строке состояния
 
 ```
-Загружаю вакансии…
-Запускаю LM Studio…
-Оценено 0 из 42          ← сигнал progress (текст ставит on_progress в окне)
-Оценено 1 из 42
+Loading jobs…
+Starting LM Studio…
+Evaluated 0 of 42        ← сигнал progress (текст ставит on_progress в окне)
+Evaluated 1 of 42
 …
-Оценено 42 из 42
-Готово: 23 подходящих из 259 оценённых; Jobicy: ошибка (HTTPSConnectionPool…)
+Evaluated 42 of 42
+Done: 23 matches out of 259 evaluated; Jobicy: error (HTTPSConnectionPool…)
 ```
 
-Если оценивать нечего (всё уже оценено), шагов «Запускаю LM Studio…» и «Оценено…» не будет:
-сразу «Готово: …».
+Если оценивать нечего (всё уже оценено), шагов «Starting LM Studio…» и «Evaluated…» не будет:
+сразу «Done: …».
 
 ## Все ситуации с ошибками
 
 | Ситуация | Где обрабатывается | Что видно |
 |---|---|---|
 | источник недоступен / сменил формат | `sources.fetch_all` | «<источник>: ошибка (…)» в итоге; его вакансии в базе не меняются |
-| нет `master_cv.md` | `_refresh`, шаг 2 | «Нет файла master_cv.md, оценка не запущена»; таблица пустая (окно тоже не находит резюме) |
-| нет раздела Skills | `_refresh`, шаг 2 | «В master_cv.md не найден раздел Skills, оценка не запущена» |
+| нет `master_cv.md` | `_refresh`, шаг 2 | «No master_cv.md, evaluation skipped»; таблица пустая (окно тоже не находит резюме) |
+| нет раздела Skills | `_refresh`, шаг 2 | «No Skills section in master_cv.md, evaluation skipped» |
 | нет `lms.exe` / сервер не поднялся / модель не загрузилась | `_refresh`, шаг 4 | «LM Studio: …» в итоге; вакансии ждут следующего обновления |
-| не удалась оценка одной вакансии | `_evaluate` | оценка остальных продолжается; в итоге «не удалось оценить: N» |
+| не удалась оценка одной вакансии | `_evaluate` | оценка остальных продолжается; в итоге «failed to evaluate: N» |
 | нашу модель выгрузили посреди оценки | `_evaluate` → `_refresh` | проход останавливается; «LM Studio: модель job-finder выгружена (ответила …)» |
-| любое другое исключение | `_run` | «Ошибка обновления, подробности в job_finder.log» |
+| любое другое исключение | `_run` | «Update failed, see job_finder.log» |
 
 Во всех случаях подробности с трассировкой — в `job_finder.log`.
 

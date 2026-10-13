@@ -34,15 +34,15 @@
 ### Добавить колонку в таблицу
 
 Название — в `COLUMNS` ([window.py:15](../../job_finder/window.py#L15)), значение — в список
-`values` в `render()` ([window.py:378](../../job_finder/window.py#L378)); для вкладки откликов —
-`APPLIED_COLUMNS` и `values` в `render_applied()` ([window.py:400](../../job_finder/window.py#L400)). Если нужного поля нет в
+`values` в `render()` ([window.py:372](../../job_finder/window.py#L372)); для вкладки откликов —
+`APPLIED_COLUMNS` и `values` в `render_applied()` ([window.py:394](../../job_finder/window.py#L394)). Если нужного поля нет в
 строке — добавить его в `make_row` ([db.py:151](../../job_finder/db.py#L151)).
 
 ### Добавить поле в ответ модели
 
 Например, «зарплата»: поле в `SCHEMA` и в `required` ([llm.py:15](../../job_finder/llm.py#L15)),
-описание поля в разделе «Ответь JSON-объектом» в `RULES` (это изменит ключ — будет полная
-переоценка), вывод в `show_details` ([window.py:432](../../job_finder/window.py#L432)).
+описание поля в разделе «Answer with a JSON object» в `RULES` (это изменит ключ — будет полная
+переоценка), вывод в `show_details` ([window.py:426](../../job_finder/window.py#L426)).
 Старые оценки в базе нового поля не содержат — поэтому в окне читайте его через
 `evaluation.get(...)`.
 
@@ -54,15 +54,15 @@
 
 | Запись | Откуда | Значит |
 |---|---|---|
-| `INFO job_finder.worker: Загружено: {'junior.guru': 48, …}` | [worker.py:59](../../job_finder/worker.py#L59) | сколько вакансий пришло с каждого источника (после удаления дублей) |
-| `INFO job_finder.worker: К оценке: 42` | [worker.py:70](../../job_finder/worker.py#L70) | размер очереди после отсева |
-| `INFO job_finder.worker: Готово: …` | [worker.py:45](../../job_finder/worker.py#L45) | итог обновления |
-| `ERROR job_finder.sources: Источник X не загрузился` + трассировка | [sources.py:169](../../job_finder/sources.py#L169) | источник упал |
-| `ERROR job_finder.worker: LM Studio недоступна` + трассировка | [worker.py:81](../../job_finder/worker.py#L81) | `prepare()` упал или модель потеряна |
-| `ERROR job_finder.worker: Не удалось оценить <url>` | [worker.py:101](../../job_finder/worker.py#L101) | одна вакансия не оценилась |
-| `ERROR job_finder.worker: Обновление упало` | [worker.py:48](../../job_finder/worker.py#L48) | непредвиденная ошибка обновления |
-| `ERROR job_finder.llm: Не удалось выгрузить модель` | [llm.py:165](../../job_finder/llm.py#L165) | `lms unload` не сработал |
-| `CRITICAL root: Необработанное исключение` | [__main__.py:28](../../job_finder/__main__.py#L28) | ошибка в главном потоке (например, при запуске) |
+| `INFO job_finder.worker: Loaded: {'junior.guru': 48, …}` | [worker.py:59](../../job_finder/worker.py#L59) | сколько вакансий пришло с каждого источника (после удаления дублей) |
+| `INFO job_finder.worker: To evaluate: 42` | [worker.py:70](../../job_finder/worker.py#L70) | размер очереди после отсева |
+| `INFO job_finder.worker: Done: …` | [worker.py:45](../../job_finder/worker.py#L45) | итог обновления |
+| `ERROR job_finder.sources: Source X failed to load` + трассировка | [sources.py:169](../../job_finder/sources.py#L169) | источник упал |
+| `ERROR job_finder.worker: LM Studio unavailable` + трассировка | [worker.py:81](../../job_finder/worker.py#L81) | `prepare()` упал или модель потеряна |
+| `ERROR job_finder.worker: Failed to evaluate <url>` | [worker.py:101](../../job_finder/worker.py#L101) | одна вакансия не оценилась |
+| `ERROR job_finder.worker: Update crashed` | [worker.py:48](../../job_finder/worker.py#L48) | непредвиденная ошибка обновления |
+| `ERROR job_finder.llm: Failed to unload model` | [llm.py:168](../../job_finder/llm.py#L168) | `lms unload` не сработал |
+| `CRITICAL root: Unhandled exception` | [__main__.py:28](../../job_finder/__main__.py#L28) | ошибка в главном потоке (например, при запуске) |
 
 ### Запуск с консолью
 
@@ -90,7 +90,7 @@ nvidia-smi
 `lms ps` — какие модели загружены (во время оценки там должна быть `job-finder`, после — пусто),
 `server status` — работает ли сервер, `nvidia-smi` — сколько видеопамяти занято.
 
-### «Приложение уже открыто», а окна нет
+### «Job Finder is already open», а окна нет
 
 Значит, жив процесс прошлого запуска (например, завис). Найдите `pythonw.exe` в диспетчере задач
 и завершите его. Удалять `job_finder.lock` вручную не нужно.
@@ -101,13 +101,13 @@ nvidia-smi
 
 | # | Что | Где | Последствие |
 |---|---|---|---|
-| 1 | Без `master_cv.md` таблица пустая, хотя спецификация обещает показывать прежние оценки | [window.py:366](../../job_finder/window.py#L366) | удалили или переименовали резюме — список пропал до его возвращения |
-| 2 | Ошибки источников видны только в итоговой строке | [worker.py:60](../../job_finder/worker.py#L60) | во время долгой оценки строка показывает «Оценено N из M», об упавшем источнике узнаете только в конце |
+| 1 | Без `master_cv.md` таблица пустая, хотя спецификация обещает показывать прежние оценки | [window.py:360](../../job_finder/window.py#L360) | удалили или переименовали резюме — список пропал до его возвращения |
+| 2 | Ошибки источников видны только в итоговой строке | [worker.py:60](../../job_finder/worker.py#L60) | во время долгой оценки строка показывает «Evaluated N of M», об упавшем источнике узнаете только в конце |
 | 3 | Ответ `200` без ключа `jobs` выглядит как пустая выдача | [sources.py:62](../../job_finder/sources.py#L62), [83](../../job_finder/sources.py#L83) | если API Himalayas или Jobicy вдруг вернёт другую структуру, все его вакансии станут неактивными (до следующей нормальной выдачи) |
 | 4 | Ошибки запуска — только в логе | [__main__.py:28](../../job_finder/__main__.py#L28) | если, например, `db.init()` упадёт, окно просто не появится |
 | 5 | Нет остановки после многих неудачных оценок подряд | [worker.py:100-102](../../job_finder/worker.py#L100-L102) | если сервер зависнет, каждая вакансия будет ждать таймаута 120 с |
 | 6 | Тексты ошибок LM Studio не обрезаются | [worker.py:82](../../job_finder/worker.py#L82) | у источников ошибка обрезана до 150 символов, а «LM Studio: …» может быть длинной строкой |
-| 7 | Ключ не учитывает `SCHEMA`, `temperature`, длину описания, формат текста вакансии | [llm.py:67](../../job_finder/llm.py#L67) | после их изменения старые оценки остаются действительными |
+| 7 | Ключ не учитывает `SCHEMA`, `temperature`, длину описания, формат текста вакансии | [llm.py:69](../../job_finder/llm.py#L69) | после их изменения старые оценки остаются действительными |
 | 8 | Изменение описания вакансии на сайте не вызывает переоценку | [db.py:70-73](../../job_finder/db.py#L70-L73) | оценка остаётся от старого текста |
 | 9 | Дубли убираются только среди загрузившихся источников | [sources.py:171](../../job_finder/sources.py#L171) | если упал junior.guru, его старые вакансии остаются активными, а их копии с Himalayas запишутся как новые — одна вакансия может появиться в таблице дважды |
 | 10 | `requirements.txt` разрешает PySide6 6.7, а `setColorScheme` появился в Qt 6.8 | [requirements.txt](../../requirements.txt), [style.py:97](../../job_finder/style.py#L97) | сейчас стоит 6.12, всё работает; на чистой установке с 6.7 запуск упал бы |

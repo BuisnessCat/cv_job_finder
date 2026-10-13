@@ -31,7 +31,7 @@ class Job:
     source: str       # "junior.guru", "Himalayas", "Jobicy", "Working Nomads"
     title: str
     company: str
-    city: str         # город или «Удалённо…»
+    city: str         # город или «Remote…»
     published: str    # YYYY-MM-DD
     description: str  # обычный текст без HTML
 ```
@@ -74,7 +74,7 @@ BeautifulSoup(html or "", "html.parser").get_text("\n", strip=True)
 | `url` | `url` | `guid` (страница на himalayas.app) | `url` | `url` |
 | `title` | `title` | `title` | `jobTitle` | `title` |
 | `company` | `company_name` | `companyName` | `companyName` | `company_name` |
-| `city` | «Praha», если среди регионов мест есть «Praha»; иначе «Удалённо», если `remote == "True"` | «Удалённо» + до 3 стран из `locationRestrictions` | «Удалённо: » + `jobGeo` | «Удалённо: » + `location` |
+| `city` | «Prague», если среди регионов мест есть «Praha»; иначе «Remote», если `remote == "True"` | «Remote» + до 3 стран из `locationRestrictions` | «Remote: » + `jobGeo` | «Remote: » + `location` |
 | `published` | первые 10 символов `first_seen_at` | `pubDate` (секунды Unix) → дата UTC | первые 10 символов `pubDate` | первые 10 символов `pub_date` |
 | `description` | `description_html` → текст | `description` → текст | `jobDescription` → текст | `description` → текст |
 | Отбор | только Прага или удалёнка | — | — | только `category_name == "Development"` |
@@ -88,8 +88,8 @@ BeautifulSoup(html or "", "html.parser").get_text("\n", strip=True)
 - Чешский сайт для начинающих, ~50 вакансий, отдаёт **CSV-файл**.
 - **Только Прага или удалёнка** ([строки 45-51](../../job_finder/sources.py#L45-L51)): у каждой
   вакансии до 20 мест в колонках `locations_N_name` и `locations_N_region`. Если среди регионов есть
-  «Praha», город — «Praha» (даже если Прага не первая в списке); иначе, если `remote == "True"`, —
-  «Удалённо»; остальные вакансии пропускаются и в базу не попадают. Проверяется именно регион: у
+  «Praha», город — «Prague» (даже если Прага не первая в списке); иначе, если `remote == "True"`, —
+  «Remote»; остальные вакансии пропускаются и в базу не попадают. Проверяется именно регион: у
   пражского района, например «Háje», название без слова «Praha». Сейчас из ~50 остаётся ~20.
   Остальные три источника отдают только удалёнку, им такой отбор не нужен.
 - `csv.DictReader(io.StringIO(text))` — читает CSV из строки, каждая строка — словарь
@@ -112,8 +112,8 @@ BeautifulSoup(html or "", "html.parser").get_text("\n", strip=True)
   запросов. Цикл останавливается на первой пустой странице.
 - `{**config.HIMALAYAS_PARAMS, "page": page}` — новый словарь: все параметры из настроек плюс номер
   страницы. Сам словарь в `config` не меняется.
-- `city`: если есть ограничения по странам, к «Удалённо» дописываются до трёх стран, а при большем
-  числе — « …». Пример: `Удалённо (Czechia, Slovakia, Poland …)`.
+- `city`: если есть ограничения по странам, к «Remote» дописываются до трёх стран, а при большем
+  числе — « …». Пример: `Remote (Czechia, Slovakia, Poland …)`.
 - `pubDate` — число секунд с 1970 года (иногда строкой, поэтому `int(...)`).
   `datetime.fromtimestamp(..., timezone.utc).strftime("%Y-%m-%d")` превращает его в дату по UTC.
 - `url` берётся из `guid` — это ссылка на страницу вакансии на самом himalayas.app (Himalayas
@@ -165,7 +165,7 @@ junior.guru первый, потому что он про Чехию и junior-�
 ## Ключ «та же вакансия» `same_job_key(company, title)` — [строка 143](../../job_finder/sources.py#L143)
 
 Возвращает пару (компания, название) после нормализации: нижний регистр, лишние пробелы схлопнуты.
-Этим ключом пользуются два места: `dedupe` ниже и окно — для пометки «↻ / Вы уже подавались»
+Этим ключом пользуются два места: `dedupe` ниже и окно — для пометки «↻ / You already applied»
 у найденной вакансии с той же компанией и названием, что у отклика. Одно правило на оба случая.
 
 ## Удаление дублей `dedupe(fetched)` — [строка 148](../../job_finder/sources.py#L148)

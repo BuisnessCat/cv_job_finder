@@ -2,7 +2,7 @@
 
 [← Окно и оформление](08-window-and-style.md) · [Оглавление](README.md) · [Дальше: рецепты и ограничения →](10-howto-and-limits.md)
 
-Папка: [tests/](../../tests/). 67 тестов, проходят примерно за 1,5 секунды.
+Папка: [tests/](../../tests/). 75 тестов, проходят примерно за 2–3 секунды.
 
 ## Как запускать
 
@@ -52,7 +52,7 @@
 
 > **Осторожно с `monkeypatch.undo()`.** Он откатывает **все** подмены теста, в том числе
 > `config.CV_PATH`. После этого запись в `config.CV_PATH` пойдёт в настоящий `master_cv.md`.
-> Поэтому в [test_key_changes_with_cv_and_rules](../../tests/test_worker.py#L48) правила возвращаются
+> Поэтому в [test_key_changes_with_cv_and_rules](../../tests/test_worker.py#L54) правила возвращаются
 > вручную через `setattr`, а не через `undo()`.
 
 ## test_sources.py — разбор источников (12 тестов)
@@ -61,10 +61,10 @@
 
 | Тест | Проверяет |
 |---|---|
-| `test_parse_juniorguru` | CSV → `Job`: HTML → текст, город «Praha»; «Удалённо» при `remote=True` |
+| `test_parse_juniorguru` | CSV → `Job`: HTML → текст, город «Prague»; «Remote» при `remote=True` |
 | `test_parse_juniorguru_keeps_only_prague_or_remote` | остаются только Прага (в том числе второй в списке, район Háje) и удалёнка; Брно и вакансия без мест отсеяны |
-| `test_parse_himalayas` | `guid` как `url`, дата из секунд Unix (и числом, и строкой), «Удалённо (3 страны …)», `None` в описании |
-| `test_parse_jobicy` | поля Jobicy, «Удалённо: Europe», дата из ISO |
+| `test_parse_himalayas` | `guid` как `url`, дата из секунд Unix (и числом, и строкой), «Remote (3 страны …)», `None` в описании |
+| `test_parse_jobicy` | поля Jobicy, «Remote: Europe», дата из ISO |
 | `test_parse_workingnomads_keeps_only_development` | остаются только вакансии категории Development |
 | `test_dedupe_keeps_higher_priority_source` | дубль по «компания + название» (с разным регистром и пробелами) остаётся у источника выше в списке |
 | `test_fetch_all_isolates_source_errors` | упавший источник не роняет остальные, его ошибка в `errors` |
@@ -88,11 +88,11 @@
 
 | Тест | Проверяет |
 |---|---|
-| `test_evaluate_sends_cv_and_truncated_vacancy` | адрес запроса, `model`, `json_schema`; резюме в конце системного сообщения; в сообщении пользователя название, компания, город; описание обрезано ровно до `MAX_DESCRIPTION_CHARS`; `score` из `"7"` стал `7` |
+| `test_evaluate_sends_cv_and_truncated_vacancy` | адрес запроса, `model`, `json_schema`; резюме в конце системного сообщения; в сообщении пользователя `Title / Company / Location / Source`; правила просят отвечать по-английски; описание обрезано ровно до `MAX_DESCRIPTION_CHARS`; `score` из `"7"` стал `7` |
 | `test_evaluate_rejects_answer_from_another_model` | ответ от другой модели → `ModelLost` с её именем |
 | `test_prepare_starts_server_without_capturing_output` | `lms server start` вызывается с выводом в `DEVNULL` (иначе зависание, см. `prepare()` в [разделе 5](05-llm.md)), затем `lms ps --json` |
 
-## test_db.py — база (16 тестов)
+## test_db.py — база (18 тестов)
 
 Фикстура `tmp_db` с `autouse=True` даёт каждому тесту свою пустую базу во временной папке.
 
@@ -106,7 +106,7 @@
 | `test_list_filters_by_threshold_and_sorts` | порог и порядок «оценка ↓, дата ↓»; строка совпадает с `make_row` |
 | `test_duplicate_url_in_one_batch` | два одинаковых `url` в одной выдаче не ломают upsert |
 | `test_count_evaluated_counts_current_key_only` | считаются только оценки с текущим ключом и только нескрытые |
-| `test_apply_moves_job_out_of_found_list` | «Подался» убирает из найденных, отклик со статусом и сегодняшней датой; не в счётчике и не в очереди даже после смены ключа |
+| `test_apply_moves_job_out_of_found_list` | «I applied» убирает из найденных, отклик со статусом и сегодняшней датой; не в счётчике и не в очереди даже после смены ключа |
 | `test_application_survives_deactivation_and_new_key` | отклик остаётся, когда вакансия пропала с сайта |
 | `test_set_status_and_unapply` | смена статуса не трогает дату; «вернуть» — снова в найденных |
 | `test_unapply_gone_job_leaves_both_lists` | вернуть пропавшую с сайта вакансию — её нет ни в одном списке |
@@ -114,8 +114,10 @@
 | `test_new_rows_are_unseen_until_marked` | новые строки непросмотрены; `mark_all_seen`; уже бывшая в базе вакансия не становится новой |
 | `test_init_marks_existing_rows_seen` | база без `notes` / `seen` дополняется, имевшиеся вакансии просмотрены, новые — нет |
 | `test_notes_saved_and_listed` | заметка сохраняется и приходит в `list_applied` (пустая строка, если её нет) |
+| `test_mark_all_seen_keeps_unevaluated_jobs_new` | при закрытии окна просмотренными становятся только оценённые; вакансия из очереди остаётся новой |
+| `test_refetch_rewrites_city` | повторная загрузка переписывает место: старое значение («Praha») сменяется новым («Remote») |
 
-## test_worker.py — фоновое обновление (3 теста)
+## test_worker.py — фоновое обновление (4 теста)
 
 Фикстура `setup`: временные база и резюме (`## Skills / - Python`), три вакансии вместо сети,
 пустой `prepare`, `release` записывает свои вызовы. `_refresh()` вызывается напрямую, без потока.
@@ -123,10 +125,11 @@
 | Тест | Проверяет |
 |---|---|
 | `test_model_lost_stops_evaluation` | после `ModelLost` оценка останавливается на первой же вакансии, сообщение содержит имя чужой модели, `release` вызван, ничего не сохранено |
-| `test_summary_counts_suitable_and_evaluated` | итог «Готово: 2 подходящих из 3 оценённых» |
+| `test_summary_counts_suitable_and_evaluated` | итог «Done: 2 matches out of 3 evaluated» |
+| `test_missing_cv_skips_evaluation` | без `master_cv.md` оценка не запускается, итог «No master_cv.md, evaluation skipped» |
 | `test_key_changes_with_cv_and_rules` | ключ меняется при смене правил и при смене резюме, возвращается при возврате правил |
 
-## test_window.py — окно (22 теста)
+## test_window.py — окно (24 теста)
 
 Фикстура `window`: временная база, резюме нет (значит, список изначально пуст), `Worker.start`
 заменён пустышкой — обновление не запускается. Строки подаются через `on_evaluated(...)`, как будто
@@ -136,28 +139,30 @@
 |---|---|
 | `test_evaluated_rows_sorted_and_filtered` | ниже порога не показывается, порядок «оценка ↓, дата ↓» |
 | `test_selection_kept_when_new_row_arrives` | новая строка выше выбранной не сбивает выделение |
-| `test_hide_removes_row` | «Скрыть» вызывает `db.hide` с нужным `url`, убирает строку, сбрасывает выбор |
+| `test_hide_removes_row` | «Hide» вызывает `db.hide` с нужным `url`, убирает строку, сбрасывает выбор |
 | `test_score_colored_by_band` | цвет оценки в таблице и цвет плашки в карточке |
-| `test_switching_rows_replaces_list_items` | при смене вакансии строки списков заменяются сразу, старых не остаётся; заголовок «ЕСТЬ · 2» |
-| `test_no_risks_shows_no_blockers` | пустые риски → «Блокеров не найдено» |
-| `test_empty_state_until_row_selected` | пока ничего не выбрано — пустая страница; после «Скрыть» — снова она |
+| `test_switching_rows_replaces_list_items` | при смене вакансии строки списков заменяются сразу, старых не остаётся; заголовок «YOU HAVE · 2» |
+| `test_no_risks_shows_no_blockers` | пустые риски → «No blockers found» |
+| `test_empty_state_until_row_selected` | пока ничего не выбрано — пустая страница; после «Hide» — снова она |
 | `test_icon_file_has_small_and_large_sizes` | в `icon.ico` есть размеры 16×16 (окно) и 256×256 (ярлык) |
-| `test_cv_button_opens_one_cv_window` | кнопка «Резюме» открывает окно; повторное нажатие не создаёт второе |
+| `test_cv_button_opens_one_cv_window` | кнопка «My CV» открывает окно; повторное нажатие не создаёт второе |
 | `test_finished_reloads_rows_from_db` | после обновления таблица перечитывается из базы: строка, которой в базе нет, исчезает |
-| `test_apply_moves_row_to_applications` | «Подался» переносит строку во вкладку откликов, числа на переключателе |
-| `test_status_buttons_and_return` | «Приняли» / «Отказали» меняют статус в таблице и карточке; «Вернуть в найденные» |
+| `test_apply_moves_row_to_applications` | «I applied» переносит строку во вкладку откликов, числа на переключателе |
+| `test_status_buttons_and_return` | «Accepted» / «Rejected» меняют статус в таблице и карточке; «Back to found» |
 | `test_repost_marked` | вакансия с той же компанией и названием — «↻» в таблице и жёлтая плашка |
 | `test_card_extras_reset_between_rows` | при переходе на обычную вакансию плашки исчезают, кнопки — как у найденной |
 | `test_new_found_row_keeps_application_selected` | новая найденная вакансия из фона не сбрасывает открытый отклик |
-| `test_days_waiting_and_plural` | дни с отклика и «день / дня / дней» на фиксированной дате |
+| `test_days_waiting_and_plural` | дни с отклика и «1 day / N days» на фиксированной дате |
 | `test_new_rows_marked_and_counted` | «•» и жирный шрифт у новой, «(+1)» на переключателе |
 | `test_job_arriving_during_refresh_is_marked` | вакансия, записанная после загрузки списка, тоже получает «•» |
-| `test_status_buttons_show_only_other_statuses` | видны только кнопки других статусов; «Ждём ответа» возвращает статус |
-| `test_waiting_days_and_stale_highlight` | «Ждём, дн.», янтарный цвет после 14 дней, «—» у решённых; после «Отказали» подсказка исчезает |
+| `test_status_buttons_show_only_other_statuses` | видны только кнопки других статусов; «Waiting» возвращает статус |
+| `test_waiting_days_and_stale_highlight` | «Days waiting», янтарный цвет после 14 дней, «—» у решённых; после «Rejected» подсказка исчезает |
 | `test_notes_saved_on_row_switch` | заметка сохраняется при переходе к другой строке раньше таймера и подставляется обратно |
 | `test_close_saves_notes_and_marks_seen` | закрытие окна дописывает заметку и отмечает всё просмотренным |
+| `test_english_window_texts` | английские надписи: заголовок «Job Finder», кнопки, колонки обеих таблиц, «of 10» |
+| `test_application_card_fits_window_width` | с 13 откликами и длинным названием окно помещается в 1200 px (страж ширины) |
 
-## test_cv_window.py — окно «Резюме» (4 теста)
+## test_cv_window.py — окно «My CV» (5 тестов)
 
 Фикстура `cv_path` подменяет путь к резюме временным файлом — настоящий `master_cv.md` тесты не трогают.
 
@@ -165,8 +170,16 @@
 |---|---|
 | `test_shows_cv_text_path_and_skills` | текст резюме, путь к файлу, дата изменения и навыки для отсева |
 | `test_reload_shows_current_file` | после правки файла `reload()` показывает новую версию |
-| `test_missing_cv_shows_message` | без файла — понятное сообщение, «Открыть в редакторе» неактивна |
+| `test_english_cv_window_texts` | заголовок «My CV — master_cv.md» и кнопка «Open in editor» |
+| `test_missing_cv_shows_message` | без файла — понятное сообщение, «Open in editor» неактивна |
 | `test_links_use_theme_color` | ссылки из Markdown зелёные: цвет задаёт `style.apply_app_theme` |
+
+## test_english.py — код на английском (2 теста)
+
+| Тест | Проверяет |
+|---|---|
+| `test_no_cyrillic_in_code` | ни одной строки с кириллицей в `job_finder/*.py`, `tests/*.py` и `install.ps1`; диапазон собран через `chr()`, чтобы файл не ловил сам себя |
+| `test_installer_is_ascii` | `install.ps1` — только ASCII: Windows PowerShell 5.1 читает файл без BOM как ANSI |
 
 ## test_main.py и test_style.py (по 1 тесту)
 
