@@ -95,7 +95,7 @@ Docker, Git, GitHub, requests, BeautifulSoup.
 ```python
 prepare() -> None                      # подготовить модель к работе
 evaluate(cv_text: str, job: Job) -> dict  # оценить одну вакансию
-release() -> None                      # освободить ресурсы
+release(wait: bool = True) -> None     # освободить ресурсы; wait=False — не ждать (при закрытии окна)
 ```
 
 Чтобы перейти на другую модель, достаточно поменять `MODEL` в `config.py`. Чтобы перейти на
@@ -110,10 +110,13 @@ Claude API, достаточно переписать эти три функци
 с флагом `CREATE_NO_WINDOW`, чтобы не мелькали консоли):
 
 - `prepare()`: если `GET http://localhost:1234/v1/models` не отвечает, выполняется
-  `lms server start` и сервер ждётся до 30 с. Если модель ещё не загружена (по `lms ps`),
-  выполняется `lms load mistralai/ministral-3-8b --context-length 8192 --gpu max -y`.
-- `release()`: `lms unload mistralai/ministral-3-8b`. Сервер LM Studio остаётся работать: без
-  загруженной модели он не занимает видеопамять.
+  `lms server start --port 1234` и сервер ждётся до 30 с. Если модели с идентификатором
+  `job-finder` нет в `lms ps --json`, выполняется
+  `lms load mistralai/ministral-3-8b --identifier job-finder --context-length 8192 --gpu max --ttl 300 -y`.
+  `--ttl 300` — страховка: если приложение закроется посреди загрузки модели, LM Studio сама
+  выгрузит её после 5 минут простоя.
+- `release()`: `lms unload job-finder`. Сервер LM Studio остаётся работать: без загруженной
+  модели он не занимает видеопамять.
 
 **Запрос:** `POST http://localhost:1234/v1/chat/completions` с `temperature: 0`,
 `max_tokens: 700` и `response_format` типа `json_schema` (LM Studio тогда возвращает JSON
@@ -224,9 +227,8 @@ job_finder/
   db.py         схема, upsert, деактивация, очередь, сохранение оценки, скрытие, список для окна
   worker.py     фоновое обновление (раздел 3), сигналы status / progress / evaluated / finished
   window.py     главное окно
-tests/
-  fixtures/     урезанные реальные ответы четырёх источников, образец резюме
-  test_sources.py, test_skills.py, test_db.py
+tests/          образцы ответов источников и резюме — прямо в коде тестов
+  test_sources.py, test_db.py, test_skills.py, test_llm.py, test_window.py
 install.ps1, requirements.txt
 ```
 
@@ -241,6 +243,10 @@ install.ps1, requirements.txt
 - `db`: `upsert` сохраняет оценку и `hidden`; деактивация вакансий, пропавших из источника;
   очередь после смены `cv_hash`; скрытые вакансии не попадают ни в очередь, ни в список; порог и
   сортировка списка.
+- `llm`: `evaluate()` с подменённым HTTP-запросом — что уходит в модель (резюме, обрезанное
+  описание) и что возвращается (`score` — целое).
+- `window`: окно без экрана (`QT_QPA_PLATFORM=offscreen`) — порядок и порог строк, выделение не
+  сбивается при новой оценке, «Скрыть» убирает строку.
 
 **Вручную:**
 
