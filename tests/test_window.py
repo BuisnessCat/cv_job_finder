@@ -5,7 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from job_finder import config, db, worker
+from job_finder import config, db, style, worker
 from job_finder.window import MainWindow
 
 
@@ -59,3 +59,12 @@ def test_hide_removes_row(window, monkeypatch):
     assert hidden == ["c"]
     assert titles(window) == ["Job a"]
     assert window.current is None
+
+
+def test_score_colored_by_band(window):
+    window.on_evaluated(row("a", 9))
+    window.on_evaluated(row("b", 5))
+    assert window.table.item(0, 0).foreground().color().name() == style.score_colors(9)[1]
+    assert window.table.item(1, 0).foreground().color().name() == style.score_colors(5)[1]
+    window.table.selectRow(0)
+    assert style.score_colors(9)[0] in window.d_score.styleSheet()  # плашка оценки в деталях

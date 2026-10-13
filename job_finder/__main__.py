@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QLockFile
+from PySide6.QtCore import QLockFile, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from job_finder import config, db
@@ -25,6 +25,8 @@ def main() -> None:
     # У pythonw нет консоли: необработанные исключения пишем в лог
     sys.excepthook = lambda *exc_info: logging.critical("Необработанное исключение", exc_info=exc_info)
     app = QApplication(sys.argv)
+    # Тёмная схема Qt: тёмные заголовок окна, полосы прокрутки и диалоги — под тему из style.py
+    app.styleHints().setColorScheme(Qt.ColorScheme.Dark)
     # Второй двойной клик по ярлыку: два окна делили бы одну модель, и закрытие одного выгружало бы её у другого
     lock = acquire_lock(config.ROOT / "job_finder.lock")
     if lock is None:

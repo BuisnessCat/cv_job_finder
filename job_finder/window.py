@@ -1,28 +1,25 @@
 """Главное окно: таблица подходящих вакансий и детали оценки."""
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QMainWindow, QProgressBar,
     QPushButton, QScrollArea, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from job_finder import config, db, llm
+from job_finder import config, db, llm, style
 from job_finder.worker import Worker, read_cv
 
 COLUMNS = ["Оценка", "Вакансия", "Компания", "Город", "Дата"]
-SECTIONS = [("summary", "Почему"), ("have", "Есть"), ("missing", "Не хватает"), ("risks", "Может отсечь")]
+SECTIONS = [("summary", "ПОЧЕМУ"), ("have", "ЕСТЬ"), ("missing", "НЕ ХВАТАЕТ"), ("risks", "МОЖЕТ ОТСЕЧЬ")]
 
 
-def _label(bold: bool = False, point_size: int | None = None) -> QLabel:
+def _label(name: str = "") -> QLabel:
+    """Подпись с обычным текстом; name — имя для стилей из style.py."""
     label = QLabel()
+    label.setObjectName(name)
     label.setTextFormat(Qt.PlainText)  # только обычный текст, без HTML
     label.setWordWrap(True)
     label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-    font = label.font()
-    font.setBold(bold)
-    if point_size:
-        font.setPointSize(point_size)
-    label.setFont(font)
     return label
 
 
@@ -39,6 +36,7 @@ class MainWindow(QMainWindow):
         self.current: dict | None = None  # выбранная строка
 
         self.refresh_button = QPushButton("Обновить")
+        self.refresh_button.setObjectName("primary")
         self.refresh_button.clicked.connect(self.refresh)
         self.status_label = _label()
         self.progress = QProgressBar()
@@ -55,6 +53,9 @@ class MainWindow(QMainWindow):
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().hide()
+        self.table.verticalHeader().setDefaultSectionSize(34)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
@@ -66,10 +67,12 @@ class MainWindow(QMainWindow):
         splitter.setSizes([700, 500])
 
         central = QWidget()
+        central.setObjectName("central")
         layout = QVBoxLayout(central)
         layout.addLayout(top)
         layout.addWidget(splitter, 1)
         self.setCentralWidget(central)
+        self.setStyleSheet(style.STYLESHEET)
 
         self.worker = Worker()
         self.worker.status.connect(self.status_label.setText)
@@ -81,23 +84,27 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self.refresh)  # обновление сразу после показа окна
 
     def _build_details(self) -> QWidget:
-        self.d_title = _label(bold=True, point_size=13)
-        self.d_meta = _label()
-        self.d_score = _label(bold=True, point_size=12)
+        self.d_title = _label("title")
+        self.d_meta = _label("meta")
+        self.d_score = _label()  # цветная плашка, цвет задаётся в show_details
+        self.d_score.setWordWrap(False)
         self.d_texts = {}
         box = QVBoxLayout()
-        for widget in (self.d_title, self.d_meta, self.d_score):
-            box.addWidget(widget)
+        box.addWidget(self.d_title)
+        box.addWidget(self.d_meta)
+        box.addWidget(self.d_score, 0, Qt.AlignLeft)
         for key, caption in SECTIONS:
-            header = _label(bold=True)
+            header = _label("section")
             header.setText(caption)
             self.d_texts[key] = _label()
             box.addWidget(header)
             box.addWidget(self.d_texts[key])
         box.addStretch(1)
         self.details = QWidget()
+        self.details.setObjectName("details")
         self.details.setLayout(box)
         scroll = QScrollArea()
+        scroll.setObjectName("detailsScroll")
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.details)
 
@@ -135,6 +142,10 @@ class MainWindow(QMainWindow):
                 item = QTableWidgetItem(value)
                 if column == 0:
                     item.setTextAlignment(Qt.AlignCenter)
+                    item.setForeground(QColor(style.score_colors(row["score"])[1]))
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
                 self.table.setItem(i, column, item)
             if row["url"] == selected:
                 self.table.selectRow(i)
@@ -157,6 +168,9 @@ class MainWindow(QMainWindow):
         self.d_title.setText(row["title"])
         self.d_meta.setText(f"{row['company']} · {row['city']} · {row['published']}\nИсточник: {row['source']}")
         self.d_score.setText(f"Оценка: {row['score']} из 10")
+        background, color = style.score_colors(row["score"])
+        self.d_score.setStyleSheet(f"background: {background}; color: {color}; border-radius: 6px;"
+                                   " padding: 4px 10px; font-size: 11pt; font-weight: 600;")
         self.d_texts["summary"].setText(evaluation.get("summary") or "—")
         for key in ("have", "missing", "risks"):
             self.d_texts[key].setText(_bullets(evaluation.get(key) or []))
