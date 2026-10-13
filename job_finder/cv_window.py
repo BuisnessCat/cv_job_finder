@@ -12,7 +12,7 @@ from job_finder.window import _label
 class CvWindow(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Резюме — master_cv.md")
+        self.setWindowTitle("My CV — master_cv.md")
         self.resize(760, 820)
 
         info = QFrame()
@@ -23,8 +23,8 @@ class CvWindow(QDialog):
         grid.setVerticalSpacing(4)
         grid.setColumnStretch(1, 1)
         self.path_label, self.modified_label, self.skills_label = _label(), _label(), _label()
-        for i, (caption, value) in enumerate([("Файл", self.path_label), ("Изменён", self.modified_label),
-                                              ("Навыки для отсева", self.skills_label)]):
+        for i, (caption, value) in enumerate([("File", self.path_label), ("Modified", self.modified_label),
+                                              ("Skills used for filtering", self.skills_label)]):
             name = _label("metaKey")
             name.setText(caption)
             grid.addWidget(name, i, 0, Qt.AlignTop)
@@ -33,9 +33,9 @@ class CvWindow(QDialog):
         self.body = QTextBrowser()
         self.body.setOpenExternalLinks(True)
 
-        self.open_button = QPushButton("Открыть в редакторе")
+        self.open_button = QPushButton("Open in editor")
         self.open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(config.CV_PATH))))
-        close_button = QPushButton("Закрыть")
+        close_button = QPushButton("Close")
         close_button.clicked.connect(self.close)
         buttons = QHBoxLayout()
         buttons.addWidget(self.open_button)
@@ -56,12 +56,12 @@ class CvWindow(QDialog):
         if not config.CV_PATH.exists():
             self.modified_label.setText("—")
             self.skills_label.setText("—")
-            self.body.setPlainText("Файл master_cv.md не найден. Положите его в папку проекта и откройте окно снова.")
+            self.body.setPlainText("master_cv.md not found. Put it in the project folder and open this window again.")
             self.open_button.setEnabled(False)
             return
         text = config.CV_PATH.read_text(encoding="utf-8", errors="replace")
         modified = datetime.fromtimestamp(config.CV_PATH.stat().st_mtime)
         self.modified_label.setText(modified.strftime("%Y-%m-%d %H:%M"))
-        self.skills_label.setText(", ".join(skills.load_skills(text)) or "раздел Skills не найден")
+        self.skills_label.setText(", ".join(skills.load_skills(text)) or "no Skills section found")
         self.body.setMarkdown(text)
         self.open_button.setEnabled(True)

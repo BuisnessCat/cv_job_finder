@@ -34,7 +34,7 @@ def main() -> None:
     # Второй двойной клик по ярлыку: два окна делили бы одну модель, и закрытие одного выгружало бы её у другого
     lock = acquire_lock(config.ROOT / "job_finder.lock")
     if lock is None:
-        QMessageBox.information(None, "Подбор вакансий", "Приложение уже открыто.")
+        QMessageBox.information(None, "Job Finder", "Job Finder is already open.")
         os._exit(0)
     db.init()
     window = MainWindow()

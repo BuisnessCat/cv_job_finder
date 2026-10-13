@@ -12,11 +12,11 @@ from PySide6.QtWidgets import (
 from job_finder import config, db, llm, sources, style
 from job_finder.worker import Worker, read_cv
 
-COLUMNS = ["Оценка", "Вакансия", "Компания", "Город", "Дата"]
-APPLIED_COLUMNS = ["Отклик", "Вакансия", "Компания", "Статус", "Ждём, дн.", "Оценка"]
-LISTS = [("have", "ЕСТЬ", "✓"), ("missing", "НЕ ХВАТАЕТ", "✕"), ("risks", "МОЖЕТ ОТСЕЧЬ", "!")]
-EMPTY_LIST = {"have": "—", "missing": "Ничего существенного"}
-STATUS_TEXT = {"applied": "Ждём ответа", "accepted": "Приняли", "rejected": "Отказали"}
+COLUMNS = ["Score", "Job", "Company", "Location", "Date"]
+APPLIED_COLUMNS = ["Applied", "Job", "Company", "Status", "Days waiting", "Score"]
+LISTS = [("have", "YOU HAVE", "✓"), ("missing", "MISSING", "✕"), ("risks", "RISKS", "!")]
+EMPTY_LIST = {"have": "—", "missing": "Nothing major"}
+STATUS_TEXT = {"applied": "Waiting", "accepted": "Accepted", "rejected": "Rejected"}
 REPOST_MARK = "↻ "  # перед названием найденной вакансии, на которую уже был отклик
 NEW_MARK = "• "  # перед названием вакансии, появившейся после прошлого закрытия окна
 
@@ -87,20 +87,14 @@ def days_waiting(applied_at: str, today: date) -> int:
 
 
 def plural_days(n: int) -> str:
-    """«1 день», «3 дня», «11 дней»."""
-    if n % 10 == 1 and n % 100 != 11:
-        word = "день"
-    elif n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
-        word = "дня"
-    else:
-        word = "дней"
-    return f"{n} {word}"
+    """"1 day", "3 days"."""
+    return f"{n} day" if n == 1 else f"{n} days"
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Подбор вакансий")
+        self.setWindowTitle("Job Finder")
         self.resize(1200, 750)
         self.rows: list[dict] = []        # найденные вакансии в порядке показа
         self.applied: list[dict] = []     # отклики, новые сверху
@@ -108,7 +102,7 @@ class MainWindow(QMainWindow):
         self.new_urls: set[str] = set()  # непросмотренные: появились после прошлого закрытия окна
         self.current: dict | None = None  # выбранная строка: найденная вакансия или отклик (есть ключ status)
 
-        self.refresh_button = QPushButton("Обновить")
+        self.refresh_button = QPushButton("Refresh")
         self.refresh_button.setObjectName("primary")
         self.refresh_button.clicked.connect(self.refresh)
         self.found_tab = QPushButton()
@@ -129,7 +123,7 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(250)
         self.progress.hide()
-        self.cv_button = QPushButton("Резюме")
+        self.cv_button = QPushButton("My CV")
         self.cv_button.clicked.connect(self.show_cv)
         self.cv_window = None  # окно «Резюме» создаётся при первом нажатии
         top = QHBoxLayout()
@@ -182,7 +176,7 @@ class MainWindow(QMainWindow):
         self.badge.setObjectName("badge")
         self.badge.setFixedSize(64, 64)
         self.badge_number = QLabel(alignment=Qt.AlignCenter)
-        self.badge_caption = QLabel("из 10", alignment=Qt.AlignCenter)
+        self.badge_caption = QLabel("of 10", alignment=Qt.AlignCenter)
         badge_box = QVBoxLayout(self.badge)
         badge_box.setContentsMargins(0, 8, 0, 8)
         badge_box.setSpacing(0)
@@ -202,12 +196,12 @@ class MainWindow(QMainWindow):
         self.d_status.setWordWrap(False)
         self.d_notice = _label("notice")  # «Вы уже подавались…» — только у перепубликованных вакансий
         self.d_stale = _label("staleHint")  # «Больше N дней без ответа…» — под плашкой отклика
-        self.d_stale.setText(f"Больше {config.STALE_DAYS} дней без ответа — пора напомнить о себе"
-                             " или закрыть отклик")
+        self.d_stale.setText(f"No reply for over {config.STALE_DAYS} days — time to follow up"
+                             " or close it")
         self.notes = QPlainTextEdit()  # заметка к отклику, сохраняется сама
         self.notes.setObjectName("notes")
         self.notes.setFixedHeight(70)
-        self.notes.setPlaceholderText("С кем общались, когда собеседование…")
+        self.notes.setPlaceholderText("Who you talked to, when the interview is…")
         self.notes_url: str | None = None  # отклик, к которому относится текст в поле
         self.notes_timer = QTimer(self)  # сохранить через 0,5 с после последнего нажатия клавиши
         self.notes_timer.setSingleShot(True)
@@ -218,7 +212,7 @@ class MainWindow(QMainWindow):
         notes_layout = QVBoxLayout(self.notes_box)
         notes_layout.setContentsMargins(0, 14, 0, 0)
         notes_layout.setSpacing(8)
-        notes_layout.addWidget(_caption("ЗАМЕТКИ"))
+        notes_layout.addWidget(_caption("NOTES"))
         notes_layout.addWidget(self.notes)
 
         facts = QGridLayout()
@@ -226,8 +220,8 @@ class MainWindow(QMainWindow):
         facts.setVerticalSpacing(6)
         facts.setColumnStretch(1, 1)
         self.facts = {}
-        for i, (key, caption) in enumerate([("city", "Город"), ("published", "Опубликовано"),
-                                            ("source", "Источник")]):
+        for i, (key, caption) in enumerate([("city", "Location"), ("published", "Published"),
+                                            ("source", "Source")]):
             name = _label("metaKey")
             name.setText(caption)
             self.facts[key] = _label()
@@ -251,7 +245,7 @@ class MainWindow(QMainWindow):
         box.addSpacing(16)
         box.addWidget(divider)
         box.addSpacing(16)
-        box.addWidget(_caption("ПОЧЕМУ ТАКАЯ ОЦЕНКА"))
+        box.addWidget(_caption("WHY THIS SCORE"))
         box.addSpacing(8)
         box.addWidget(self.d_summary)
         self.detail_lists: dict[str, tuple[QLabel, str, QVBoxLayout]] = {}
@@ -274,20 +268,20 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setWidget(details)
 
-        self.open_button = QPushButton("Открыть вакансию")
+        self.open_button = QPushButton("Open job")
         self.open_button.setObjectName("primary")
         self.open_button.clicked.connect(self.open_job)
-        self.apply_button = QPushButton("Подался")
+        self.apply_button = QPushButton("I applied")
         self.apply_button.clicked.connect(self.apply_job)
-        self.hide_button = QPushButton("Скрыть")
+        self.hide_button = QPushButton("Hide")
         self.hide_button.clicked.connect(self.hide_job)
-        self.waiting_button = QPushButton("Ждём ответа")
+        self.waiting_button = QPushButton("Waiting")
         self.waiting_button.clicked.connect(lambda: self.set_status("applied"))
-        self.accept_button = QPushButton("Приняли")
+        self.accept_button = QPushButton("Accepted")
         self.accept_button.clicked.connect(lambda: self.set_status("accepted"))
-        self.reject_button = QPushButton("Отказали")
+        self.reject_button = QPushButton("Rejected")
         self.reject_button.clicked.connect(lambda: self.set_status("rejected"))
-        self.unapply_button = QPushButton("Вернуть в найденные")
+        self.unapply_button = QPushButton("Back to found")
         self.unapply_button.clicked.connect(self.unapply_job)
         self.status_buttons = {"applied": self.waiting_button, "accepted": self.accept_button,
                                "rejected": self.reject_button}
@@ -316,7 +310,7 @@ class MainWindow(QMainWindow):
 
         empty_page = QWidget()
         empty_page.setObjectName("emptyPage")
-        empty = QLabel("Выберите вакансию в списке слева", alignment=Qt.AlignCenter)
+        empty = QLabel("Select a job on the left", alignment=Qt.AlignCenter)
         empty.setObjectName("empty")
         QVBoxLayout(empty_page).addWidget(empty)
 
@@ -341,7 +335,7 @@ class MainWindow(QMainWindow):
                 line.takeAt(0).widget().setParent(None)  # убрать из окна сразу, а не после deleteLater
         color = style.LIST_COLORS[key]
         if not items and key == "risks":
-            items, mark, color = ["Блокеров не найдено"], "✓", style.LIST_COLORS["have"]
+            items, mark, color = ["No blockers found"], "✓", style.LIST_COLORS["have"]
         elif not items:
             items, mark = [EMPTY_LIST[key]], ""
         for text in items:
@@ -387,7 +381,7 @@ class MainWindow(QMainWindow):
 
         _fill_table(self.table, self.rows, values, selected)
         new = sum(1 for row in self.rows if row["url"] in self.new_urls)
-        self.found_tab.setText(f"Найденные · {len(self.rows)}" + (f" (+{new})" if new else ""))
+        self.found_tab.setText(f"Found · {len(self.rows)}" + (f" (+{new})" if new else ""))
         if selected and selected not in (row["url"] for row in self.rows):
             self.show_details(None)
 
@@ -409,7 +403,7 @@ class MainWindow(QMainWindow):
             return [row["applied_at"], row["title"], row["company"], status, waiting, _score_item(row["score"])]
 
         _fill_table(self.applied_table, self.applied, values, selected)
-        self.applied_tab.setText(f"Мои отклики · {len(self.applied)}")
+        self.applied_tab.setText(f"My applications · {len(self.applied)}")
         if selected and selected not in (row["url"] for row in self.applied):
             self.show_details(None)
 
@@ -458,7 +452,7 @@ class MainWindow(QMainWindow):
         self.notes_box.setVisible(is_application)
         stale = False
         if is_application:
-            text = f"Отклик {row['applied_at']} · {STATUS_TEXT[row['status']]}"
+            text = f"Applied {row['applied_at']} · {STATUS_TEXT[row['status']]}"
             pill_background, pill_color = style.STATUS_COLORS[row["status"]]
             if row["status"] == "applied":
                 days = days_waiting(row["applied_at"], date.today())
@@ -479,8 +473,8 @@ class MainWindow(QMainWindow):
         previous = None if is_application else self._previous_application(row)
         self.d_notice.setVisible(previous is not None)
         if previous:
-            self.d_notice.setText(f"Вы уже подавались на «{previous['title']}» в {previous['company']}"
-                                  f" {previous['applied_at']} — статус: {STATUS_TEXT[previous['status']].lower()}")
+            self.d_notice.setText(f'You already applied to "{previous["title"]}" at {previous["company"]}'
+                                  f' on {previous["applied_at"]} — status: {STATUS_TEXT[previous["status"]].lower()}')
         for button in self.found_buttons:
             button.setVisible(not is_application)
         self.unapply_button.setVisible(is_application)
@@ -496,7 +490,7 @@ class MainWindow(QMainWindow):
         self.progress.setMaximum(total)
         self.progress.setValue(done)
         self.progress.show()
-        self.status_label.setText(f"Оценено {done} из {total}")
+        self.status_label.setText(f"Evaluated {done} of {total}")
 
     def on_evaluated(self, row: dict) -> None:
         if row["score"] < config.MIN_SCORE:

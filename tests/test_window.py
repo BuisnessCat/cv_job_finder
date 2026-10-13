@@ -31,7 +31,7 @@ def window(app, tmp_path, monkeypatch):
 
 
 def row(url, score, published="2026-10-01"):
-    return {"url": url, "source": "Jobicy", "title": f"Job {url}", "company": "ACME", "city": "Praha",
+    return {"url": url, "source": "Jobicy", "title": f"Job {url}", "company": "ACME", "city": "Prague",
             "published": published, "score": score,
             "evaluation": {"score": score, "summary": "ok", "have": ["Python"], "missing": [], "risks": []}}
 
@@ -93,13 +93,13 @@ def test_switching_rows_replaces_list_items(window):
     # Строки прошлой вакансии не должны оставаться в карточке, даже до удаления через цикл событий
     labels = window.pages.widget(1).findChildren(QLabel)
     assert "Python" not in [label.text() for label in labels]
-    assert window.detail_lists["have"][0].text() == "ЕСТЬ · 2"
+    assert window.detail_lists["have"][0].text() == "YOU HAVE · 2"
 
 
 def test_no_risks_shows_no_blockers(window):
     window.on_evaluated(row("a", 9))
     window.table.selectRow(0)
-    assert list_texts(window, "risks") == ["Блокеров не найдено"]
+    assert list_texts(window, "risks") == ["No blockers found"]
 
 
 def test_empty_state_until_row_selected(window):
@@ -143,7 +143,7 @@ def add_found(url, score, title=None, company="ACME", new=False):
     if not config.CV_PATH.exists():
         config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # временное резюме
     # Свой источник у каждой вакансии: save_jobs выключает вакансии источника, которых нет в выборке
-    job = Job(url=url, source=f"src-{url}", title=title or f"Job {url}", company=company, city="Praha",
+    job = Job(url=url, source=f"src-{url}", title=title or f"Job {url}", company=company, city="Prague",
               published="2026-10-01", description="")
     db.save_jobs(job.source, [job])
     db.save_evaluation(url, row(url, score)["evaluation"], worker.read_cv()[1])
@@ -164,9 +164,9 @@ def test_apply_moves_row_to_applications(window):
     window.apply_button.click()
     assert titles(window) == ["Job b"]
     assert applied_titles(window) == ["Job a"]
-    assert window.applied_table.item(0, 3).text() == "Ждём ответа"
-    assert window.found_tab.text() == "Найденные · 1"
-    assert window.applied_tab.text() == "Мои отклики · 1"
+    assert window.applied_table.item(0, 3).text() == "Waiting"
+    assert window.found_tab.text() == "Found · 1"
+    assert window.applied_tab.text() == "My applications · 1"
 
 
 def test_status_buttons_and_return(window):
@@ -178,14 +178,14 @@ def test_status_buttons_and_return(window):
     window.applied_table.selectRow(0)
     assert not window.accept_button.isHidden() and window.apply_button.isHidden()
     window.accept_button.click()
-    assert window.applied_table.item(0, 3).text() == "Приняли"
-    assert "Приняли" in window.d_status.text()  # карточка осталась на этом отклике и обновилась
+    assert window.applied_table.item(0, 3).text() == "Accepted"
+    assert "Accepted" in window.d_status.text()  # карточка осталась на этом отклике и обновилась
     window.reject_button.click()
-    assert window.applied_table.item(0, 3).text() == "Отказали"
+    assert window.applied_table.item(0, 3).text() == "Rejected"
     window.unapply_button.click()
     assert applied_titles(window) == []
     assert titles(window) == ["Job a"]
-    assert window.applied_tab.text() == "Мои отклики · 0"
+    assert window.applied_tab.text() == "My applications · 0"
 
 
 def test_repost_marked(window):
@@ -198,7 +198,8 @@ def test_repost_marked(window):
     assert titles(window) == ["↻ python  dev"]
     window.table.selectRow(0)
     assert not window.d_notice.isHidden()
-    assert "Вы уже подавались" in window.d_notice.text()
+    applied_at = date.today().isoformat()
+    assert window.d_notice.text() == f'You already applied to "Python Dev" at ACME on {applied_at} — status: waiting'
 
 
 def test_card_extras_reset_between_rows(window):
@@ -235,9 +236,7 @@ def set_applied_at(url, days_ago):
 
 def test_days_waiting_and_plural():
     assert days_waiting("2026-09-22", date(2026, 10, 13)) == 21
-    assert [plural_days(n) for n in (0, 1, 2, 5, 11, 12, 21, 22, 25, 101, 111)] == [
-        "0 дней", "1 день", "2 дня", "5 дней", "11 дней", "12 дней", "21 день", "22 дня", "25 дней",
-        "101 день", "111 дней"]
+    assert [plural_days(n) for n in (0, 1, 2, 11, 21)] == ["0 days", "1 day", "2 days", "11 days", "21 days"]
 
 
 def test_new_rows_marked_and_counted(window):
@@ -246,7 +245,7 @@ def test_new_rows_marked_and_counted(window):
     window.load_rows()
     assert titles(window) == ["• Job a", "Job b"]
     assert window.table.item(0, 1).font().bold() and not window.table.item(1, 1).font().bold()
-    assert window.found_tab.text() == "Найденные · 2 (+1)"
+    assert window.found_tab.text() == "Found · 2 (+1)"
 
 
 def test_job_arriving_during_refresh_is_marked(window):
@@ -268,7 +267,7 @@ def test_status_buttons_show_only_other_statuses(window):
     window.reject_button.click()
     assert visible() == {"applied", "accepted"}
     window.waiting_button.click()
-    assert window.applied_table.item(0, 3).text() == "Ждём ответа"
+    assert window.applied_table.item(0, 3).text() == "Waiting"
     assert visible() == {"accepted", "rejected"}
 
 
@@ -293,9 +292,10 @@ def test_waiting_days_and_stale_highlight(window):
     window.show_tab(1)
     old_row = [r["url"] for r in window.applied].index("old")
     window.applied_table.selectRow(old_row)
-    assert "20 дней" in window.d_status.text() and not window.d_stale.isHidden()
+    assert "20 days" in window.d_status.text() and not window.d_stale.isHidden()
+    assert window.d_stale.text() == f"No reply for over {config.STALE_DAYS} days — time to follow up or close it"
     window.reject_button.click()  # итог пришёл — подсказка больше не нужна
-    assert window.d_stale.isHidden() and "дн" not in window.d_status.text()
+    assert window.d_stale.isHidden() and "days" not in window.d_status.text()
 
 
 def test_notes_saved_on_row_switch(window):
@@ -328,3 +328,28 @@ def test_close_saves_notes_and_marks_seen(window):
     window.close()
     assert db.list_applied()[0]["notes"] == "Собеседование в пятницу"
     assert db.unseen_urls() == set()
+
+
+def test_english_window_texts(window):
+    assert window.windowTitle() == "Job Finder"
+    assert window.refresh_button.text() == "Refresh" and window.cv_button.text() == "My CV"
+    headers = lambda table: [table.horizontalHeaderItem(i).text() for i in range(table.columnCount())]
+    assert headers(window.table) == ["Score", "Job", "Company", "Location", "Date"]
+    assert headers(window.applied_table) == ["Applied", "Job", "Company", "Status", "Days waiting", "Score"]
+    assert [b.text() for b in (window.open_button, window.apply_button, window.hide_button,
+                               window.unapply_button)] == ["Open job", "I applied", "Hide", "Back to found"]
+    assert window.badge_caption.text() == "of 10"
+
+
+def test_application_card_fits_window_width(window):
+    add_found("a", 8, title="Junior Python Backend Developer (Django, FastAPI, PostgreSQL)")
+    for i in range(12):
+        add_found(f"x{i}", 6)
+        db.apply(f"x{i}")
+    db.apply("a")
+    window.load_rows()
+    window.show_tab(1)
+    window.applied_table.selectRow([r["url"] for r in window.applied].index("a"))
+    window.show()
+    assert window.applied_tab.text() == "My applications · 13"
+    assert window.minimumSizeHint().width() <= 1200

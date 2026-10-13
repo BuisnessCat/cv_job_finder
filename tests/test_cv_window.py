@@ -40,9 +40,16 @@ def test_reload_shows_current_file(app, cv_path):
     assert "Updated CV" in window.body.toPlainText()
 
 
+def test_english_cv_window_texts(app, cv_path):
+    cv_path.write_text(CV, encoding="utf-8")
+    window = CvWindow()
+    assert window.windowTitle() == "My CV — master_cv.md"
+    assert window.open_button.text() == "Open in editor"
+
+
 def test_missing_cv_shows_message(app, cv_path):
     window = CvWindow()
-    assert "не найден" in window.body.toPlainText()
+    assert "not found" in window.body.toPlainText()
     assert not window.open_button.isEnabled()
 
 
