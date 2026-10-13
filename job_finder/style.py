@@ -59,6 +59,9 @@ QPushButton#segmentRight {{ border-radius: 0; border-top-right-radius: 6px; bord
 QPushButton#segmentLeft:checked, QPushButton#segmentRight:checked {{ background: {accent_soft}; color: {text}; }}
 QLabel#notice {{ background: {notice_bg}; color: {notice_text}; border-radius: 6px; padding: 8px 12px;
                 margin-top: 12px; }}
+QLabel#staleHint {{ color: {notice_text}; margin-top: 6px; }}
+QPlainTextEdit#notes {{ background: {alt}; border: 1px solid {border}; border-radius: 6px; padding: 6px;
+                       selection-background-color: {accent_soft}; }}
 QTableWidget {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; gridline-color: transparent;
                selection-background-color: {accent_soft}; selection-color: {text};
                alternate-background-color: {alt}; outline: none; }}
