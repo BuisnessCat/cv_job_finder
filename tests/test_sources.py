@@ -2,11 +2,14 @@ from job_finder import config, sources
 from job_finder.sources import Job
 
 JG_CSV = (
-    "title,company_name,url,remote,first_seen_at,locations_0_name,description_html\n"
+    "title,company_name,url,remote,first_seen_at,locations_0_name,locations_0_region,"
+    "locations_1_name,locations_1_region,description_html\n"
     'Junior Python vývojář,Firma s.r.o.,https://www.jobs.cz/rpd/1/?utm_source=juniorguru,False,'
-    '2026-10-12 00:00:00,Praha,"<p>Hledáme <b>Python</b> vývojáře</p>"\n'
-    "Remote tester,Remote a.s.,https://example.com/2,True,2026-10-10 00:00:00,,<p>Testování</p>\n"
-    "Office job,Office s.r.o.,https://example.com/3,False,2026-10-09 00:00:00,,\n"
+    '2026-10-12 00:00:00,Praha,Praha,,,"<p>Hledáme <b>Python</b> vývojáře</p>"\n'
+    "Remote tester,Remote a.s.,https://example.com/2,True,2026-10-10 00:00:00,Brno,Brno,,,<p>Testování</p>\n"
+    "Brno developer,Brno s.r.o.,https://example.com/3,False,2026-10-09 00:00:00,Brno,Brno,,,<p>Django</p>\n"
+    "Two offices,Multi a.s.,https://example.com/4,False,2026-10-08 00:00:00,Ostrava,Ostrava,Háje,Praha,<p>SQL</p>\n"
+    "Office job,Office s.r.o.,https://example.com/5,False,2026-10-07 00:00:00,,,,,\n"
 )
 
 HIMALAYAS = {"jobs": [
@@ -58,7 +61,16 @@ def test_parse_juniorguru():
         description="Hledáme\nPython\nvývojáře",
     )
     assert (jobs[1].city, jobs[1].published, jobs[1].description) == ("Удалённо", "2026-10-10", "Testování")
-    assert (jobs[2].city, jobs[2].description) == ("", "")
+
+
+def test_parse_juniorguru_keeps_only_prague_or_remote():
+    jobs = sources.parse_juniorguru(JG_CSV)
+    # Брно без удалёнки и вакансия без мест отсеяны; Прага второй в списке (район Háje) — остаётся
+    assert [(job.url, job.city) for job in jobs] == [
+        ("https://www.jobs.cz/rpd/1/?utm_source=juniorguru", "Praha"),
+        ("https://example.com/2", "Удалённо"),
+        ("https://example.com/4", "Praha"),
+    ]
 
 
 def test_parse_himalayas():

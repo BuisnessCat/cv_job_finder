@@ -304,6 +304,7 @@ class MainWindow(QMainWindow):
     def on_finished(self) -> None:
         self.progress.hide()
         self.refresh_button.setEnabled(True)
+        self.load_rows()  # убрать вакансии, которые пропали из источника или отсеяны по месту
 
     def open_job(self) -> None:
         QDesktopServices.openUrl(QUrl(self.current["url"]))

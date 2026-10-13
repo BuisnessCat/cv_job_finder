@@ -8,6 +8,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QLabel
 
 from job_finder import config, db, style, worker
+from job_finder.sources import Job
 from job_finder.window import MainWindow
 
 
@@ -112,3 +113,14 @@ def test_icon_file_has_small_and_large_sizes(app):
     sizes = QIcon(str(config.ICON_PATH)).availableSizes()
     assert QSize(16, 16) in sizes  # заголовок окна и панель задач
     assert QSize(256, 256) in sizes  # ярлык на рабочем столе
+
+
+def test_finished_reloads_rows_from_db(window):
+    config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # временное резюме из фикстуры
+    key = worker.read_cv()[1]
+    db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Job a", company="ACME", city="Praha",
+                                published="2026-10-01", description="")])
+    db.save_evaluation("a", row("a", 8)["evaluation"], key)
+    window.on_evaluated(row("gone", 9))  # в базе её уже нет: пропала из источника или отсеяна по месту
+    window.on_finished()
+    assert titles(window) == ["Job a"]

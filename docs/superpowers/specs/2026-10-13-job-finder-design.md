@@ -27,7 +27,7 @@
 
 | # | Источник | Запрос | Отбор на нашей стороне | Примерный объём |
 |---|---|---|---|---|
-| 1 | junior.guru | `GET https://junior.guru/api/jobs.csv` | — | ~50, Чехия, junior, в основном на чешском |
+| 1 | junior.guru | `GET https://junior.guru/api/jobs.csv` | только Прага (регион «Praha» среди мест вакансии) или удалёнка | ~50, из них ~20 в Праге; junior, в основном на чешском |
 | 2 | Himalayas | `GET https://himalayas.app/jobs/api/search?q=python&country=CZ&seniority=Entry-level,Mid-level&sort=recent&page=N` — по 20 на страницу, страницы 1…10, пауза 1 с, остановка на пустой странице | — | до 200 (сейчас подходят ~210), удалёнка, доступная из Чехии, английский |
 | 3 | Jobicy | `GET https://jobicy.com/api/v2/remote-jobs?count=50&geo=czechia&industry=dev` | — | ~16, удалёнка, доступная из Чехии, английский |
 | 4 | Working Nomads | `GET https://www.workingnomads.com/api/exposed_jobs/` | `category_name == "Development"` | ~20 из последних 50, английский |
@@ -44,7 +44,7 @@ BeautifulSoup (`get_text("\n")`).
 | url | `url` | `guid` (страница на himalayas.app) | `url` | `url` |
 | title | `title` | `title` | `jobTitle` | `title` |
 | company | `company_name` | `companyName` | `companyName` | `company_name` |
-| city | `locations_0_name`; если пусто и `remote` = True — «Удалённо» | «Удалённо» + страны из `locationRestrictions`, если они есть | «Удалённо: » + `jobGeo` | «Удалённо: » + `location` |
+| city | «Praha», если среди `locations_N_region` есть «Praha»; иначе «Удалённо» при `remote` = True; иначе вакансия пропускается | «Удалённо» + страны из `locationRestrictions`, если они есть | «Удалённо: » + `jobGeo` | «Удалённо: » + `location` |
 | published | дата из `first_seen_at` | `pubDate` (unix-секунды) → дата | первые 10 символов `pubDate` | первые 10 символов `pub_date` |
 | description | `description_html` | `description` | `jobDescription` | `description` |
 
@@ -207,7 +207,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 цветом: 8–10 — зелёный, 7 — синий, 5–6 — янтарный; в деталях — цветная плашка. Включена тёмная схема
 Qt (`setColorScheme(Dark)`), чтобы заголовок окна, полосы прокрутки и диалоги тоже были тёмными.
 
-Обновление запускается автоматически сразу после показа окна.
+Обновление запускается автоматически сразу после показа окна. Когда оно заканчивается, список
+перечитывается из базы, чтобы сразу убрать вакансии, которые пропали из источника или отсеяны по месту.
 
 **Закрытие окна.** Фоновый поток запущен как daemon, поэтому окно закрывается сразу, не дожидаясь
 текущего запроса к модели. Если модель была загружена, запускается `lms unload` без ожидания

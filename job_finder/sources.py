@@ -38,9 +38,17 @@ def html_to_text(html: str | None) -> str:
 
 
 def parse_juniorguru(text: str) -> list[Job]:
+    """Только вакансии в Праге или удалённые: остальные источники и так отдают одну удалёнку."""
     jobs = []
     for row in csv.DictReader(io.StringIO(text)):
-        city = row.get("locations_0_name") or ("Удалённо" if row.get("remote") == "True" else "")
+        # Регион надёжнее названия: у пражского района (например, «Háje») название без «Praha»
+        regions = [value for key, value in row.items() if key.startswith("locations_") and key.endswith("_region")]
+        if "Praha" in regions:
+            city = "Praha"
+        elif row.get("remote") == "True":
+            city = "Удалённо"
+        else:
+            continue
         jobs.append(Job(
             url=row["url"], source="junior.guru", title=row["title"], company=row["company_name"],
             city=city, published=(row.get("first_seen_at") or "")[:10],
