@@ -33,8 +33,8 @@ MainWindow (QMainWindow, «Job Finder», 1200×750)
    │   └─ cv_button        «My CV» — открывает окно резюме (cv_window.py)
    └─ splitter (QSplitter, начальные ширины 700 : 500)
        ├─ lists            QStackedWidget
-       │   ├─ [0] table          найденные: Оценка | Вакансия | Компания | Город | Дата
-       │   └─ [1] applied_table  отклики:   Отклик | Вакансия | Компания | Статус | Оценка
+       │   ├─ [0] table          найденные: Score | Job | Company | Location | Date
+       │   └─ [1] applied_table  отклики:   Applied | Job | Company | Status | Days waiting | Score
        └─ card             QFrame#card — рамка карточки
            └─ pages        QStackedWidget
                ├─ [0] empty_page   «Select a job on the left»
@@ -77,7 +77,7 @@ NEW_MARK = "• "
 виджеты, и заполняются — добавить четвёртый список можно одной строкой здесь (плюс поле в `SCHEMA`
 и цвет в `style.LIST_COLORS`). `STATUS_TEXT` — подписи статусов отклика из базы (`db.STATUSES`).
 
-## Помощники модуля — [строки 24-90](../../job_finder/window.py#L24-L90)
+## Помощники модуля — [строки 24-91](../../job_finder/window.py#L24-L91)
 
 `_label(name)` ([24](../../job_finder/window.py#L24)) создаёт подпись с общими настройками:
 
@@ -162,7 +162,7 @@ NEW_MARK = "• "
 |---|---|
 | `d_title`, `d_company` | название и компания в шапке |
 | `badge`, `badge_number`, `badge_caption` | плашка 64×64 с числом и «of 10» |
-| `d_status` | плашка «Отклик ГГГГ-ММ-ДД · статус» — видна только у откликов |
+| `d_status` | плашка «Applied ГГГГ-ММ-ДД · статус» — видна только у откликов |
 | `d_notice` | жёлтая плашка «You already applied…» — видна только у перепубликованных вакансий |
 | `facts` | словарь `{"city": QLabel, "published": QLabel, "source": QLabel}` — значения фактов |
 | `d_summary` | текст «почему такая оценка» |
@@ -170,7 +170,7 @@ NEW_MARK = "• "
 | `d_stale` | янтарная подсказка «No reply for over 14 days…» под плашкой отклика |
 | `notes_box`, `notes`, `notes_timer`, `notes_url` | блок «NOTES», поле `QPlainTextEdit`, таймер сохранения 0,5 с и отклик, к которому относится текст |
 | `open_button`, `found_buttons`, `applied_buttons`, `status_buttons` | кнопки нижней полосы: общая, два набора и словарь «статус → кнопка» |
-| `pages` | стопка: 0 — «выберите вакансию», 1 — карточка |
+| `pages` | стопка: 0 — «Select a job on the left», 1 — карточка |
 
 Детали построения:
 
@@ -410,7 +410,7 @@ Qt вызывает этот метод, когда окно закрывают.
   программу, назначенную для `.md`) и «Close».
 
 `reload()` ([строка 53](../../job_finder/cv_window.py#L53)) перечитывает файл при каждом открытии.
-Если файла нет — сообщение «Файл master_cv.md не найден…», кнопка редактора неактивна. Файл
+Если файла нет — сообщение «master_cv.md not found…», кнопка редактора неактивна. Файл
 читается с `errors="replace"`: даже если он сохранён не в UTF-8, окно откроется.
 
 ---
@@ -443,7 +443,7 @@ Qt вызывает этот метод, когда окно закрывают.
 
 `STATUS_COLORS` ([строка 27](../../job_finder/style.py#L27)) — цвета статуса отклика, пары (фон плашки,
 цвет текста): «Waiting» синий, «Accepted» зелёный, «Rejected» красный. Цвет текста красит ячейку
-статуса в таблице откликов, пара целиком — плашку «Отклик · статус» в карточке.
+статуса в таблице откликов, пара целиком — плашку «Applied · статус» в карточке.
 
 ### Цвет оценки `score_colors(score)` — [строка 36](../../job_finder/style.py#L36)
 

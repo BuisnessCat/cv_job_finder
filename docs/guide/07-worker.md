@@ -125,7 +125,7 @@ try:
     log.info(message)
     self.status.emit(message)
 except Exception:
-    log.exception("Обновление упало")
+    log.exception("Update crashed")
     self.status.emit("Update failed, see job_finder.log")
 finally:
     self.finished.emit()
@@ -144,8 +144,8 @@ self.status.emit("Loading jobs…")
 fetched, errors = sources.fetch_all()
 for name, jobs in fetched.items():
     db.save_jobs(name, jobs)
-log.info("Загружено: %s", {name: len(jobs) for name, jobs in fetched.items()})
-notes = [f"{name}: ошибка ({error})" for name, error in errors.items()]
+log.info("Loaded: %s", {name: len(jobs) for name, jobs in fetched.items()})
+notes = [f"{name}: error ({error})" for name, error in errors.items()]
 ```
 
 Только успешно загруженные источники записываются в базу. Ошибки превращаются в замечания
@@ -176,7 +176,7 @@ try:
     if failed:
         notes.append(f"failed to evaluate: {failed}")
 except Exception as error:
-    log.exception("LM Studio недоступна")
+    log.exception("LM Studio unavailable")
     notes.append(f"LM Studio: {error}")
 finally:
     llm.release()
@@ -201,7 +201,7 @@ evaluated = db.count_evaluated(cv_hash)
 return _join(f"Done: {suitable} matches out of {evaluated} evaluated", notes)
 ```
 
-Числа — по всей базе с текущим ключом, а не только за этот запуск: «23 подходящих из 259 оценённых»
+Числа — по всей базе с текущим ключом, а не только за этот запуск: «Done: 23 matches out of 259 evaluated»
 означает «всего сейчас».
 
 ## `_evaluate(todo, cv_text, cv_hash)` — [строка 91](../../job_finder/worker.py#L91)
@@ -215,7 +215,7 @@ for done, job in enumerate(todo, 1):          # done считается с 1
     except llm.ModelLost:
         raise                                  # дальше оценивать нечем — стоп
     except Exception:
-        log.exception("Не удалось оценить %s", job.url)
+        log.exception("Failed to evaluate %s", job.url)
         failed += 1                            # эту пропускаем, идём дальше
     else:                                      # выполняется, только если не было исключения
         db.save_evaluation(job.url, evaluation, cv_hash)
@@ -249,12 +249,12 @@ Done: 23 matches out of 259 evaluated; Jobicy: error (HTTPSConnectionPool…)
 
 | Ситуация | Где обрабатывается | Что видно |
 |---|---|---|
-| источник недоступен / сменил формат | `sources.fetch_all` | «<источник>: ошибка (…)» в итоге; его вакансии в базе не меняются |
+| источник недоступен / сменил формат | `sources.fetch_all` | «<source>: error (…)» в итоге; его вакансии в базе не меняются |
 | нет `master_cv.md` | `_refresh`, шаг 2 | «No master_cv.md, evaluation skipped»; таблица пустая (окно тоже не находит резюме) |
 | нет раздела Skills | `_refresh`, шаг 2 | «No Skills section in master_cv.md, evaluation skipped» |
 | нет `lms.exe` / сервер не поднялся / модель не загрузилась | `_refresh`, шаг 4 | «LM Studio: …» в итоге; вакансии ждут следующего обновления |
 | не удалась оценка одной вакансии | `_evaluate` | оценка остальных продолжается; в итоге «failed to evaluate: N» |
-| нашу модель выгрузили посреди оценки | `_evaluate` → `_refresh` | проход останавливается; «LM Studio: модель job-finder выгружена (ответила …)» |
+| нашу модель выгрузили посреди оценки | `_evaluate` → `_refresh` | проход останавливается; «LM Studio: model job-finder was unloaded (got an answer from …), evaluation stopped» |
 | любое другое исключение | `_run` | «Update failed, see job_finder.log» |
 
 Во всех случаях подробности с трассировкой — в `job_finder.log`.

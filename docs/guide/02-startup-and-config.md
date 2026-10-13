@@ -137,7 +137,7 @@ return lock if lock.tryLock(0) else None
 
 | Настройка | Значение | Смысл |
 |---|---|---|
-| `MIN_SCORE` | `5` | В таблице только вакансии с оценкой ≥ 5. Используется в `window.load_rows`, `window.on_evaluated`, `worker._refresh` (итог «X подходящих»). Это только фильтр показа: при изменении ничего не переоценивается. |
+| `MIN_SCORE` | `5` | В таблице только вакансии с оценкой ≥ 5. Используется в `window.load_rows`, `window.on_evaluated`, `worker._refresh` (итог «Done: X matches…»). Это только фильтр показа: при изменении ничего не переоценивается. |
 | `STALE_DAYS` | `14` | Отклик со статусом «Waiting» дольше этого числа дней подсвечивается янтарным: число в колонке «Days waiting», плашка и подсказка в карточке (`window.render_applied`, `window.show_details`). |
 
 ### LM Studio и модель

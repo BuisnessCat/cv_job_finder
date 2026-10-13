@@ -202,7 +202,7 @@ for name, fetch in SOURCES:
     try:
         fetched[name] = fetch()
     except Exception as error:
-        log.exception("Источник %s не загрузился", name)
+        log.exception("Source %s failed to load", name)
         errors[name] = str(error)[:150]
 return dedupe(fetched), errors
 ```

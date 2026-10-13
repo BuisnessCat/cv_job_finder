@@ -85,8 +85,8 @@ item                 = "SQLAlchemy 2.0 ORM — models"
   пропускать вакансии.
 - `splitlines()` понимает и `\n`, и `\r\n` (файлы из Windows). BOM в начале файла попадает только
   в первую строку (`# Master CV`) и ничего не ломает — это проверяет тест.
-- Если раздела нет или он пустой — возвращается `[]`, и `worker` сообщает «В master_cv.md не найден
-  раздел Skills, оценка не запущена».
+- Если раздела нет или он пустой — возвращается `[]`, и `worker` сообщает «No Skills section in
+  master_cv.md, evaluation skipped».
 
 ## `matches(job, skills)` — [строка 27](../../job_finder/skills.py#L27)
 
