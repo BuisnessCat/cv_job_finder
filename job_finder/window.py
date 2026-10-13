@@ -1,4 +1,4 @@
-"""Главное окно: найденные вакансии и отклики, карточка с разбором выбранной."""
+"""Main window: found jobs and applications, a card with the selected job's analysis."""
 from datetime import date
 
 from PySide6.QtCore import Qt, QTimer, QUrl
@@ -17,15 +17,15 @@ APPLIED_COLUMNS = ["Applied", "Job", "Company", "Status", "Days waiting", "Score
 LISTS = [("have", "YOU HAVE", "✓"), ("missing", "MISSING", "✕"), ("risks", "RISKS", "!")]
 EMPTY_LIST = {"have": "—", "missing": "Nothing major"}
 STATUS_TEXT = {"applied": "Waiting", "accepted": "Accepted", "rejected": "Rejected"}
-REPOST_MARK = "↻ "  # перед названием найденной вакансии, на которую уже был отклик
-NEW_MARK = "• "  # перед названием вакансии, появившейся после прошлого закрытия окна
+REPOST_MARK = "↻ "  # before the title of a found job you already applied to
+NEW_MARK = "• "  # before the title of a job that appeared after the window was last closed
 
 
 def _label(name: str = "") -> QLabel:
-    """Подпись с обычным текстом; name — имя для стилей из style.py."""
+    """A label with plain text; name: the style name from style.py."""
     label = QLabel()
     label.setObjectName(name)
-    label.setTextFormat(Qt.PlainText)  # только обычный текст, без HTML
+    label.setTextFormat(Qt.PlainText)  # plain text only, no HTML
     label.setWordWrap(True)
     label.setTextInteractionFlags(Qt.TextSelectableByMouse)
     return label
@@ -38,7 +38,7 @@ def _caption(text: str) -> QLabel:
 
 
 def _make_table(columns: list[str], center: int) -> QTableWidget:
-    """Таблица в общем стиле: выбор строки целиком, без сетки; колонка center (оценка) — по центру."""
+    """A table in the common style: whole-row selection, no grid; the center column (score) is centered."""
     table = QTableWidget(0, len(columns))
     table.setHorizontalHeaderLabels(columns)
     table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -51,14 +51,14 @@ def _make_table(columns: list[str], center: int) -> QTableWidget:
     header = table.horizontalHeader()
     header.setSectionResizeMode(QHeaderView.ResizeToContents)
     header.setSectionResizeMode(1, QHeaderView.Stretch)
-    # Заголовки — по тому же краю, что и текст в ячейках
+    # Headers aligned to the same edge as the cell text
     header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
     table.horizontalHeaderItem(center).setTextAlignment(Qt.AlignCenter)
     return table
 
 
 def _score_item(score: int) -> QTableWidgetItem:
-    """Ячейка оценки: по центру, жирная, цветом по оценке."""
+    """Score cell: centered, bold, colored by score."""
     item = QTableWidgetItem(str(score))
     item.setTextAlignment(Qt.AlignCenter)
     item.setForeground(QColor(style.score_colors(score)[1]))
@@ -69,7 +69,7 @@ def _score_item(score: int) -> QTableWidgetItem:
 
 
 def _fill_table(table: QTableWidget, rows: list[dict], values, selected_url: str | None) -> None:
-    """Заполнить таблицу: values(row) — ячейки строки (текст или готовые QTableWidgetItem); выделение по url."""
+    """Fill a table: values(row) gives the row cells (text or ready QTableWidgetItem); selection by url."""
     table.blockSignals(True)
     table.clearSelection()
     table.setRowCount(len(rows))
@@ -82,7 +82,7 @@ def _fill_table(table: QTableWidget, rows: list[dict], values, selected_url: str
 
 
 def days_waiting(applied_at: str, today: date) -> int:
-    """Сколько дней прошло с отклика."""
+    """Days since the application."""
     return (today - date.fromisoformat(applied_at)).days
 
 
@@ -96,11 +96,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Job Finder")
         self.resize(1200, 750)
-        self.rows: list[dict] = []        # найденные вакансии в порядке показа
-        self.applied: list[dict] = []     # отклики, новые сверху
-        self.applied_by_key: dict[tuple[str, str], dict] = {}  # последний отклик по «компания + название»
-        self.new_urls: set[str] = set()  # непросмотренные: появились после прошлого закрытия окна
-        self.current: dict | None = None  # выбранная строка: найденная вакансия или отклик (есть ключ status)
+        self.rows: list[dict] = []        # found jobs in display order
+        self.applied: list[dict] = []     # applications, newest first
+        self.applied_by_key: dict[tuple[str, str], dict] = {}  # latest application by "company + title"
+        self.new_urls: set[str] = set()  # unseen: appeared after the window was last closed
+        self.current: dict | None = None  # selected row: a found job or an application (has a status key)
 
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.setObjectName("primary")
@@ -109,7 +109,7 @@ class MainWindow(QMainWindow):
         self.found_tab.setObjectName("segmentLeft")
         self.applied_tab = QPushButton()
         self.applied_tab.setObjectName("segmentRight")
-        self.tabs = QButtonGroup(self)  # переключатель «Найденные | Мои отклики»: нажата ровно одна кнопка
+        self.tabs = QButtonGroup(self)  # the "Found | My applications" switch: exactly one button is checked
         for index, button in enumerate((self.found_tab, self.applied_tab)):
             button.setCheckable(True)
             self.tabs.addButton(button, index)
@@ -125,7 +125,7 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.cv_button = QPushButton("My CV")
         self.cv_button.clicked.connect(self.show_cv)
-        self.cv_window = None  # окно «Резюме» создаётся при первом нажатии
+        self.cv_window = None  # the "My CV" window is created on first click
         top = QHBoxLayout()
         top.addWidget(self.refresh_button)
         top.addSpacing(style.GAP)
@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
         self.table.itemSelectionChanged.connect(self.on_select)
         self.applied_table = _make_table(APPLIED_COLUMNS, 5)
         self.applied_table.itemSelectionChanged.connect(self.on_select_applied)
-        self.lists = QStackedWidget()  # 0 — найденные, 1 — отклики
+        self.lists = QStackedWidget()  # 0: found, 1: applications
         self.lists.addWidget(self.table)
         self.lists.addWidget(self.applied_table)
 
@@ -166,10 +166,10 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self.on_finished)
 
         self.load_rows()
-        QTimer.singleShot(0, self.refresh)  # обновление сразу после показа окна
+        QTimer.singleShot(0, self.refresh)  # refresh right after the window is shown
 
     def _build_details(self) -> QWidget:
-        """Карточка деталей: шапка с оценкой, плашки отклика, факты, «почему», списки; кнопки — внизу."""
+        """Details card: header with the score, application pills, facts, "why", lists; buttons at the bottom."""
         self.d_title = _label("title")
         self.d_company = _label("company")
         self.badge = QFrame()
@@ -192,18 +192,18 @@ class MainWindow(QMainWindow):
         head.addLayout(names, 1)
         head.addWidget(self.badge, 0, Qt.AlignTop)
 
-        self.d_status = _label()  # плашка «Отклик ГГГГ-ММ-ДД · статус» — только у откликов
+        self.d_status = _label()  # pill "Applied YYYY-MM-DD · status", applications only
         self.d_status.setWordWrap(False)
-        self.d_notice = _label("notice")  # «Вы уже подавались…» — только у перепубликованных вакансий
-        self.d_stale = _label("staleHint")  # «Больше N дней без ответа…» — под плашкой отклика
+        self.d_notice = _label("notice")  # "You already applied…", reposted jobs only
+        self.d_stale = _label("staleHint")  # "No reply for over N days…", under the application pill
         self.d_stale.setText(f"No reply for over {config.STALE_DAYS} days — time to follow up"
                              " or close it")
-        self.notes = QPlainTextEdit()  # заметка к отклику, сохраняется сама
+        self.notes = QPlainTextEdit()  # application notes, saved automatically
         self.notes.setObjectName("notes")
         self.notes.setFixedHeight(70)
         self.notes.setPlaceholderText("Who you talked to, when the interview is…")
-        self.notes_url: str | None = None  # отклик, к которому относится текст в поле
-        self.notes_timer = QTimer(self)  # сохранить через 0,5 с после последнего нажатия клавиши
+        self.notes_url: str | None = None  # the application the text in the field belongs to
+        self.notes_timer = QTimer(self)  # save 0.5 s after the last key press
         self.notes_timer.setSingleShot(True)
         self.notes_timer.setInterval(500)
         self.notes_timer.timeout.connect(self.save_notes)
@@ -236,7 +236,7 @@ class MainWindow(QMainWindow):
         box.setContentsMargins(20, 18, 20, 18)
         box.setSpacing(0)
         box.addLayout(head)
-        box.addWidget(self.d_status, 0, Qt.AlignLeft)  # отступ сверху — в стиле плашки, у скрытой его нет
+        box.addWidget(self.d_status, 0, Qt.AlignLeft)  # top margin is in the pill style, a hidden pill has none
         box.addWidget(self.d_stale)
         box.addWidget(self.notes_box)
         box.addWidget(self.d_notice)
@@ -288,7 +288,7 @@ class MainWindow(QMainWindow):
         self.found_buttons = (self.apply_button, self.hide_button)
         self.applied_buttons = (self.waiting_button, self.accept_button, self.reject_button, self.unapply_button)
         for button in self.applied_buttons:
-            button.hide()  # иначе ширина карточки при первой раскладке считается по всем кнопкам сразу
+            button.hide()  # otherwise the first layout sizes the card for all buttons at once
         self.d_stale.hide()
         self.notes_box.hide()
         footer = QWidget()
@@ -314,25 +314,25 @@ class MainWindow(QMainWindow):
         empty.setObjectName("empty")
         QVBoxLayout(empty_page).addWidget(empty)
 
-        self.pages = QStackedWidget()  # 0 — ничего не выбрано, 1 — разбор вакансии
+        self.pages = QStackedWidget()  # 0: nothing selected, 1: job analysis
         self.pages.addWidget(empty_page)
         self.pages.addWidget(details_page)
         card = QFrame()
         card.setObjectName("card")
         card_box = QVBoxLayout(card)
-        card_box.setContentsMargins(1, 1, 1, 1)  # не закрывать рамку карточки
+        card_box.setContentsMargins(1, 1, 1, 1)  # do not cover the card border
         card_box.addWidget(self.pages)
         self.show_details(None)
         return card
 
     def _fill_list(self, key: str, mark: str, items: list[str]) -> None:
-        """Заполнить список «есть / не хватает / может отсечь» строками с цветным значком."""
+        """Fill a "you have / missing / risks" list with rows that have a colored marker."""
         header, caption, rows = self.detail_lists[key]
         header.setText(f"{caption} · {len(items)}" if items else caption)
         while rows.count():
             line = rows.takeAt(0).layout()
             while line.count():
-                line.takeAt(0).widget().setParent(None)  # убрать из окна сразу, а не после deleteLater
+                line.takeAt(0).widget().setParent(None)  # remove from the window now, not after deleteLater
         color = style.LIST_COLORS[key]
         if not items and key == "risks":
             items, mark, color = ["No blockers found"], "✓", style.LIST_COLORS["have"]
@@ -351,22 +351,22 @@ class MainWindow(QMainWindow):
             rows.addLayout(line)
 
     def _previous_application(self, row: dict) -> dict | None:
-        """Отклик на вакансию с той же компанией и названием (перепубликованная вакансия) или None."""
+        """The application to a job with the same company and title (a reposted job) or None."""
         return self.applied_by_key.get(sources.same_job_key(row["company"], row["title"]))
 
     def load_rows(self) -> None:
-        """Перечитать из базы найденные (оценки по текущему резюме) и отклики."""
+        """Re-read found jobs (scored under the current CV) and applications from the database."""
         cv = read_cv()
         self.rows = db.list_jobs(cv[1], config.MIN_SCORE) if cv else []
         self.applied = db.list_applied()
-        # reversed: при нескольких откликах с одним ключом остаётся самый новый
+        # reversed: with several applications under one key, the newest stays
         self.applied_by_key = {sources.same_job_key(r["company"], r["title"]): r for r in reversed(self.applied)}
         self.new_urls = db.unseen_urls()
         self.render()
         self.render_applied()
 
     def render(self) -> None:
-        """Перерисовать найденные, сохранив выделение; отклик в карточке не трогать."""
+        """Redraw found jobs keeping the selection; leave an application in the card alone."""
         selected = self.current["url"] if self.current and "status" not in self.current else None
 
         def values(row):
@@ -386,7 +386,7 @@ class MainWindow(QMainWindow):
             self.show_details(None)
 
     def render_applied(self) -> None:
-        """Перерисовать отклики, сохранив выделение; найденную вакансию в карточке не трогать."""
+        """Redraw applications keeping the selection; leave a found job in the card alone."""
         selected = self.current["url"] if self.current and "status" in self.current else None
 
         today = date.today()
@@ -408,7 +408,7 @@ class MainWindow(QMainWindow):
             self.show_details(None)
 
     def show_tab(self, index: int) -> None:
-        """Переключить список слева: 0 — найденные, 1 — мои отклики."""
+        """Switch the list on the left: 0 for found jobs, 1 for my applications."""
         self.lists.setCurrentIndex(index)
         self.tabs.button(index).setChecked(True)
         for table in (self.table, self.applied_table):
@@ -424,7 +424,7 @@ class MainWindow(QMainWindow):
         self.show_details(self.applied[indexes[0].row()] if indexes else None)
 
     def show_details(self, row: dict | None) -> None:
-        self.save_notes()  # не потерять заметку прошлого отклика
+        self.save_notes()  # do not lose the previous application's note
         self.current = row
         self.pages.setCurrentIndex(0 if row is None else 1)
         if row is None:
@@ -464,7 +464,7 @@ class MainWindow(QMainWindow):
             self.d_status.setStyleSheet(f"background: {pill_background}; color: {pill_color};"
                                         " border-radius: 6px; padding: 6px 12px; font-weight: 600; margin-top: 12px;")
             self.notes_url = row["url"]
-            self.notes.blockSignals(True)  # подстановка текста — не правка, таймер сохранения не нужен
+            self.notes.blockSignals(True)  # filling in text is not an edit, no save timer needed
             self.notes.setPlainText(row["notes"])
             self.notes.blockSignals(False)
         else:
@@ -483,7 +483,7 @@ class MainWindow(QMainWindow):
 
     def refresh(self) -> None:
         self.refresh_button.setEnabled(False)
-        self.load_rows()  # если резюме изменилось, старые оценки уходят из списка
+        self.load_rows()  # if the CV changed, old scores leave the list
         self.worker.start()
 
     def on_progress(self, done: int, total: int) -> None:
@@ -497,17 +497,17 @@ class MainWindow(QMainWindow):
             return
         self.rows.append(row)
         self.rows.sort(key=lambda r: (r["score"], r["published"]), reverse=True)
-        self.new_urls = db.unseen_urls()  # вакансия могла появиться в базе уже после загрузки списка
+        self.new_urls = db.unseen_urls()  # the job may have reached the database after the list was loaded
         self.render()
 
     def on_finished(self) -> None:
         self.progress.hide()
         self.refresh_button.setEnabled(True)
-        self.load_rows()  # убрать вакансии, которые пропали из источника или отсеяны по месту
+        self.load_rows()  # drop jobs that vanished from the source or were filtered out by location
 
     def show_cv(self) -> None:
-        """Показать окно «Резюме» с актуальной версией файла; окно одно на всё приложение."""
-        # Импорт здесь, а не наверху: cv_window сам берёт _label из этого модуля
+        """Show the "My CV" window with the current file; one window for the whole app."""
+        # Imported here, not at the top: cv_window itself takes _label from this module
         from job_finder.cv_window import CvWindow
         if self.cv_window is None:
             self.cv_window = CvWindow(self)
@@ -527,26 +527,26 @@ class MainWindow(QMainWindow):
         self.render()
 
     def apply_job(self) -> None:
-        """«Подался»: вакансия уходит из найденных во вкладку «Мои отклики»."""
+        """I applied: the job moves from found to the "My applications" tab."""
         db.apply(self.current["url"])
         self.show_details(None)
         self.load_rows()
 
     def set_status(self, status: str) -> None:
-        """Отметить итог отклика; карточка остаётся на этом отклике и показывает новый статус."""
+        """Mark the application outcome; the card stays on this application and shows the new status."""
         url = self.current["url"]
         db.set_status(url, status)
         self.load_rows()
         self.show_details(next(row for row in self.applied if row["url"] == url))
 
     def unapply_job(self) -> None:
-        """«Вернуть в найденные» — на случай, если «Подался» нажали по ошибке."""
+        """Back to found, in case "I applied" was clicked by mistake."""
         db.unapply(self.current["url"])
         self.show_details(None)
         self.load_rows()
 
     def save_notes(self) -> None:
-        """Записать заметку отклика, открытого в карточке, если текст менялся."""
+        """Save the note of the application open in the card if the text changed."""
         self.notes_timer.stop()
         if self.notes_url is None:
             return
@@ -559,7 +559,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self.save_notes()
-        db.mark_all_seen()  # при следующем запуске новыми будут только вакансии, пришедшие после этого
+        db.mark_all_seen()  # on the next start only jobs arriving after this will be new
         if self.worker.model_loaded:
-            llm.release(wait=False)  # не ждём: окно должно закрыться сразу
+            llm.release(wait=False)  # do not wait: the window must close right away
         event.accept()

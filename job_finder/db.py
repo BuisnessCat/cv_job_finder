@@ -1,4 +1,4 @@
-"""Хранение вакансий и оценок в одном файле SQLite."""
+"""Jobs and evaluations stored in a single SQLite file."""
 import json
 import sqlite3
 from contextlib import contextmanager
@@ -19,29 +19,29 @@ CREATE TABLE IF NOT EXISTS jobs (
     description TEXT NOT NULL,
     active      INTEGER NOT NULL DEFAULT 1,
     hidden      INTEGER NOT NULL DEFAULT 0,
-    score       INTEGER,            -- NULL, пока не оценена
-    evaluation  TEXT,               -- JSON-ответ модели
-    cv_hash     TEXT,               -- ключ оценки: SHA-256 резюме, модели и правил
-    status      TEXT,               -- отклик: NULL, 'applied', 'accepted', 'rejected'
-    applied_at  TEXT,               -- дата отклика YYYY-MM-DD
-    notes       TEXT,               -- заметка к отклику
-    seen        INTEGER NOT NULL DEFAULT 0  -- 0 — появилась после прошлого закрытия окна (новая)
+    score       INTEGER,            -- NULL until evaluated
+    evaluation  TEXT,               -- the model's JSON answer
+    cv_hash     TEXT,               -- evaluation key: SHA-256 of the CV, model and rules
+    status      TEXT,               -- application: NULL, 'applied', 'accepted', 'rejected'
+    applied_at  TEXT,               -- application date YYYY-MM-DD
+    notes       TEXT,               -- application notes
+    seen        INTEGER NOT NULL DEFAULT 0  -- 0: appeared after the window was last closed (new)
 )
 """
 
-# Порядок совпадает с полями Job
+# Same order as the Job fields
 JOB_FIELDS = "url, source, title, company, city, published, description"
 
-STATUSES = ("applied", "accepted", "rejected")  # ждём ответа, приняли, отказали
+STATUSES = ("applied", "accepted", "rejected")  # waiting, accepted, rejected
 
 
 @contextmanager
 def _connect():
-    # Своё короткое соединение на каждый вызов: базой пользуются и окно, и фоновый поток
+    # A short connection per call: both the window and the background thread use the database
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
-        with conn:  # коммит или откат транзакции
+        with conn:  # commit or roll back the transaction
             yield conn
     finally:
         conn.close()
@@ -50,18 +50,18 @@ def _connect():
 def init() -> None:
     with _connect() as conn:
         conn.execute(SCHEMA)
-        # База, созданная до новых колонок: добавить недостающие, вакансии и оценки сохраняются
+        # A database created before the newer columns: add the missing ones, jobs and evaluations are kept
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
         for column in ("status", "applied_at", "notes"):
             if column not in columns:
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} TEXT")
         if "seen" not in columns:
             conn.execute("ALTER TABLE jobs ADD COLUMN seen INTEGER NOT NULL DEFAULT 0")
-            conn.execute("UPDATE jobs SET seen = 1")  # имевшиеся вакансии — уже просмотренные, не новые
+            conn.execute("UPDATE jobs SET seen = 1")  # existing jobs count as already seen, not new
 
 
 def save_jobs(source: str, jobs: list[Job]) -> None:
-    """Записать свежую выборку источника; его вакансии, которых в ней нет, становятся неактивными."""
+    """Store a source's fresh batch; its jobs missing from the batch become inactive."""
     with _connect() as conn:
         conn.execute("UPDATE jobs SET active = 0 WHERE source = ?", (source,))
         conn.executemany(
@@ -76,7 +76,7 @@ def save_jobs(source: str, jobs: list[Job]) -> None:
 
 
 def pending_jobs(cv_hash: str) -> list[Job]:
-    """Активные нескрытые вакансии без отклика и без оценки по текущему ключу, сначала самые новые."""
+    """Active, not hidden jobs with no application and no evaluation under the current key, newest first."""
     with _connect() as conn:
         rows = conn.execute(
             f"""SELECT {JOB_FIELDS} FROM jobs
@@ -101,46 +101,46 @@ def hide(url: str) -> None:
 
 
 def apply(url: str) -> None:
-    """«Подался»: вакансия уходит из найденных в отклики со статусом «ждём ответа» и сегодняшней датой."""
+    """I applied: the job moves from found to applications with status "waiting" and today's date."""
     with _connect() as conn:
         conn.execute("UPDATE jobs SET status = 'applied', applied_at = ? WHERE url = ?",
                      (date.today().isoformat(), url))
 
 
 def set_status(url: str, status: str) -> None:
-    """Итог отклика: один из STATUSES; дата отклика не меняется."""
+    """Outcome of an application: one of STATUSES; the application date does not change."""
     with _connect() as conn:
         conn.execute("UPDATE jobs SET status = ? WHERE url = ?", (status, url))
 
 
 def unapply(url: str) -> None:
-    """«Вернуть в найденные»: убрать статус и дату отклика."""
+    """Back to found: clear the application status and date."""
     with _connect() as conn:
         conn.execute("UPDATE jobs SET status = NULL, applied_at = NULL WHERE url = ?", (url,))
 
 
 def set_notes(url: str, notes: str) -> None:
-    """Заметка к отклику: с кем общались, когда собеседование."""
+    """Application notes: who you talked to, when the interview is."""
     with _connect() as conn:
         conn.execute("UPDATE jobs SET notes = ? WHERE url = ?", (notes, url))
 
 
 def mark_all_seen() -> None:
-    """Отметить просмотренными (при закрытии окна) все оценённые вакансии: новыми станут только пришедшие потом.
+    """Mark all evaluated jobs as seen (when the window closes): only jobs arriving later will be new.
 
-    Ещё не оценённые (ждали в очереди, LM Studio не поднялась) окно показать не могло — они остаются новыми."""
+    Jobs not evaluated yet (waiting in the queue, LM Studio did not start) were never shown, they stay new."""
     with _connect() as conn:
         conn.execute("UPDATE jobs SET seen = 1 WHERE seen = 0 AND score IS NOT NULL")
 
 
 def unseen_urls() -> set[str]:
-    """url вакансий, появившихся после прошлого закрытия окна."""
+    """URLs of jobs that appeared after the window was last closed."""
     with _connect() as conn:
         return {row["url"] for row in conn.execute("SELECT url FROM jobs WHERE seen = 0")}
 
 
 def count_evaluated(cv_hash: str) -> int:
-    """Сколько активных нескрытых вакансий оценено с текущим ключом."""
+    """How many active, not hidden jobs are evaluated under the current key."""
     with _connect() as conn:
         return conn.execute(
             "SELECT COUNT(*) FROM jobs WHERE active = 1 AND hidden = 0 AND status IS NULL AND cv_hash = ?",
@@ -149,14 +149,14 @@ def count_evaluated(cv_hash: str) -> int:
 
 
 def make_row(job: Job, evaluation: dict) -> dict:
-    """Строка для окна: поля вакансии без описания, оценка и разбор модели."""
+    """A row for the window: job fields without the description, the score and the model's analysis."""
     row = asdict(job)
     del row["description"]
     return {**row, "score": evaluation["score"], "evaluation": evaluation}
 
 
 def list_jobs(cv_hash: str, min_score: int) -> list[dict]:
-    """Вакансии для окна: оценка по текущему резюме не ниже порога, лучшие сверху."""
+    """Jobs for the window: scored under the current CV at or above the threshold, best first."""
     with _connect() as conn:
         rows = conn.execute(
             f"""SELECT {JOB_FIELDS}, evaluation FROM jobs
@@ -168,7 +168,7 @@ def list_jobs(cv_hash: str, min_score: int) -> list[dict]:
 
 
 def list_applied() -> list[dict]:
-    """Отклики для вкладки «Мои отклики»: все, новые сверху, независимо от active, hidden и ключа оценки."""
+    """Applications for the "My applications" tab: all, newest first, regardless of active, hidden and key."""
     with _connect() as conn:
         rows = conn.execute(
             f"""SELECT {JOB_FIELDS}, evaluation, status, applied_at, notes FROM jobs

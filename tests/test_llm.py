@@ -20,7 +20,7 @@ class FakeResponse:
 
 def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
     sent = {}
-    answer = {"score": "7", "summary": "Подходит", "have": ["Python"], "missing": ["Django"], "risks": []}
+    answer = {"score": "7", "summary": "Good fit", "have": ["Python"], "missing": ["Django"], "risks": []}
 
     def fake_post(url, **kwargs):
         sent.update(url=url, **kwargs)
@@ -30,14 +30,14 @@ def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
     job = Job(url="u", source="Jobicy", title="Python Dev", company="ACME", city="Prague",
               published="2026-10-01", description="x" * 20000)
 
-    result = llm.evaluate("МОЁ РЕЗЮМЕ", job)
+    result = llm.evaluate("MY CV", job)
 
     assert result == {**answer, "score": 7}
     assert sent["url"] == f"{config.LM_URL}/chat/completions"
     body = sent["json"]
     assert body["model"] == config.MODEL_ID
     assert body["response_format"]["type"] == "json_schema"
-    assert body["messages"][0]["content"].endswith("МОЁ РЕЗЮМЕ")
+    assert body["messages"][0]["content"].endswith("MY CV")
     user = body["messages"][1]["content"]
     assert "Python Dev" in user and "ACME" in user and "Prague" in user
     assert user.count("x") == config.MAX_DESCRIPTION_CHARS
@@ -46,7 +46,7 @@ def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
 
 
 def test_evaluate_rejects_answer_from_another_model(monkeypatch):
-    # Если нашу модель выгрузили (например, из окна LM Studio), сервер отвечает другой моделью
+    # If our model was unloaded (e.g. from the LM Studio window), the server answers with another model
     answer = {"score": 5, "summary": "", "have": [], "missing": [], "risks": []}
     monkeypatch.setattr(llm.requests, "post", lambda url, **kwargs: FakeResponse(
         {"model": "qwen/qwen3.8-27b", "choices": [{"message": {"content": json.dumps(answer)}}]}))
@@ -57,8 +57,8 @@ def test_evaluate_rejects_answer_from_another_model(monkeypatch):
 
 
 def test_prepare_starts_server_without_capturing_output(tmp_path, monkeypatch):
-    # Сервис LM Studio, запущенный командой, может унаследовать перехваченные каналы вывода,
-    # и тогда subprocess.run ждёт их закрытия бесконечно, несмотря на timeout
+    # The LM Studio service started by the command may inherit captured output pipes,
+    # and then subprocess.run waits for them to close forever, despite the timeout
     exe = tmp_path / "lms.exe"
     exe.write_text("")
     monkeypatch.setattr(config, "LMS_EXE", exe)

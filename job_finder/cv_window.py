@@ -1,4 +1,4 @@
-"""Окно «Резюме»: актуальный master_cv.md с оформлением, путь к файлу, дата изменения и навыки для отсева."""
+"""The "My CV" window: the current master_cv.md rendered, file path, modification date and filter skills."""
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QUrl
@@ -51,7 +51,7 @@ class CvWindow(QDialog):
         self.reload()
 
     def reload(self) -> None:
-        """Перечитать файл: окно всегда показывает текущую версию резюме."""
+        """Re-read the file: the window always shows the current version of the CV."""
         self.path_label.setText(str(config.CV_PATH))
         if not config.CV_PATH.exists():
             self.modified_label.setText("—")

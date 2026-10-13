@@ -18,7 +18,7 @@ def app():
 
 @pytest.fixture
 def cv_path(tmp_path, monkeypatch):
-    path = tmp_path / "master_cv.md"  # временное резюме, настоящий master_cv.md не трогаем
+    path = tmp_path / "master_cv.md"  # a temporary CV, the real master_cv.md is not touched
     monkeypatch.setattr(config, "CV_PATH", path)
     return path
 
@@ -67,7 +67,7 @@ def link_color(window):
 
 
 def test_links_use_theme_color(app, cv_path):
-    # Qt красит ссылки из Markdown цветом палитры приложения, поэтому тема задаёт его там
+    # Qt colors Markdown links from the app palette, so the theme sets the color there
     style.apply_app_theme(app)
     cv_path.write_text("Email: [me@example.cz](mailto:me@example.cz)", encoding="utf-8")
     assert link_color(CvWindow()) == style.COLORS["link"]

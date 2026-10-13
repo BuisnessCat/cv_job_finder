@@ -25,16 +25,16 @@ def test_model_lost_stops_evaluation(setup, monkeypatch):
 
     def lost(cv_text, job):
         calls.append(job.url)
-        raise llm.ModelLost("ответила qwen/qwen3.8-27b")
+        raise llm.ModelLost("got an answer from qwen/qwen3.8-27b")
 
     monkeypatch.setattr(llm, "evaluate", lost)
 
     message = worker.Worker()._refresh()
 
-    assert calls == ["u3"]  # остановились после первой же вакансии
+    assert calls == ["u3"]  # stopped after the very first job
     assert "qwen/qwen3.8-27b" in message
     assert setup == [True]
-    assert len(db.pending_jobs(worker.read_cv()[1])) == 3  # чужие оценки не сохранены
+    assert len(db.pending_jobs(worker.read_cv()[1])) == 3  # other models' scores are not saved
 
 
 def test_summary_counts_suitable_and_evaluated(setup, monkeypatch):
@@ -54,9 +54,9 @@ def test_missing_cv_skips_evaluation(setup, monkeypatch):
 def test_key_changes_with_cv_and_rules(setup, monkeypatch):
     key = worker.read_cv()[1]
     rules = llm.RULES
-    monkeypatch.setattr(llm, "RULES", rules + " другие правила")
+    monkeypatch.setattr(llm, "RULES", rules + " other rules")
     assert worker.read_cv()[1] != key
     monkeypatch.setattr(llm, "RULES", rules)
     assert worker.read_cv()[1] == key
-    config.CV_PATH.write_text("## Skills\n- SQL — x\n", encoding="utf-8")  # временное резюме из фикстуры
+    config.CV_PATH.write_text("## Skills\n- SQL — x\n", encoding="utf-8")  # temporary CV from the fixture
     assert worker.read_cv()[1] != key

@@ -1,4 +1,4 @@
-"""Точка входа: python -m job_finder (ярлык запускает её через pythonw.exe)."""
+"""Entry point: python -m job_finder (the shortcut runs it with pythonw.exe)."""
 import ctypes
 import logging
 import os
@@ -14,7 +14,7 @@ from job_finder.window import MainWindow
 
 
 def acquire_lock(path: Path) -> QLockFile | None:
-    """Блокировка «приложение уже открыто»; None, если её держит другой запущенный экземпляр."""
+    """The "app is already open" lock; None if another running instance holds it."""
     lock = QLockFile(str(path))
     return lock if lock.tryLock(0) else None
 
@@ -24,14 +24,14 @@ def main() -> None:
         filename=config.LOG_PATH, encoding="utf-8", level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    # У pythonw нет консоли: необработанные исключения пишем в лог
-    sys.excepthook = lambda *exc_info: logging.critical("Необработанное исключение", exc_info=exc_info)
-    # Свой идентификатор приложения: иначе Windows показывает на панели задач иконку pythonw.exe
+    # pythonw has no console: unhandled exceptions go to the log
+    sys.excepthook = lambda *exc_info: logging.critical("Unhandled exception", exc_info=exc_info)
+    # Our own app ID: otherwise Windows shows the pythonw.exe icon on the taskbar
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("job_finder.desktop")
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(config.ICON_PATH)))
     style.apply_app_theme(app)
-    # Второй двойной клик по ярлыку: два окна делили бы одну модель, и закрытие одного выгружало бы её у другого
+    # A second launch: two windows would share one model, and closing one would unload it for the other
     lock = acquire_lock(config.ROOT / "job_finder.lock")
     if lock is None:
         QMessageBox.information(None, "Job Finder", "Job Finder is already open.")
@@ -40,7 +40,7 @@ def main() -> None:
     window = MainWindow()
     window.show()
     code = app.exec()
-    # Выходим сразу, не дожидаясь фонового потока с текущим запросом к модели
+    # Exit right away without waiting for the background thread with the current model request
     os._exit(code)
 
 

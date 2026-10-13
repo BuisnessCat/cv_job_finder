@@ -1,5 +1,5 @@
-"""Единственное место вызова модели. Чтобы перейти на Claude API, достаточно переписать
-prepare / evaluate / release: prepare и release станут пустыми, evaluate будет вызывать API."""
+"""The only place that calls the model. To switch to the Claude API, it is enough to rewrite
+prepare / evaluate / release: prepare and release become empty, evaluate calls the API."""
 import json
 import logging
 import subprocess
@@ -67,19 +67,19 @@ Candidate's CV:
 
 
 def fingerprint() -> str:
-    """Что определяет оценку, кроме резюме: если это изменится, прежние оценки устарели."""
+    """What determines a score besides the CV: if it changes, earlier scores are outdated."""
     return f"{config.MODEL}\n{RULES}"
 
 
 class ModelLost(RuntimeError):
-    """Ответила не наша модель: её выгрузили из LM Studio посреди оценки (например, из окна чата)."""
+    """The answer came from another model: ours was unloaded from LM Studio mid-run (e.g. from its chat)."""
 
 
 def _lms(*args: str, timeout: int = 120) -> subprocess.CompletedProcess:
     return subprocess.run(
         [str(config.LMS_EXE), *args], stdin=subprocess.DEVNULL, capture_output=True,
         text=True, encoding="utf-8", errors="replace", timeout=timeout,
-        creationflags=subprocess.CREATE_NO_WINDOW,  # без мелькающих консолей
+        creationflags=subprocess.CREATE_NO_WINDOW,  # no flashing console windows
     )
 
 
@@ -92,12 +92,12 @@ def _server_up() -> bool:
 
 
 def prepare() -> None:
-    """Поднять сервер LM Studio и загрузить модель, если она ещё не загружена."""
+    """Start the LM Studio server and load the model if it is not loaded yet."""
     if not config.LMS_EXE.exists():
         raise RuntimeError(f"not found: {config.LMS_EXE}")
     if not _server_up():
-        # Вывод не перехватываем: запущенный командой сервис LM Studio унаследовал бы наши каналы,
-        # и subprocess.run ждал бы их закрытия бесконечно, несмотря на timeout
+        # Output is not captured: the LM Studio service started by the command would inherit our pipes,
+        # and subprocess.run would wait for them to close forever, despite the timeout
         subprocess.run(
             [str(config.LMS_EXE), "server", "start", "--port", str(config.LM_PORT)],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -109,7 +109,7 @@ def prepare() -> None:
                 raise RuntimeError("server did not start within 30 s")
             time.sleep(1)
     if config.MODEL_ID not in _lms("ps", "--json").stdout:
-        # --ttl: если приложение закроется посреди загрузки, LM Studio сама выгрузит модель
+        # --ttl: if the app closes in the middle of loading, LM Studio unloads the model by itself
         result = _lms(
             "load", config.MODEL, "--identifier", config.MODEL_ID,
             "--context-length", str(config.CONTEXT_LENGTH), "--gpu", "max", "--ttl", "300", "-y",
@@ -120,7 +120,7 @@ def prepare() -> None:
 
 
 def evaluate(cv_text: str, job: Job) -> dict:
-    """Оценить одну вакансию: score, summary, have, missing, risks."""
+    """Evaluate one job: score, summary, have, missing, risks."""
     vacancy = (
         f"Title: {job.title}\nCompany: {job.company}\nLocation: {job.city}\nSource: {job.source}\n\n"
         f"{job.description[:config.MAX_DESCRIPTION_CHARS]}"
@@ -144,7 +144,7 @@ def evaluate(cv_text: str, job: Job) -> dict:
     )
     response.raise_for_status()
     data = response.json()
-    # Без нашей модели LM Studio молча отвечает любой загруженной — такой ответ не годится
+    # Without our model LM Studio silently answers with any loaded one: such an answer is useless
     if data.get("model") != config.MODEL_ID:
         raise ModelLost(f"model {config.MODEL_ID} was unloaded (got an answer from {data.get('model')}), "
                         "evaluation stopped")
@@ -154,7 +154,7 @@ def evaluate(cv_text: str, job: Job) -> dict:
 
 
 def release(wait: bool = True) -> None:
-    """Выгрузить модель из видеопамяти. wait=False — не ждать завершения (при закрытии окна)."""
+    """Unload the model from VRAM. wait=False: do not wait for it to finish (when the window closes)."""
     try:
         if wait:
             _lms("unload", config.MODEL_ID)
@@ -165,4 +165,4 @@ def release(wait: bool = True) -> None:
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
     except (OSError, subprocess.SubprocessError):
-        log.exception("Не удалось выгрузить модель")
+        log.exception("Failed to unload model")

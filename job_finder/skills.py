@@ -1,11 +1,11 @@
-"""Отсев вакансий без ИИ: есть ли в вакансии хоть один навык из master_cv.md."""
+"""Filtering jobs without AI: does the job mention at least one skill from master_cv.md."""
 import re
 
 from job_finder.sources import Job
 
 
 def load_skills(cv_text: str) -> list[str]:
-    """Навыки из раздела «## Skills»: часть строки до « — », через запятую, первое слово элемента."""
+    """Skills from the "## Skills" section: line part before " — ", split by commas, first word of each."""
     skills = []
     in_skills = False
     for line in cv_text.splitlines():
@@ -25,6 +25,6 @@ def load_skills(cv_text: str) -> list[str]:
 
 
 def matches(job: Job, skills: list[str]) -> bool:
-    """Есть ли хоть один навык в названии или описании — целым словом, без учёта регистра."""
+    """Whether at least one skill appears in the title or description: whole word, case-insensitive."""
     text = f"{job.title}\n{job.description}"
     return any(re.search(rf"(?<!\w){re.escape(skill)}(?!\w)", text, re.IGNORECASE) for skill in skills)

@@ -102,14 +102,14 @@ def test_apply_moves_job_out_of_found_list():
         ("a", "applied", date.today().isoformat())]
     assert applied[0]["evaluation"]["score"] == 8
     assert db.count_evaluated("h1") == 1
-    assert urls(db.pending_jobs("h2")) == ["b"]  # отклик не оценивается заново даже после смены ключа
+    assert urls(db.pending_jobs("h2")) == ["b"]  # an application is not re-evaluated even after the key changes
 
 
 def test_application_survives_deactivation_and_new_key():
     db.save_jobs("Jobicy", [job("a"), job("b")])
     db.save_evaluation("a", evaluation(8), "h1")
     db.apply("a")
-    db.save_jobs("Jobicy", [job("b")])  # «a» пропала с сайта
+    db.save_jobs("Jobicy", [job("b")])  # "a" vanished from the site
     assert [row["url"] for row in db.list_applied()] == ["a"]
 
 
@@ -129,7 +129,7 @@ def test_unapply_gone_job_leaves_both_lists():
     db.save_jobs("Jobicy", [job("a")])
     db.save_evaluation("a", evaluation(8), "h1")
     db.apply("a")
-    db.save_jobs("Jobicy", [])  # вакансия пропала с сайта
+    db.save_jobs("Jobicy", [])  # the job vanished from the site
     db.unapply("a")
     assert db.list_applied() == []
     assert db.list_jobs("h1", 5) == []
@@ -148,7 +148,7 @@ def test_init_adds_columns_to_old_database(tmp_path, monkeypatch):
     conn.close()
     monkeypatch.setattr(config, "DB_PATH", old)
     db.init()
-    assert [row["url"] for row in db.list_jobs("h1", 5)] == ["a"]  # данные сохранились
+    assert [row["url"] for row in db.list_jobs("h1", 5)] == ["a"]  # data kept
     db.apply("a")
     assert db.list_applied()[0]["status"] == "applied"
 
@@ -157,10 +157,10 @@ def test_new_rows_are_unseen_until_marked():
     db.save_jobs("Jobicy", [job("a"), job("b")])
     assert db.unseen_urls() == {"a", "b"}
     db.save_evaluation("a", evaluation(8), "h1")
-    db.save_evaluation("b", evaluation(3), "h1")  # оценена, но ниже порога — тоже просмотрена
+    db.save_evaluation("b", evaluation(3), "h1")  # evaluated but below the threshold: also seen
     db.mark_all_seen()
     assert db.unseen_urls() == set()
-    db.save_jobs("Jobicy", [job("a"), job("c")])  # «a» уже была — остаётся просмотренной
+    db.save_jobs("Jobicy", [job("a"), job("c")])  # "a" was already there: stays seen
     assert db.unseen_urls() == {"c"}
 
 
@@ -178,7 +178,7 @@ def test_init_marks_existing_rows_seen(tmp_path, monkeypatch):
     conn.close()
     monkeypatch.setattr(config, "DB_PATH", old)
     db.init()
-    assert db.unseen_urls() == set()  # имевшиеся вакансии не «засвечиваются» новыми
+    assert db.unseen_urls() == set()  # existing jobs do not light up as new
     assert [row["url"] for row in db.list_jobs("h1", 5)] == ["a"]
     db.save_jobs("Jobicy", [job("a"), job("b")])
     assert db.unseen_urls() == {"b"}
@@ -189,12 +189,12 @@ def test_notes_saved_and_listed():
     db.save_evaluation("a", evaluation(8), "h1")
     db.apply("a")
     assert db.list_applied()[0]["notes"] == ""
-    db.set_notes("a", "Писал HR 30.09")
-    assert db.list_applied()[0]["notes"] == "Писал HR 30.09"
+    db.set_notes("a", "Emailed HR on 30.09")
+    assert db.list_applied()[0]["notes"] == "Emailed HR on 30.09"
 
 
 def test_mark_all_seen_keeps_unevaluated_jobs_new():
-    # Закрыли окно, пока вакансия ждала оценки (или LM Studio не поднялась): она ещё не показывалась
+    # The window was closed while the job waited for evaluation (or LM Studio did not start): never shown
     db.save_jobs("Jobicy", [job("shown"), job("queued")])
     db.save_evaluation("shown", evaluation(8), "h1")
     db.mark_all_seen()
@@ -202,8 +202,8 @@ def test_mark_all_seen_keeps_unevaluated_jobs_new():
 
 
 def test_refetch_rewrites_city():
-    # Rows saved before the English UI keep Russian place names until the next fetch rewrites them
-    db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Job a", company="ACME", city="Удалённо",
+    # Rows saved before the English UI keep old place names ("Praha") until the next fetch rewrites them
+    db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Job a", company="ACME", city="Praha",
                                 published="2026-10-01", description="Python")])
     db.save_evaluation("a", evaluation(8), "h1")
     db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Job a", company="ACME", city="Remote",

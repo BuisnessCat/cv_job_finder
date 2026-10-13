@@ -1,40 +1,40 @@
-"""Оформление окна: тёмная тема с зелёным акцентом. Чтобы сменить тему, достаточно поменять цвета здесь."""
+"""Window look: a dark theme with a green accent. To change the theme, change the colors here."""
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPalette
 
 COLORS = {
-    "bg": "#1b1d23",           # фон окна
-    "panel": "#24272f",        # карточки: таблица и детали
+    "bg": "#1b1d23",           # window background
+    "panel": "#24272f",        # cards: table and details
     "border": "#323641",
-    "scroll": "#4b5060",       # ползунок прокрутки
+    "scroll": "#4b5060",       # scrollbar handle
     "text": "#e5e7eb",
-    "muted": "#9ca3af",        # второстепенный текст
-    "accent": "#16a34a",       # кнопки «Обновить» и «Открыть вакансию», полоса прогресса
+    "muted": "#9ca3af",        # secondary text
+    "accent": "#16a34a",       # "Refresh" and "Open job" buttons, progress bar
     "accent_hover": "#15803d",
-    "accent_soft": "#1e3a2b",  # выделенная строка
-    "alt": "#272a33",          # чередование строк, блок «Почему такая оценка»
-    "link": "#4ade80",         # ссылки в окне «Резюме»
-    "notice_bg": "#3a2f12",    # жёлтая плашка «Вы уже подавались»
+    "accent_soft": "#1e3a2b",  # selected row
+    "alt": "#272a33",          # alternating rows, the "Why this score" block
+    "link": "#4ade80",         # links in the "My CV" window
+    "notice_bg": "#3a2f12",    # yellow "You already applied" notice
     "notice_text": "#fcd34d",
 }
 
-GAP = 12  # единый отступ: от краёв окна и между блоками
+GAP = 12  # one spacing: from the window edges and between blocks
 
-# Цвета значков в списках деталей: ✓ есть, ✕ не хватает, ! может отсечь
+# Marker colors in the detail lists: ✓ you have, ✕ missing, ! risks
 LIST_COLORS = {"have": "#4ade80", "missing": "#f87171", "risks": "#fbbf24"}
 
-# Цвета статуса отклика: (фон плашки, цвет текста) — ждём ответа, приняли, отказали
+# Application status colors: (pill background, text color) for waiting, accepted, rejected
 STATUS_COLORS = {"applied": ("#0c4a6e", "#7dd3fc"), "accepted": ("#14532d", "#4ade80"),
                  "rejected": ("#7f1d1d", "#fca5a5")}
 
-# Цвета оценки: (фон плашки, цвет текста)
+# Score colors: (pill background, text color)
 _GOOD = ("#14532d", "#4ade80")
 _OK = ("#0c4a6e", "#7dd3fc")
 _MAYBE = ("#713f12", "#fcd34d")
 
 
 def score_colors(score: int) -> tuple[str, str]:
-    """Цвета оценки: 8–10 зелёный, 7 синий, ниже — янтарный."""
+    """Score colors: 8–10 green, 7 blue, lower amber."""
     if score >= 8:
         return _GOOD
     if score >= 7:
@@ -92,10 +92,10 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: tran
 
 
 def apply_app_theme(app) -> None:
-    """Тема на уровне всего приложения: то, что не задаётся стилями окна."""
-    # Тёмная схема Qt: тёмные заголовок окна, полосы прокрутки и диалоги
+    """App-wide theme: what window style sheets cannot set."""
+    # Qt dark scheme: dark title bar, scrollbars and dialogs
     app.styleHints().setColorScheme(Qt.ColorScheme.Dark)
-    # Ссылки из Markdown (окно «Резюме») Qt красит цветом палитры приложения, а не стилями
+    # Qt colors Markdown links (the "My CV" window) from the app palette, not from style sheets
     palette = app.palette()
     palette.setColor(QPalette.Link, QColor(COLORS["link"]))
     app.setPalette(palette)

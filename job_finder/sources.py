@@ -1,4 +1,4 @@
-"""Источники вакансий: четыре агрегатора с открытым API."""
+"""Job sources: four aggregators with open APIs."""
 import csv
 import io
 import logging
@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from job_finder import config
 
 log = logging.getLogger(__name__)
-csv.field_size_limit(10_000_000)  # на случай очень длинных описаний в CSV junior.guru
+csv.field_size_limit(10_000_000)  # in case of very long descriptions in the junior.guru CSV
 HEADERS = {"User-Agent": "job-finder/1.0 (personal desktop app)"}
 
 
@@ -24,10 +24,10 @@ class Job:
     company: str
     city: str
     published: str  # YYYY-MM-DD
-    description: str  # обычный текст
+    description: str  # plain text
 
     def __post_init__(self):
-        # В ответах API бывают null: одна такая запись не должна ронять удаление дублей и запись в базу
+        # API answers contain nulls: one such record must not break deduplication and saving to the database
         for field in fields(self):
             if getattr(self, field.name) is None:
                 setattr(self, field.name, "")
@@ -38,10 +38,10 @@ def html_to_text(html: str | None) -> str:
 
 
 def parse_juniorguru(text: str) -> list[Job]:
-    """Только вакансии в Праге или удалённые: остальные источники и так отдают одну удалёнку."""
+    """Only jobs in Prague or remote: the other sources return remote jobs only anyway."""
     jobs = []
     for row in csv.DictReader(io.StringIO(text)):
-        # Регион надёжнее названия: у пражского района (например, «Háje») название без «Praha»
+        # A region is more reliable than a name: a Prague district (e.g. "Háje") has no "Praha" in its name
         regions = [value for key, value in row.items() if key.startswith("locations_") and key.endswith("_region")]
         if "Praha" in regions:
             city = "Prague"
@@ -103,7 +103,7 @@ def _get(url: str, params: dict | None = None) -> requests.Response:
 
 
 def fetch_juniorguru() -> list[Job]:
-    # Декодируем сами: так не зависим от заголовка ответа и убираем BOM
+    # Decode ourselves: this does not depend on the response header and strips the BOM
     return parse_juniorguru(_get(config.JUNIORGURU_URL).content.decode("utf-8-sig"))
 
 
@@ -111,7 +111,7 @@ def fetch_himalayas() -> list[Job]:
     jobs = []
     for page in range(1, config.HIMALAYAS_MAX_PAGES + 1):
         if page > 1:
-            time.sleep(1)  # Himalayas ограничивает частоту запросов
+            time.sleep(1)  # Himalayas rate-limits requests
         batch = parse_himalayas(_get(config.HIMALAYAS_URL, {**config.HIMALAYAS_PARAMS, "page": page}).json())
         if not batch:
             break
@@ -127,7 +127,7 @@ def fetch_workingnomads() -> list[Job]:
     return parse_workingnomads(_get(config.WORKINGNOMADS_URL).json())
 
 
-# Порядок — приоритет при удалении дублей
+# Order is the priority when removing duplicates
 SOURCES = [
     ("junior.guru", fetch_juniorguru),
     ("Himalayas", fetch_himalayas),
@@ -141,12 +141,12 @@ def _norm(text: str) -> str:
 
 
 def same_job_key(company: str, title: str) -> tuple[str, str]:
-    """Ключ «та же вакансия»: компания и название без учёта регистра и лишних пробелов."""
+    """Key for "the same job": company and title, ignoring case and extra spaces."""
     return _norm(company), _norm(title)
 
 
 def dedupe(fetched: dict[str, list[Job]]) -> dict[str, list[Job]]:
-    """Убрать повторы по «компания + название»; остаётся запись источника, который раньше в словаре."""
+    """Remove repeats by "company + title"; the record from the source earlier in the dict stays."""
     seen = set()
     result = {}
     for name, jobs in fetched.items():
@@ -160,12 +160,12 @@ def dedupe(fetched: dict[str, list[Job]]) -> dict[str, list[Job]]:
 
 
 def fetch_all() -> tuple[dict[str, list[Job]], dict[str, str]]:
-    """Загрузить все источники: (вакансии по источникам без дублей, ошибки по источникам)."""
+    """Fetch all sources: (jobs by source without duplicates, errors by source)."""
     fetched, errors = {}, {}
     for name, fetch in SOURCES:
         try:
             fetched[name] = fetch()
         except Exception as error:
-            log.exception("Источник %s не загрузился", name)
+            log.exception("Source %s failed to load", name)
             errors[name] = str(error)[:150]
     return dedupe(fetched), errors

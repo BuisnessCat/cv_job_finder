@@ -65,7 +65,7 @@ def test_parse_juniorguru():
 
 def test_parse_juniorguru_keeps_only_prague_or_remote():
     jobs = sources.parse_juniorguru(JG_CSV)
-    # Брно без удалёнки и вакансия без мест отсеяны; Прага второй в списке (район Háje) — остаётся
+    # Brno without remote and a job without places are dropped; Prague listed second (Háje district) stays
     assert [(job.url, job.city) for job in jobs] == [
         ("https://www.jobs.cz/rpd/1/?utm_source=juniorguru", "Prague"),
         ("https://example.com/2", "Remote"),
@@ -163,7 +163,7 @@ def test_fetch_himalayas_respects_max_pages(monkeypatch):
 
 
 def test_parsers_tolerate_null_fields():
-    # В ответах API бывают null: одна такая запись не должна ронять источник или всё обновление
+    # API answers contain nulls: one such record must not break a source or the whole refresh
     him = sources.parse_himalayas({"jobs": [
         {"title": None, "companyName": None, "guid": "https://himalayas.app/1", "pubDate": None,
          "locationRestrictions": None, "description": None}]})

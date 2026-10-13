@@ -1,4 +1,4 @@
-"""Фоновое обновление: загрузка → отсев по навыкам → оценка моделью (раздел 3 спека)."""
+"""Background refresh: fetch → skills filter → model evaluation (spec section 3)."""
 import hashlib
 import logging
 import threading
@@ -11,10 +11,10 @@ log = logging.getLogger(__name__)
 
 
 def read_cv() -> tuple[str, str] | None:
-    """Текст master_cv.md и ключ оценки или None, если файла нет.
+    """master_cv.md text and the evaluation key, or None if the file is missing.
 
-    Ключ — SHA-256 резюме вместе с правилами и моделью: если поменялось что-то из этого,
-    прежние оценки устарели и вакансии оцениваются заново."""
+    The key is SHA-256 of the CV together with the rules and the model: if any of them changed,
+    earlier scores are outdated and jobs are evaluated again."""
     if not config.CV_PATH.exists():
         return None
     text = config.CV_PATH.read_text(encoding="utf-8")
@@ -27,8 +27,8 @@ def _join(summary: str, notes: list[str]) -> str:
 
 class Worker(QObject):
     status = Signal(str)
-    progress = Signal(int, int)  # оценено, всего
-    evaluated = Signal(object)   # строка вида db.make_row
+    progress = Signal(int, int)  # evaluated, total
+    evaluated = Signal(object)   # a row like db.make_row
     finished = Signal()
 
     def __init__(self):
@@ -36,7 +36,7 @@ class Worker(QObject):
         self.model_loaded = False
 
     def start(self) -> None:
-        # daemon: окно закрывается сразу, не дожидаясь текущего запроса к модели
+        # daemon: the window closes right away without waiting for the current model request
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
@@ -45,18 +45,18 @@ class Worker(QObject):
             log.info(message)
             self.status.emit(message)
         except Exception:
-            log.exception("Обновление упало")
+            log.exception("Update crashed")
             self.status.emit("Update failed, see job_finder.log")
         finally:
             self.finished.emit()
 
     def _refresh(self) -> str:
-        """Одно обновление. Возвращает итоговую строку состояния."""
+        """One refresh. Returns the final status line."""
         self.status.emit("Loading jobs…")
         fetched, errors = sources.fetch_all()
         for name, jobs in fetched.items():
             db.save_jobs(name, jobs)
-        log.info("Загружено: %s", {name: len(jobs) for name, jobs in fetched.items()})
+        log.info("Loaded: %s", {name: len(jobs) for name, jobs in fetched.items()})
         notes = [f"{name}: error ({error})" for name, error in errors.items()]
 
         cv = read_cv()
@@ -67,7 +67,7 @@ class Worker(QObject):
         if not skill_list:
             return _join("No Skills section in master_cv.md, evaluation skipped", notes)
         todo = [job for job in db.pending_jobs(cv_hash) if skills.matches(job, skill_list)]
-        log.info("К оценке: %d", len(todo))
+        log.info("To evaluate: %d", len(todo))
 
         if todo:
             self.status.emit("Starting LM Studio…")
@@ -78,7 +78,7 @@ class Worker(QObject):
                 if failed:
                     notes.append(f"failed to evaluate: {failed}")
             except Exception as error:
-                log.exception("LM Studio недоступна")
+                log.exception("LM Studio unavailable")
                 notes.append(f"LM Studio: {error}")
             finally:
                 llm.release()
@@ -89,16 +89,16 @@ class Worker(QObject):
         return _join(f"Done: {suitable} matches out of {evaluated} evaluated", notes)
 
     def _evaluate(self, todo: list[sources.Job], cv_text: str, cv_hash: str) -> int:
-        """Оценить вакансии по одной; возвращает число неудачных оценок."""
+        """Evaluate jobs one by one; returns the number of failed evaluations."""
         failed = 0
         self.progress.emit(0, len(todo))
         for done, job in enumerate(todo, 1):
             try:
                 evaluation = llm.evaluate(cv_text, job)
             except llm.ModelLost:
-                raise  # дальше оценивать нечем — останавливаем весь проход
+                raise  # nothing left to evaluate with: stop the whole pass
             except Exception:
-                log.exception("Не удалось оценить %s", job.url)
+                log.exception("Failed to evaluate %s", job.url)
                 failed += 1
             else:
                 db.save_evaluation(job.url, evaluation, cv_hash)

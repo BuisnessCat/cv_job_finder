@@ -22,7 +22,7 @@ def app():
 @pytest.fixture
 def window(app, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "jobs.db")
-    monkeypatch.setattr(config, "CV_PATH", tmp_path / "master_cv.md")  # резюме нет → список пуст
+    monkeypatch.setattr(config, "CV_PATH", tmp_path / "master_cv.md")  # no CV, so the list is empty
     monkeypatch.setattr(worker.Worker, "start", lambda self: None)
     db.init()
     w = MainWindow()
@@ -72,7 +72,7 @@ def test_score_colored_by_band(window):
     assert window.table.item(0, 0).foreground().color().name() == style.score_colors(9)[1]
     assert window.table.item(1, 0).foreground().color().name() == style.score_colors(5)[1]
     window.table.selectRow(0)
-    assert style.score_colors(9)[0] in window.badge.styleSheet()  # плашка оценки в деталях
+    assert style.score_colors(9)[0] in window.badge.styleSheet()  # score pill in the details
     assert window.badge_number.text() == "9"
 
 
@@ -90,7 +90,7 @@ def test_switching_rows_replaces_list_items(window):
     window.table.selectRow(0)
     window.table.selectRow(1)
     assert list_texts(window, "have") == ["SQL", "Git"]
-    # Строки прошлой вакансии не должны оставаться в карточке, даже до удаления через цикл событий
+    # Rows of the previous job must not stay in the card, even before the event loop deletes them
     labels = window.pages.widget(1).findChildren(QLabel)
     assert "Python" not in [label.text() for label in labels]
     assert window.detail_lists["have"][0].text() == "YOU HAVE · 2"
@@ -104,7 +104,7 @@ def test_no_risks_shows_no_blockers(window):
 
 def test_empty_state_until_row_selected(window):
     window.on_evaluated(row("a", 9))
-    assert window.pages.currentIndex() == 0  # «Выберите вакансию в списке слева»
+    assert window.pages.currentIndex() == 0  # "Select a job on the left"
     window.table.selectRow(0)
     assert window.pages.currentIndex() == 1
     window.hide_job()
@@ -113,18 +113,18 @@ def test_empty_state_until_row_selected(window):
 
 def test_icon_file_has_small_and_large_sizes(app):
     sizes = QIcon(str(config.ICON_PATH)).availableSizes()
-    assert QSize(16, 16) in sizes  # заголовок окна и панель задач
-    assert QSize(256, 256) in sizes  # ярлык на рабочем столе
+    assert QSize(16, 16) in sizes  # window title and taskbar
+    assert QSize(256, 256) in sizes  # desktop shortcut
 
 
 def test_finished_reloads_rows_from_db(window):
-    config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # временное резюме из фикстуры
+    config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # temporary CV from the fixture
     key = worker.read_cv()[1]
     db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Job a", company="ACME", city="Praha",
                                 published="2026-10-01", description="")])
     db.save_evaluation("a", row("a", 8)["evaluation"], key)
-    db.mark_all_seen()  # тест про перечитывание, а не про пометку «новое»
-    window.on_evaluated(row("gone", 9))  # в базе её уже нет: пропала из источника или отсеяна по месту
+    db.mark_all_seen()  # this test is about re-reading, not about the "new" mark
+    window.on_evaluated(row("gone", 9))  # gone from the database: vanished from the source or filtered out by location
     window.on_finished()
     assert titles(window) == ["Job a"]
 
@@ -134,15 +134,15 @@ def test_cv_button_opens_one_cv_window(window):
     first = window.cv_window
     assert first is not None and first.isVisible()
     window.cv_button.click()
-    assert window.cv_window is first  # повторное нажатие не плодит окна
+    assert window.cv_window is first  # a second click does not open another window
     first.close()
 
 
 def add_found(url, score, title=None, company="ACME", new=False):
-    """Найденная вакансия в базе, оценённая по временному резюме из фикстуры; new=False — уже просмотрена."""
+    """A found job in the database, scored under the fixture's temporary CV; new=False: already seen."""
     if not config.CV_PATH.exists():
-        config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # временное резюме
-    # Свой источник у каждой вакансии: save_jobs выключает вакансии источника, которых нет в выборке
+        config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # temporary CV
+    # Each job gets its own source: save_jobs deactivates a source's jobs missing from the batch
     job = Job(url=url, source=f"src-{url}", title=title or f"Job {url}", company=company, city="Prague",
               published="2026-10-01", description="")
     db.save_jobs(job.source, [job])
@@ -179,7 +179,7 @@ def test_status_buttons_and_return(window):
     assert not window.accept_button.isHidden() and window.apply_button.isHidden()
     window.accept_button.click()
     assert window.applied_table.item(0, 3).text() == "Accepted"
-    assert "Accepted" in window.d_status.text()  # карточка осталась на этом отклике и обновилась
+    assert "Accepted" in window.d_status.text()  # the card stayed on this application and updated
     window.reject_button.click()
     assert window.applied_table.item(0, 3).text() == "Rejected"
     window.unapply_button.click()
@@ -193,7 +193,7 @@ def test_repost_marked(window):
     window.load_rows()
     window.table.selectRow(0)
     window.apply_button.click()
-    add_found("new", 7, title="python  dev", company=" acme ")  # та же вакансия с новой ссылкой
+    add_found("new", 7, title="python  dev", company=" acme ")  # the same job with a new link
     window.load_rows()
     assert titles(window) == ["↻ python  dev"]
     window.table.selectRow(0)
@@ -210,9 +210,9 @@ def test_card_extras_reset_between_rows(window):
     window.apply_button.click()
     add_found("new", 7, title="Python Dev")
     window.load_rows()
-    window.table.selectRow(0)  # перепубликованная — с жёлтой плашкой
+    window.table.selectRow(0)  # reposted, with the yellow notice
     assert not window.d_notice.isHidden()
-    window.table.selectRow(1)  # обычная найденная
+    window.table.selectRow(1)  # a regular found job
     assert window.d_notice.isHidden() and window.d_status.isHidden()
     assert not window.apply_button.isHidden() and window.accept_button.isHidden()
 
@@ -224,7 +224,7 @@ def test_new_found_row_keeps_application_selected(window):
     window.apply_button.click()
     window.show_tab(1)
     window.applied_table.selectRow(0)
-    window.on_evaluated(row("fresh", 9))  # фоновое обновление прислало новую найденную вакансию
+    window.on_evaluated(row("fresh", 9))  # the background refresh sent a new found job
     assert window.current["url"] == "a"
 
 
@@ -250,7 +250,7 @@ def test_new_rows_marked_and_counted(window):
 
 def test_job_arriving_during_refresh_is_marked(window):
     window.load_rows()
-    add_found("x", 9, new=True)  # фоновое обновление записало новую вакансию уже после загрузки списка
+    add_found("x", 9, new=True)  # the background refresh saved a new job after the list was loaded
     window.on_evaluated(row("x", 9))
     assert titles(window) == ["• Job x"]
 
@@ -294,7 +294,7 @@ def test_waiting_days_and_stale_highlight(window):
     window.applied_table.selectRow(old_row)
     assert "20 days" in window.d_status.text() and not window.d_stale.isHidden()
     assert window.d_stale.text() == f"No reply for over {config.STALE_DAYS} days — time to follow up or close it"
-    window.reject_button.click()  # итог пришёл — подсказка больше не нужна
+    window.reject_button.click()  # the outcome arrived: the hint is no longer needed
     assert window.d_stale.isHidden() and "days" not in window.d_status.text()
 
 
@@ -308,12 +308,12 @@ def test_notes_saved_on_row_switch(window):
     index = {r["url"]: i for i, r in enumerate(window.applied)}
     window.applied_table.selectRow(index["a"])
     assert not window.notes_box.isHidden()
-    window.notes.setPlainText("Писал HR 30.09")
-    window.applied_table.selectRow(index["b"])  # раньше, чем сработала задержка сохранения
-    assert {r["url"]: r["notes"] for r in db.list_applied()}["a"] == "Писал HR 30.09"
+    window.notes.setPlainText("Emailed HR on 30.09")
+    window.applied_table.selectRow(index["b"])  # before the save delay fires
+    assert {r["url"]: r["notes"] for r in db.list_applied()}["a"] == "Emailed HR on 30.09"
     assert window.notes.toPlainText() == ""
     window.applied_table.selectRow(index["a"])
-    assert window.notes.toPlainText() == "Писал HR 30.09"
+    assert window.notes.toPlainText() == "Emailed HR on 30.09"
 
 
 def test_close_saves_notes_and_marks_seen(window):
@@ -323,10 +323,10 @@ def test_close_saves_notes_and_marks_seen(window):
     window.load_rows()
     window.show_tab(1)
     window.applied_table.selectRow(0)
-    window.notes.setPlainText("Собеседование в пятницу")
+    window.notes.setPlainText("Interview on Friday")
     window.show()
     window.close()
-    assert db.list_applied()[0]["notes"] == "Собеседование в пятницу"
+    assert db.list_applied()[0]["notes"] == "Interview on Friday"
     assert db.unseen_urls() == set()
 
 
