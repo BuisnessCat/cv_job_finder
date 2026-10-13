@@ -15,6 +15,7 @@ $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $des
 $shortcut.TargetPath = Join-Path $root ".venv\Scripts\pythonw.exe"
 $shortcut.Arguments = "-m job_finder"
 $shortcut.WorkingDirectory = $root
+$shortcut.IconLocation = (Join-Path $root "job_finder\icon.ico") + ",0"
 $shortcut.Description = "Подбор вакансий"
 $shortcut.Save()
 Write-Output "Готово: ярлык «Подбор вакансий» на рабочем столе"

@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CV_PATH = ROOT / "master_cv.md"
 DB_PATH = ROOT / "jobs.db"
 LOG_PATH = ROOT / "job_finder.log"
+ICON_PATH = ROOT / "job_finder" / "icon.ico"
 
 # Показываем вакансии с оценкой не ниже порога
 MIN_SCORE = 5

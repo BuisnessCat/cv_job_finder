@@ -1,10 +1,12 @@
 """Точка входа: python -m job_finder (ярлык запускает её через pythonw.exe)."""
+import ctypes
 import logging
 import os
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import QLockFile, Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from job_finder import config, db
@@ -24,7 +26,10 @@ def main() -> None:
     )
     # У pythonw нет консоли: необработанные исключения пишем в лог
     sys.excepthook = lambda *exc_info: logging.critical("Необработанное исключение", exc_info=exc_info)
+    # Свой идентификатор приложения: иначе Windows показывает на панели задач иконку pythonw.exe
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("job_finder.desktop")
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(config.ICON_PATH)))
     # Тёмная схема Qt: тёмные заголовок окна, полосы прокрутки и диалоги — под тему из style.py
     app.styleHints().setColorScheme(Qt.ColorScheme.Dark)
     # Второй двойной клик по ярлыку: два окна делили бы одну модель, и закрытие одного выгружало бы её у другого

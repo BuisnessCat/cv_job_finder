@@ -3,6 +3,8 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QLabel
 
 from job_finder import config, db, style, worker
@@ -104,3 +106,9 @@ def test_empty_state_until_row_selected(window):
     assert window.pages.currentIndex() == 1
     window.hide_job()
     assert window.pages.currentIndex() == 0
+
+
+def test_icon_file_has_small_and_large_sizes(app):
+    sizes = QIcon(str(config.ICON_PATH)).availableSizes()
+    assert QSize(16, 16) in sizes  # заголовок окна и панель задач
+    assert QSize(256, 256) in sizes  # ярлык на рабочем столе
