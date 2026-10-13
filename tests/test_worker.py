@@ -42,7 +42,13 @@ def test_summary_counts_suitable_and_evaluated(setup, monkeypatch):
     monkeypatch.setattr(llm, "evaluate", lambda cv_text, job: {
         "score": scores[job.url], "summary": "", "have": [], "missing": [], "risks": []})
 
-    assert worker.Worker()._refresh() == "Готово: 2 подходящих из 3 оценённых"
+    assert worker.Worker()._refresh() == "Done: 2 matches out of 3 evaluated"
+
+
+def test_missing_cv_skips_evaluation(setup, monkeypatch):
+    config.CV_PATH.unlink()
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job: pytest.fail("must not evaluate"))
+    assert worker.Worker()._refresh() == "No master_cv.md, evaluation skipped"
 
 
 def test_key_changes_with_cv_and_rules(setup, monkeypatch):

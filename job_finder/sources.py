@@ -44,9 +44,9 @@ def parse_juniorguru(text: str) -> list[Job]:
         # Регион надёжнее названия: у пражского района (например, «Háje») название без «Praha»
         regions = [value for key, value in row.items() if key.startswith("locations_") and key.endswith("_region")]
         if "Praha" in regions:
-            city = "Praha"
+            city = "Prague"
         elif row.get("remote") == "True":
-            city = "Удалённо"
+            city = "Remote"
         else:
             continue
         jobs.append(Job(
@@ -61,7 +61,7 @@ def parse_himalayas(data: dict) -> list[Job]:
     jobs = []
     for item in data.get("jobs") or []:
         countries = item.get("locationRestrictions") or []
-        city = "Удалённо"
+        city = "Remote"
         if countries:
             city += f" ({', '.join(map(str, countries[:3]))}{' …' if len(countries) > 3 else ''})"
         pub_date = item.get("pubDate")
@@ -77,7 +77,7 @@ def parse_jobicy(data: dict) -> list[Job]:
     return [
         Job(
             url=item["url"], source="Jobicy", title=item["jobTitle"], company=item["companyName"],
-            city=f"Удалённо: {item['jobGeo']}" if item.get("jobGeo") else "Удалённо",
+            city=f"Remote: {item['jobGeo']}" if item.get("jobGeo") else "Remote",
             published=(item.get("pubDate") or "")[:10], description=html_to_text(item.get("jobDescription")),
         )
         for item in data.get("jobs") or []
@@ -88,7 +88,7 @@ def parse_workingnomads(data: list) -> list[Job]:
     return [
         Job(
             url=item["url"], source="Working Nomads", title=item["title"], company=item["company_name"],
-            city=f"Удалённо: {item['location']}" if item.get("location") else "Удалённо",
+            city=f"Remote: {item['location']}" if item.get("location") else "Remote",
             published=(item.get("pub_date") or "")[:10], description=html_to_text(item.get("description")),
         )
         for item in data

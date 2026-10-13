@@ -25,42 +25,44 @@ SCHEMA = {
     "additionalProperties": False,
 }
 
-RULES = """Ты помогаешь студенту решить, стоит ли откликаться на вакансию. Ниже его резюме.
-Оцени по шкале от 1 до 10, насколько реально кандидат может пройти отбор и справиться с работой.
+RULES = """You help a student decide whether to apply for a job. Their CV is below.
+Rate from 1 to 10 how realistically the candidate can get through the hiring process and do the job.
 
-Как оценивать:
-1. Определи суть роли: чем человек будет заниматься и 2–4 действительно обязательных требования.
-   Вакансии часто перечисляют все технологии компании подряд — это пожелания, а не условия.
-   Не снижай оценку за отсутствие второстепенных инструментов (JIRA, конкретная BI-система, облако,
-   CI, мониторинг и т. п.) и пунктов «будет плюсом».
-2. Засчитывай близкие навыки: Django или Flask вместо FastAPI, MySQL или MSSQL вместо PostgreSQL,
-   любой REST/HTTP API, любой Git-хостинг.
-3. На junior-позициях и стажировках многому учат на месте: если основа (язык, SQL, веб/API)
-   совпадает, недостающие технологии — повод учиться, а не отказ.
-4. Сильно снижай оценку только за настоящие блокеры: нужно 2+ года коммерческого опыта или уровень
-   mid/senior; основной язык другой (Java, C#, PHP, C/C++ и т. п.) или совсем другая область
-   (embedded, мобильная разработка, дизайн, продажи); обязателен свободный чешский или английский C1+;
-   офис вне Праги без удалёнки; нужно гражданство или резидентство другой страны.
-   Это НЕ проблемы: офис или гибрид в Праге, удалёнка из Чехии или ЕС, разрешение на работу в Чехии
-   (кандидату оно не нужно), английский B2 (если не требуют C1 или носителя), чешский B1.
+How to rate:
+1. Identify the core of the role: what the person will do and the 2–4 truly required skills.
+   Job ads often list every technology the company uses — those are wishes, not requirements.
+   Do not lower the score for missing secondary tools (JIRA, a specific BI system, cloud,
+   CI, monitoring, etc.) or "nice to have" items.
+2. Count adjacent skills: Django or Flask instead of FastAPI, MySQL or MSSQL instead of PostgreSQL,
+   any REST/HTTP API, any Git hosting.
+3. Junior positions and internships teach a lot on the job: if the basics (language, SQL, web/API)
+   match, missing technologies are a reason to learn, not a reason to reject.
+4. Lower the score sharply only for real blockers: 2+ years of commercial experience or a mid/senior
+   level is required; the main language is different (Java, C#, PHP, C/C++, etc.) or the field is
+   entirely different (embedded, mobile development, design, sales); fluent Czech or English C1+ is
+   mandatory; an office outside Prague with no remote option; citizenship or residency of another
+   country is required.
+   These are NOT problems: an office or hybrid in Prague, remote work from Czechia or the EU, a work
+   permit for Czechia (the candidate does not need one), English B2 (unless C1 or native is required),
+   Czech B1.
 
-Шкала:
-9–10 — junior или стажировка, основа стека совпадает, блокеров нет;
-7–8 — junior или стажировка, основа совпадает, не хватает технологий, которым можно научиться;
-5–6 — смежная роль или другой фреймворк, но реально попробовать;
-3–4 — серьёзный пробел: уровень выше junior или основной стек заметно другой;
-1–2 — не подходит: senior, другой основной язык или область, или жёсткий блокер.
+Scale:
+9–10 — junior or internship, the core stack matches, no blockers;
+7–8 — junior or internship, the core matches, some technologies are missing but can be learned;
+5–6 — adjacent role or a different framework, but worth a try;
+3–4 — serious gap: above junior level or a noticeably different main stack;
+1–2 — not a fit: senior, a different main language or field, or a hard blocker.
 
-Ответь JSON-объектом:
-- score — оценка от 1 до 10;
-- summary — 1–2 предложения: почему такая оценка;
-- have — важные требования вакансии, которые у кандидата есть (с учётом близких навыков);
-- missing — только существенные требования, которых нет;
-- risks — только настоящие блокеры из пункта 4; пустой список, если их нет.
-В каждом списке не больше 5 пунктов, каждый пункт — до 10 слов.
-Все тексты пиши по-русски, обычным текстом без Markdown. Опирайся только на факты из резюме и текста вакансии.
+Answer with a JSON object:
+- score — a score from 1 to 10;
+- summary — 1–2 sentences: why this score;
+- have — important job requirements the candidate meets (counting adjacent skills);
+- missing — only significant requirements the candidate lacks;
+- risks — only real blockers from point 4; an empty list if there are none.
+Each list has at most 5 items, each item up to 10 words.
+Write all texts in English, as plain text without Markdown. Rely only on facts from the CV and the job ad.
 
-Резюме кандидата:
+Candidate's CV:
 """
 
 
@@ -92,7 +94,7 @@ def _server_up() -> bool:
 def prepare() -> None:
     """Поднять сервер LM Studio и загрузить модель, если она ещё не загружена."""
     if not config.LMS_EXE.exists():
-        raise RuntimeError(f"не найден {config.LMS_EXE}")
+        raise RuntimeError(f"not found: {config.LMS_EXE}")
     if not _server_up():
         # Вывод не перехватываем: запущенный командой сервис LM Studio унаследовал бы наши каналы,
         # и subprocess.run ждал бы их закрытия бесконечно, несмотря на timeout
@@ -104,7 +106,7 @@ def prepare() -> None:
         deadline = time.monotonic() + 30
         while not _server_up():
             if time.monotonic() > deadline:
-                raise RuntimeError("сервер не запустился за 30 с")
+                raise RuntimeError("server did not start within 30 s")
             time.sleep(1)
     if config.MODEL_ID not in _lms("ps", "--json").stdout:
         # --ttl: если приложение закроется посреди загрузки, LM Studio сама выгрузит модель
@@ -114,13 +116,13 @@ def prepare() -> None:
             timeout=300,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"модель не загрузилась: {(result.stderr or result.stdout).strip()[-300:]}")
+            raise RuntimeError(f"model failed to load: {(result.stderr or result.stdout).strip()[-300:]}")
 
 
 def evaluate(cv_text: str, job: Job) -> dict:
     """Оценить одну вакансию: score, summary, have, missing, risks."""
     vacancy = (
-        f"Название: {job.title}\nКомпания: {job.company}\nГород: {job.city}\nИсточник: {job.source}\n\n"
+        f"Title: {job.title}\nCompany: {job.company}\nLocation: {job.city}\nSource: {job.source}\n\n"
         f"{job.description[:config.MAX_DESCRIPTION_CHARS]}"
     )
     response = requests.post(
@@ -144,7 +146,8 @@ def evaluate(cv_text: str, job: Job) -> dict:
     data = response.json()
     # Без нашей модели LM Studio молча отвечает любой загруженной — такой ответ не годится
     if data.get("model") != config.MODEL_ID:
-        raise ModelLost(f"модель {config.MODEL_ID} выгружена (ответила {data.get('model')}), оценка остановлена")
+        raise ModelLost(f"model {config.MODEL_ID} was unloaded (got an answer from {data.get('model')}), "
+                        "evaluation stopped")
     result = json.loads(data["choices"][0]["message"]["content"])
     result["score"] = int(result["score"])
     return result

@@ -57,19 +57,19 @@ def test_parse_juniorguru():
     jobs = sources.parse_juniorguru(JG_CSV)
     assert jobs[0] == Job(
         url="https://www.jobs.cz/rpd/1/?utm_source=juniorguru", source="junior.guru",
-        title="Junior Python vývojář", company="Firma s.r.o.", city="Praha", published="2026-10-12",
+        title="Junior Python vývojář", company="Firma s.r.o.", city="Prague", published="2026-10-12",
         description="Hledáme\nPython\nvývojáře",
     )
-    assert (jobs[1].city, jobs[1].published, jobs[1].description) == ("Удалённо", "2026-10-10", "Testování")
+    assert (jobs[1].city, jobs[1].published, jobs[1].description) == ("Remote", "2026-10-10", "Testování")
 
 
 def test_parse_juniorguru_keeps_only_prague_or_remote():
     jobs = sources.parse_juniorguru(JG_CSV)
     # Брно без удалёнки и вакансия без мест отсеяны; Прага второй в списке (район Háje) — остаётся
     assert [(job.url, job.city) for job in jobs] == [
-        ("https://www.jobs.cz/rpd/1/?utm_source=juniorguru", "Praha"),
-        ("https://example.com/2", "Удалённо"),
-        ("https://example.com/4", "Praha"),
+        ("https://www.jobs.cz/rpd/1/?utm_source=juniorguru", "Prague"),
+        ("https://example.com/2", "Remote"),
+        ("https://example.com/4", "Prague"),
     ]
 
 
@@ -77,10 +77,10 @@ def test_parse_himalayas():
     jobs = sources.parse_himalayas(HIMALAYAS)
     assert jobs[0] == Job(
         url="https://himalayas.app/companies/acme/jobs/junior-backend", source="Himalayas",
-        title="Junior Backend Developer", company="Acme", city="Удалённо", published="2026-10-13",
+        title="Junior Backend Developer", company="Acme", city="Remote", published="2026-10-13",
         description="Python & SQL",
     )
-    assert jobs[1].city == "Удалённо (Czechia, Slovakia, Poland …)"
+    assert jobs[1].city == "Remote (Czechia, Slovakia, Poland …)"
     assert jobs[1].published == "2026-10-13"
     assert jobs[1].description == ""
 
@@ -88,14 +88,14 @@ def test_parse_himalayas():
 def test_parse_jobicy():
     assert sources.parse_jobicy(JOBICY) == [Job(
         url="https://jobicy.com/jobs/1-python-dev", source="Jobicy", title="Python Developer", company="Gamma",
-        city="Удалённо: Europe", published="2026-10-13", description="Django",
+        city="Remote: Europe", published="2026-10-13", description="Django",
     )]
 
 
 def test_parse_workingnomads_keeps_only_development():
     assert sources.parse_workingnomads(WORKINGNOMADS) == [Job(
         url="https://www.workingnomads.com/job/go/1/", source="Working Nomads", title="Backend Developer",
-        company="Delta", city="Удалённо: Time zone: CET (+/- 3 hours)", published="2026-10-08",
+        company="Delta", city="Remote: Time zone: CET (+/- 3 hours)", published="2026-10-08",
         description="Python",
     )]
 
@@ -174,7 +174,7 @@ def test_parsers_tolerate_null_fields():
         {"url": "https://www.workingnomads.com/1", "title": "Ops", "company_name": None,
          "category_name": "Development", "location": None, "pub_date": None, "description": None}])
     assert [(j.title, j.company, j.city, j.published) for j in him + jobicy + nomads] == [
-        ("", "", "Удалённо", ""), ("Dev", "", "Удалённо", ""), ("Ops", "", "Удалённо", "")]
+        ("", "", "Remote", ""), ("Dev", "", "Remote", ""), ("Ops", "", "Remote", "")]
     deduped = sources.dedupe({"Himalayas": him, "Jobicy": jobicy, "Working Nomads": nomads})
     assert sum(len(jobs) for jobs in deduped.values()) == 3
 

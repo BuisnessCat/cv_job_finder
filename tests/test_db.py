@@ -199,3 +199,13 @@ def test_mark_all_seen_keeps_unevaluated_jobs_new():
     db.save_evaluation("shown", evaluation(8), "h1")
     db.mark_all_seen()
     assert db.unseen_urls() == {"queued"}
+
+
+def test_refetch_rewrites_city():
+    # Rows saved before the English UI keep Russian place names until the next fetch rewrites them
+    db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Job a", company="ACME", city="Удалённо",
+                                published="2026-10-01", description="Python")])
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Job a", company="ACME", city="Remote",
+                                published="2026-10-01", description="Python")])
+    assert db.list_jobs("h1", 5)[0]["city"] == "Remote"

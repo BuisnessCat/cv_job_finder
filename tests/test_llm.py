@@ -27,7 +27,7 @@ def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
         return FakeResponse({"model": config.MODEL_ID, "choices": [{"message": {"content": json.dumps(answer)}}]})
 
     monkeypatch.setattr(llm.requests, "post", fake_post)
-    job = Job(url="u", source="Jobicy", title="Python Dev", company="ACME", city="Praha",
+    job = Job(url="u", source="Jobicy", title="Python Dev", company="ACME", city="Prague",
               published="2026-10-01", description="x" * 20000)
 
     result = llm.evaluate("МОЁ РЕЗЮМЕ", job)
@@ -39,8 +39,10 @@ def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
     assert body["response_format"]["type"] == "json_schema"
     assert body["messages"][0]["content"].endswith("МОЁ РЕЗЮМЕ")
     user = body["messages"][1]["content"]
-    assert "Python Dev" in user and "ACME" in user and "Praha" in user
+    assert "Python Dev" in user and "ACME" in user and "Prague" in user
     assert user.count("x") == config.MAX_DESCRIPTION_CHARS
+    assert user.startswith("Title: Python Dev\nCompany: ACME\nLocation: Prague\nSource: Jobicy\n\n")
+    assert "Write all texts in English" in body["messages"][0]["content"]
 
 
 def test_evaluate_rejects_answer_from_another_model(monkeypatch):

@@ -46,37 +46,37 @@ class Worker(QObject):
             self.status.emit(message)
         except Exception:
             log.exception("Обновление упало")
-            self.status.emit("Ошибка обновления, подробности в job_finder.log")
+            self.status.emit("Update failed, see job_finder.log")
         finally:
             self.finished.emit()
 
     def _refresh(self) -> str:
         """Одно обновление. Возвращает итоговую строку состояния."""
-        self.status.emit("Загружаю вакансии…")
+        self.status.emit("Loading jobs…")
         fetched, errors = sources.fetch_all()
         for name, jobs in fetched.items():
             db.save_jobs(name, jobs)
         log.info("Загружено: %s", {name: len(jobs) for name, jobs in fetched.items()})
-        notes = [f"{name}: ошибка ({error})" for name, error in errors.items()]
+        notes = [f"{name}: error ({error})" for name, error in errors.items()]
 
         cv = read_cv()
         if cv is None:
-            return _join("Нет файла master_cv.md, оценка не запущена", notes)
+            return _join("No master_cv.md, evaluation skipped", notes)
         cv_text, cv_hash = cv
         skill_list = skills.load_skills(cv_text)
         if not skill_list:
-            return _join("В master_cv.md не найден раздел Skills, оценка не запущена", notes)
+            return _join("No Skills section in master_cv.md, evaluation skipped", notes)
         todo = [job for job in db.pending_jobs(cv_hash) if skills.matches(job, skill_list)]
         log.info("К оценке: %d", len(todo))
 
         if todo:
-            self.status.emit("Запускаю LM Studio…")
+            self.status.emit("Starting LM Studio…")
             self.model_loaded = True
             try:
                 llm.prepare()
                 failed = self._evaluate(todo, cv_text, cv_hash)
                 if failed:
-                    notes.append(f"не удалось оценить: {failed}")
+                    notes.append(f"failed to evaluate: {failed}")
             except Exception as error:
                 log.exception("LM Studio недоступна")
                 notes.append(f"LM Studio: {error}")
@@ -86,7 +86,7 @@ class Worker(QObject):
 
         suitable = len(db.list_jobs(cv_hash, config.MIN_SCORE))
         evaluated = db.count_evaluated(cv_hash)
-        return _join(f"Готово: {suitable} подходящих из {evaluated} оценённых", notes)
+        return _join(f"Done: {suitable} matches out of {evaluated} evaluated", notes)
 
     def _evaluate(self, todo: list[sources.Job], cv_text: str, cv_hash: str) -> int:
         """Оценить вакансии по одной; возвращает число неудачных оценок."""
