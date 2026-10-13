@@ -14,12 +14,18 @@ COLORS = {
     "accent_soft": "#1e3a2b",  # выделенная строка
     "alt": "#272a33",          # чередование строк, блок «Почему такая оценка»
     "link": "#4ade80",         # ссылки в окне «Резюме»
+    "notice_bg": "#3a2f12",    # жёлтая плашка «Вы уже подавались»
+    "notice_text": "#fcd34d",
 }
 
 GAP = 12  # единый отступ: от краёв окна и между блоками
 
 # Цвета значков в списках деталей: ✓ есть, ✕ не хватает, ! может отсечь
 LIST_COLORS = {"have": "#4ade80", "missing": "#f87171", "risks": "#fbbf24"}
+
+# Цвета статуса отклика: (фон плашки, цвет текста) — ждём ответа, приняли, отказали
+STATUS_COLORS = {"applied": ("#0c4a6e", "#7dd3fc"), "accepted": ("#14532d", "#4ade80"),
+                 "rejected": ("#7f1d1d", "#fca5a5")}
 
 # Цвета оценки: (фон плашки, цвет текста)
 _GOOD = ("#14532d", "#4ade80")
@@ -45,6 +51,14 @@ QPushButton:disabled {{ color: {muted}; }}
 QPushButton#primary {{ background: {accent}; color: white; border: none; font-weight: 600; }}
 QPushButton#primary:hover {{ background: {accent_hover}; }}
 QPushButton#primary:disabled {{ background: {border}; color: {muted}; }}
+QPushButton#segmentLeft, QPushButton#segmentRight {{ background: {panel}; color: {muted}; font-weight: 600;
+                                                     border: 1px solid {border}; padding: 6px 14px; }}
+QPushButton#segmentLeft {{ border-radius: 0; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }}
+QPushButton#segmentRight {{ border-radius: 0; border-top-right-radius: 6px; border-bottom-right-radius: 6px;
+                           border-left: none; }}
+QPushButton#segmentLeft:checked, QPushButton#segmentRight:checked {{ background: {accent_soft}; color: {text}; }}
+QLabel#notice {{ background: {notice_bg}; color: {notice_text}; border-radius: 6px; padding: 8px 12px;
+                margin-top: 12px; }}
 QTableWidget {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; gridline-color: transparent;
                selection-background-color: {accent_soft}; selection-color: {text};
                alternate-background-color: {alt}; outline: none; }}

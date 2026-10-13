@@ -1,17 +1,21 @@
-"""Главное окно: таблица подходящих вакансий и карточка с разбором выбранной."""
+"""Главное окно: найденные вакансии и отклики, карточка с разбором выбранной."""
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMainWindow, QProgressBar,
-    QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMainWindow,
+    QProgressBar, QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
-from job_finder import config, db, llm, style
+from job_finder import config, db, llm, sources, style
 from job_finder.worker import Worker, read_cv
 
 COLUMNS = ["Оценка", "Вакансия", "Компания", "Город", "Дата"]
+APPLIED_COLUMNS = ["Отклик", "Вакансия", "Компания", "Статус", "Оценка"]
 LISTS = [("have", "ЕСТЬ", "✓"), ("missing", "НЕ ХВАТАЕТ", "✕"), ("risks", "МОЖЕТ ОТСЕЧЬ", "!")]
 EMPTY_LIST = {"have": "—", "missing": "Ничего существенного"}
+STATUS_TEXT = {"applied": "Ждём ответа", "accepted": "Приняли", "rejected": "Отказали"}
+REPOST_MARK = "↻ "  # перед названием найденной вакансии, на которую уже был отклик
 
 
 def _label(name: str = "") -> QLabel:
@@ -30,50 +34,104 @@ def _caption(text: str) -> QLabel:
     return label
 
 
+def _make_table(columns: list[str], center: int) -> QTableWidget:
+    """Таблица в общем стиле: выбор строки целиком, без сетки; колонка center (оценка) — по центру."""
+    table = QTableWidget(0, len(columns))
+    table.setHorizontalHeaderLabels(columns)
+    table.setSelectionBehavior(QAbstractItemView.SelectRows)
+    table.setSelectionMode(QAbstractItemView.SingleSelection)
+    table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    table.verticalHeader().hide()
+    table.verticalHeader().setDefaultSectionSize(34)
+    table.setShowGrid(False)
+    table.setAlternatingRowColors(True)
+    header = table.horizontalHeader()
+    header.setSectionResizeMode(QHeaderView.ResizeToContents)
+    header.setSectionResizeMode(1, QHeaderView.Stretch)
+    # Заголовки — по тому же краю, что и текст в ячейках
+    header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+    table.horizontalHeaderItem(center).setTextAlignment(Qt.AlignCenter)
+    return table
+
+
+def _score_item(score: int) -> QTableWidgetItem:
+    """Ячейка оценки: по центру, жирная, цветом по оценке."""
+    item = QTableWidgetItem(str(score))
+    item.setTextAlignment(Qt.AlignCenter)
+    item.setForeground(QColor(style.score_colors(score)[1]))
+    font = item.font()
+    font.setBold(True)
+    item.setFont(font)
+    return item
+
+
+def _fill_table(table: QTableWidget, rows: list[dict], values, selected_url: str | None) -> None:
+    """Заполнить таблицу: values(row) — ячейки строки (текст или готовые QTableWidgetItem); выделение по url."""
+    table.blockSignals(True)
+    table.clearSelection()
+    table.setRowCount(len(rows))
+    for i, row in enumerate(rows):
+        for column, value in enumerate(values(row)):
+            table.setItem(i, column, value if isinstance(value, QTableWidgetItem) else QTableWidgetItem(value))
+        if row["url"] == selected_url:
+            table.selectRow(i)
+    table.blockSignals(False)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Подбор вакансий")
         self.resize(1200, 750)
-        self.rows: list[dict] = []        # строки таблицы в порядке показа
-        self.current: dict | None = None  # выбранная строка
+        self.rows: list[dict] = []        # найденные вакансии в порядке показа
+        self.applied: list[dict] = []     # отклики, новые сверху
+        self.applied_by_key: dict[tuple[str, str], dict] = {}  # последний отклик по «компания + название»
+        self.current: dict | None = None  # выбранная строка: найденная вакансия или отклик (есть ключ status)
 
         self.refresh_button = QPushButton("Обновить")
         self.refresh_button.setObjectName("primary")
         self.refresh_button.clicked.connect(self.refresh)
+        self.found_tab = QPushButton()
+        self.found_tab.setObjectName("segmentLeft")
+        self.applied_tab = QPushButton()
+        self.applied_tab.setObjectName("segmentRight")
+        self.tabs = QButtonGroup(self)  # переключатель «Найденные | Мои отклики»: нажата ровно одна кнопка
+        for index, button in enumerate((self.found_tab, self.applied_tab)):
+            button.setCheckable(True)
+            self.tabs.addButton(button, index)
+        self.found_tab.setChecked(True)
+        self.tabs.idClicked.connect(self.show_tab)
+        tabs = QHBoxLayout()
+        tabs.setSpacing(0)
+        tabs.addWidget(self.found_tab)
+        tabs.addWidget(self.applied_tab)
         self.status_label = _label()
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(250)
         self.progress.hide()
-        top = QHBoxLayout()
-        top.addWidget(self.refresh_button)
-        top.addWidget(self.status_label, 1)
-        top.addWidget(self.progress)
         self.cv_button = QPushButton("Резюме")
         self.cv_button.clicked.connect(self.show_cv)
-        top.addWidget(self.cv_button)
         self.cv_window = None  # окно «Резюме» создаётся при первом нажатии
+        top = QHBoxLayout()
+        top.addWidget(self.refresh_button)
+        top.addSpacing(style.GAP)
+        top.addLayout(tabs)
+        top.addSpacing(style.GAP)
+        top.addWidget(self.status_label, 1)
+        top.addWidget(self.progress)
+        top.addWidget(self.cv_button)
 
-        self.table = QTableWidget(0, len(COLUMNS))
-        self.table.setHorizontalHeaderLabels(COLUMNS)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.verticalHeader().hide()
-        self.table.verticalHeader().setDefaultSectionSize(34)
-        self.table.setShowGrid(False)
-        self.table.setAlternatingRowColors(True)
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        # Заголовки — по тому же краю, что и текст в ячейках
-        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.table.horizontalHeaderItem(0).setTextAlignment(Qt.AlignCenter)
+        self.table = _make_table(COLUMNS, 0)
         self.table.itemSelectionChanged.connect(self.on_select)
+        self.applied_table = _make_table(APPLIED_COLUMNS, 4)
+        self.applied_table.itemSelectionChanged.connect(self.on_select_applied)
+        self.lists = QStackedWidget()  # 0 — найденные, 1 — отклики
+        self.lists.addWidget(self.table)
+        self.lists.addWidget(self.applied_table)
 
         splitter = QSplitter()
         splitter.setHandleWidth(style.GAP)
-        splitter.addWidget(self.table)
+        splitter.addWidget(self.lists)
         splitter.addWidget(self._build_details())
         splitter.setSizes([700, 500])
 
@@ -97,7 +155,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self.refresh)  # обновление сразу после показа окна
 
     def _build_details(self) -> QWidget:
-        """Карточка деталей: шапка с оценкой, факты, «почему», списки; кнопки — в нижней полосе карточки."""
+        """Карточка деталей: шапка с оценкой, плашки отклика, факты, «почему», списки; кнопки — внизу."""
         self.d_title = _label("title")
         self.d_company = _label("company")
         self.badge = QFrame()
@@ -120,6 +178,10 @@ class MainWindow(QMainWindow):
         head.addLayout(names, 1)
         head.addWidget(self.badge, 0, Qt.AlignTop)
 
+        self.d_status = _label()  # плашка «Отклик ГГГГ-ММ-ДД · статус» — только у откликов
+        self.d_status.setWordWrap(False)
+        self.d_notice = _label("notice")  # «Вы уже подавались…» — только у перепубликованных вакансий
+
         facts = QGridLayout()
         facts.setHorizontalSpacing(16)
         facts.setVerticalSpacing(6)
@@ -141,6 +203,8 @@ class MainWindow(QMainWindow):
         box.setContentsMargins(20, 18, 20, 18)
         box.setSpacing(0)
         box.addLayout(head)
+        box.addWidget(self.d_status, 0, Qt.AlignLeft)  # отступ сверху — в стиле плашки, у скрытой его нет
+        box.addWidget(self.d_notice)
         box.addSpacing(14)
         box.addLayout(facts)
         box.addSpacing(16)
@@ -149,7 +213,7 @@ class MainWindow(QMainWindow):
         box.addWidget(_caption("ПОЧЕМУ ТАКАЯ ОЦЕНКА"))
         box.addSpacing(8)
         box.addWidget(self.d_summary)
-        self.lists: dict[str, tuple[QLabel, str, QVBoxLayout]] = {}
+        self.detail_lists: dict[str, tuple[QLabel, str, QVBoxLayout]] = {}
         for key, caption, _ in LISTS:
             header = _caption(caption)
             rows = QVBoxLayout()
@@ -158,7 +222,7 @@ class MainWindow(QMainWindow):
             box.addWidget(header)
             box.addSpacing(8)
             box.addLayout(rows)
-            self.lists[key] = (header, caption, rows)
+            self.detail_lists[key] = (header, caption, rows)
         box.addStretch(1)
 
         details = QWidget()
@@ -172,14 +236,27 @@ class MainWindow(QMainWindow):
         self.open_button = QPushButton("Открыть вакансию")
         self.open_button.setObjectName("primary")
         self.open_button.clicked.connect(self.open_job)
+        self.apply_button = QPushButton("Подался")
+        self.apply_button.clicked.connect(self.apply_job)
         self.hide_button = QPushButton("Скрыть")
         self.hide_button.clicked.connect(self.hide_job)
+        self.accept_button = QPushButton("Приняли")
+        self.accept_button.clicked.connect(lambda: self.set_status("accepted"))
+        self.reject_button = QPushButton("Отказали")
+        self.reject_button.clicked.connect(lambda: self.set_status("rejected"))
+        self.unapply_button = QPushButton("Вернуть в найденные")
+        self.unapply_button.clicked.connect(self.unapply_job)
+        self.found_buttons = (self.apply_button, self.hide_button)
+        self.applied_buttons = (self.accept_button, self.reject_button, self.unapply_button)
+        for button in self.applied_buttons:
+            button.hide()  # иначе ширина карточки при первой раскладке считается по всем шести кнопкам
         footer = QWidget()
         footer.setObjectName("footer")
         buttons = QHBoxLayout(footer)
         buttons.setContentsMargins(20, 12, 20, 12)
         buttons.addWidget(self.open_button)
-        buttons.addWidget(self.hide_button)
+        for button in self.found_buttons + self.applied_buttons:
+            buttons.addWidget(button)
         buttons.addStretch(1)
 
         details_page = QWidget()
@@ -209,7 +286,7 @@ class MainWindow(QMainWindow):
 
     def _fill_list(self, key: str, mark: str, items: list[str]) -> None:
         """Заполнить список «есть / не хватает / может отсечь» строками с цветным значком."""
-        header, caption, rows = self.lists[key]
+        header, caption, rows = self.detail_lists[key]
         header.setText(f"{caption} · {len(items)}" if items else caption)
         while rows.count():
             line = rows.takeAt(0).layout()
@@ -232,38 +309,62 @@ class MainWindow(QMainWindow):
             line.addWidget(label, 1)
             rows.addLayout(line)
 
+    def _previous_application(self, row: dict) -> dict | None:
+        """Отклик на вакансию с той же компанией и названием (перепубликованная вакансия) или None."""
+        return self.applied_by_key.get(sources.same_job_key(row["company"], row["title"]))
+
     def load_rows(self) -> None:
-        """Перечитать из базы оценки по текущему резюме."""
+        """Перечитать из базы найденные (оценки по текущему резюме) и отклики."""
         cv = read_cv()
         self.rows = db.list_jobs(cv[1], config.MIN_SCORE) if cv else []
+        self.applied = db.list_applied()
+        # reversed: при нескольких откликах с одним ключом остаётся самый новый
+        self.applied_by_key = {sources.same_job_key(r["company"], r["title"]): r for r in reversed(self.applied)}
         self.render()
+        self.render_applied()
 
     def render(self) -> None:
-        """Перерисовать таблицу, сохранив выделение."""
-        selected = self.current["url"] if self.current else None
-        self.table.blockSignals(True)
-        self.table.clearSelection()
-        self.table.setRowCount(len(self.rows))
-        for i, row in enumerate(self.rows):
-            values = [str(row["score"]), row["title"], row["company"], row["city"], row["published"]]
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                if column == 0:
-                    item.setTextAlignment(Qt.AlignCenter)
-                    item.setForeground(QColor(style.score_colors(row["score"])[1]))
-                    font = item.font()
-                    font.setBold(True)
-                    item.setFont(font)
-                self.table.setItem(i, column, item)
-            if row["url"] == selected:
-                self.table.selectRow(i)
-        self.table.blockSignals(False)
+        """Перерисовать найденные, сохранив выделение; отклик в карточке не трогать."""
+        selected = self.current["url"] if self.current and "status" not in self.current else None
+
+        def values(row):
+            mark = REPOST_MARK if self._previous_application(row) else ""
+            return [_score_item(row["score"]), mark + row["title"], row["company"], row["city"], row["published"]]
+
+        _fill_table(self.table, self.rows, values, selected)
+        self.found_tab.setText(f"Найденные · {len(self.rows)}")
         if selected and selected not in (row["url"] for row in self.rows):
             self.show_details(None)
+
+    def render_applied(self) -> None:
+        """Перерисовать отклики, сохранив выделение; найденную вакансию в карточке не трогать."""
+        selected = self.current["url"] if self.current and "status" in self.current else None
+
+        def values(row):
+            status = QTableWidgetItem(STATUS_TEXT[row["status"]])
+            status.setForeground(QColor(style.STATUS_COLORS[row["status"]][1]))
+            return [row["applied_at"], row["title"], row["company"], status, _score_item(row["score"])]
+
+        _fill_table(self.applied_table, self.applied, values, selected)
+        self.applied_tab.setText(f"Мои отклики · {len(self.applied)}")
+        if selected and selected not in (row["url"] for row in self.applied):
+            self.show_details(None)
+
+    def show_tab(self, index: int) -> None:
+        """Переключить список слева: 0 — найденные, 1 — мои отклики."""
+        self.lists.setCurrentIndex(index)
+        self.tabs.button(index).setChecked(True)
+        for table in (self.table, self.applied_table):
+            table.clearSelection()
+        self.show_details(None)
 
     def on_select(self) -> None:
         indexes = self.table.selectionModel().selectedRows()
         self.show_details(self.rows[indexes[0].row()] if indexes else None)
+
+    def on_select_applied(self) -> None:
+        indexes = self.applied_table.selectionModel().selectedRows()
+        self.show_details(self.applied[indexes[0].row()] if indexes else None)
 
     def show_details(self, row: dict | None) -> None:
         self.current = row
@@ -286,6 +387,23 @@ class MainWindow(QMainWindow):
                                      " border-radius: 4px; padding: 10px 12px;")
         for key, _, mark in LISTS:
             self._fill_list(key, mark, evaluation.get(key) or [])
+
+        is_application = "status" in row
+        self.d_status.setVisible(is_application)
+        if is_application:
+            status_background, status_color = style.STATUS_COLORS[row["status"]]
+            self.d_status.setText(f"Отклик {row['applied_at']} · {STATUS_TEXT[row['status']]}")
+            self.d_status.setStyleSheet(f"background: {status_background}; color: {status_color};"
+                                        " border-radius: 6px; padding: 6px 12px; font-weight: 600; margin-top: 12px;")
+        previous = None if is_application else self._previous_application(row)
+        self.d_notice.setVisible(previous is not None)
+        if previous:
+            self.d_notice.setText(f"Вы уже подавались на «{previous['title']}» в {previous['company']}"
+                                  f" {previous['applied_at']} — статус: {STATUS_TEXT[previous['status']].lower()}")
+        for button in self.found_buttons:
+            button.setVisible(not is_application)
+        for button in self.applied_buttons:
+            button.setVisible(is_application)
 
     def refresh(self) -> None:
         self.refresh_button.setEnabled(False)
@@ -330,6 +448,25 @@ class MainWindow(QMainWindow):
         self.rows = [row for row in self.rows if row["url"] != url]
         self.show_details(None)
         self.render()
+
+    def apply_job(self) -> None:
+        """«Подался»: вакансия уходит из найденных во вкладку «Мои отклики»."""
+        db.apply(self.current["url"])
+        self.show_details(None)
+        self.load_rows()
+
+    def set_status(self, status: str) -> None:
+        """Отметить итог отклика; карточка остаётся на этом отклике и показывает новый статус."""
+        url = self.current["url"]
+        db.set_status(url, status)
+        self.load_rows()
+        self.show_details(next(row for row in self.applied if row["url"] == url))
+
+    def unapply_job(self) -> None:
+        """«Вернуть в найденные» — на случай, если «Подался» нажали по ошибке."""
+        db.unapply(self.current["url"])
+        self.show_details(None)
+        self.load_rows()
 
     def closeEvent(self, event) -> None:
         if self.worker.model_loaded:

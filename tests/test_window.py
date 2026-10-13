@@ -75,7 +75,7 @@ def test_score_colored_by_band(window):
 
 
 def list_texts(w, key):
-    rows = w.lists[key][2]
+    rows = w.detail_lists[key][2]
     return [rows.itemAt(i).layout().itemAt(1).widget().text() for i in range(rows.count())]
 
 
@@ -91,7 +91,7 @@ def test_switching_rows_replaces_list_items(window):
     # Строки прошлой вакансии не должны оставаться в карточке, даже до удаления через цикл событий
     labels = window.pages.widget(1).findChildren(QLabel)
     assert "Python" not in [label.text() for label in labels]
-    assert window.lists["have"][0].text() == "ЕСТЬ · 2"
+    assert window.detail_lists["have"][0].text() == "ЕСТЬ · 2"
 
 
 def test_no_risks_shows_no_blockers(window):
@@ -133,3 +133,89 @@ def test_cv_button_opens_one_cv_window(window):
     window.cv_button.click()
     assert window.cv_window is first  # повторное нажатие не плодит окна
     first.close()
+
+
+def add_found(url, score, title=None, company="ACME"):
+    """Найденная вакансия в базе, оценённая по временному резюме из фикстуры."""
+    if not config.CV_PATH.exists():
+        config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # временное резюме
+    # Свой источник у каждой вакансии: save_jobs выключает вакансии источника, которых нет в выборке
+    job = Job(url=url, source=f"src-{url}", title=title or f"Job {url}", company=company, city="Praha",
+              published="2026-10-01", description="")
+    db.save_jobs(job.source, [job])
+    db.save_evaluation(url, row(url, score)["evaluation"], worker.read_cv()[1])
+
+
+def applied_titles(w):
+    return [w.applied_table.item(i, 1).text() for i in range(w.applied_table.rowCount())]
+
+
+def test_apply_moves_row_to_applications(window):
+    add_found("a", 8)
+    add_found("b", 7)
+    window.load_rows()
+    window.table.selectRow(0)
+    window.apply_button.click()
+    assert titles(window) == ["Job b"]
+    assert applied_titles(window) == ["Job a"]
+    assert window.applied_table.item(0, 3).text() == "Ждём ответа"
+    assert window.found_tab.text() == "Найденные · 1"
+    assert window.applied_tab.text() == "Мои отклики · 1"
+
+
+def test_status_buttons_and_return(window):
+    add_found("a", 8)
+    window.load_rows()
+    window.table.selectRow(0)
+    window.apply_button.click()
+    window.show_tab(1)
+    window.applied_table.selectRow(0)
+    assert not window.accept_button.isHidden() and window.apply_button.isHidden()
+    window.accept_button.click()
+    assert window.applied_table.item(0, 3).text() == "Приняли"
+    assert "Приняли" in window.d_status.text()  # карточка осталась на этом отклике и обновилась
+    window.reject_button.click()
+    assert window.applied_table.item(0, 3).text() == "Отказали"
+    window.unapply_button.click()
+    assert applied_titles(window) == []
+    assert titles(window) == ["Job a"]
+    assert window.applied_tab.text() == "Мои отклики · 0"
+
+
+def test_repost_marked(window):
+    add_found("old", 8, title="Python Dev", company="ACME")
+    window.load_rows()
+    window.table.selectRow(0)
+    window.apply_button.click()
+    add_found("new", 7, title="python  dev", company=" acme ")  # та же вакансия с новой ссылкой
+    window.load_rows()
+    assert titles(window) == ["↻ python  dev"]
+    window.table.selectRow(0)
+    assert not window.d_notice.isHidden()
+    assert "Вы уже подавались" in window.d_notice.text()
+
+
+def test_card_extras_reset_between_rows(window):
+    add_found("old", 8, title="Python Dev")
+    add_found("plain", 6, title="Other")
+    window.load_rows()
+    window.table.selectRow(0)
+    window.apply_button.click()
+    add_found("new", 7, title="Python Dev")
+    window.load_rows()
+    window.table.selectRow(0)  # перепубликованная — с жёлтой плашкой
+    assert not window.d_notice.isHidden()
+    window.table.selectRow(1)  # обычная найденная
+    assert window.d_notice.isHidden() and window.d_status.isHidden()
+    assert not window.apply_button.isHidden() and window.accept_button.isHidden()
+
+
+def test_new_found_row_keeps_application_selected(window):
+    add_found("a", 8)
+    window.load_rows()
+    window.table.selectRow(0)
+    window.apply_button.click()
+    window.show_tab(1)
+    window.applied_table.selectRow(0)
+    window.on_evaluated(row("fresh", 9))  # фоновое обновление прислало новую найденную вакансию
+    assert window.current["url"] == "a"
