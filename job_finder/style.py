@@ -4,13 +4,19 @@ COLORS = {
     "bg": "#1b1d23",           # фон окна
     "panel": "#24272f",        # карточки: таблица и детали
     "border": "#323641",
+    "scroll": "#4b5060",       # ползунок прокрутки
     "text": "#e5e7eb",
     "muted": "#9ca3af",        # второстепенный текст
-    "accent": "#16a34a",       # кнопка «Обновить», полоса прогресса
+    "accent": "#16a34a",       # кнопки «Обновить» и «Открыть вакансию», полоса прогресса
     "accent_hover": "#15803d",
     "accent_soft": "#1e3a2b",  # выделенная строка
-    "alt": "#272a33",          # чередование строк
+    "alt": "#272a33",          # чередование строк, блок «Почему такая оценка»
 }
+
+GAP = 12  # единый отступ: от краёв окна и между блоками
+
+# Цвета значков в списках деталей: ✓ есть, ✕ не хватает, ! может отсечь
+LIST_COLORS = {"have": "#4ade80", "missing": "#f87171", "risks": "#fbbf24"}
 
 # Цвета оценки: (фон плашки, цвет текста)
 _GOOD = ("#14532d", "#4ade80")
@@ -43,16 +49,21 @@ QTableWidget::item {{ padding: 4px 8px; border: none; }}
 QTableWidget::item:selected {{ background: {accent_soft}; color: {text}; }}
 QHeaderView::section {{ background: {panel}; color: {muted}; font-weight: 600; border: none;
                        border-bottom: 1px solid {border}; padding: 8px; }}
-QScrollArea#detailsScroll {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
-QWidget#details {{ background: {panel}; }}
+QFrame#card {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
+QScrollArea#detailsScroll, QWidget#details, QWidget#detailsPage, QWidget#emptyPage {{
+    background: transparent; border: none; }}
+QWidget#footer {{ background: transparent; border-top: 1px solid {border}; }}
 QLabel#title {{ font-size: 15pt; font-weight: 600; }}
-QLabel#meta {{ color: {muted}; }}
-QLabel#section {{ color: {muted}; font-weight: 600; font-size: 9pt; padding-top: 10px; }}
+QLabel#company {{ font-size: 11pt; }}
+QLabel#metaKey, QLabel#muted {{ color: {muted}; }}
+QLabel#section {{ color: {muted}; font-weight: 600; font-size: 9pt; }}
+QLabel#empty {{ color: {muted}; font-size: 11pt; }}
+QFrame#divider {{ background: {border}; border: none; min-height: 1px; max-height: 1px; }}
 QProgressBar {{ background: {border}; border: none; border-radius: 3px; max-height: 6px; }}
 QProgressBar::chunk {{ background: {accent}; border-radius: 3px; }}
 QSplitter::handle {{ background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
-QScrollBar::handle:vertical {{ background: {border}; border-radius: 4px; min-height: 30px; }}
+QScrollBar::handle:vertical {{ background: {scroll}; border-radius: 4px; min-height: 30px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 """.format(**COLORS)

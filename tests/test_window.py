@@ -3,7 +3,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from job_finder import config, db, style, worker
 from job_finder.window import MainWindow
@@ -67,4 +67,40 @@ def test_score_colored_by_band(window):
     assert window.table.item(0, 0).foreground().color().name() == style.score_colors(9)[1]
     assert window.table.item(1, 0).foreground().color().name() == style.score_colors(5)[1]
     window.table.selectRow(0)
-    assert style.score_colors(9)[0] in window.d_score.styleSheet()  # плашка оценки в деталях
+    assert style.score_colors(9)[0] in window.badge.styleSheet()  # плашка оценки в деталях
+    assert window.badge_number.text() == "9"
+
+
+def list_texts(w, key):
+    rows = w.lists[key][2]
+    return [rows.itemAt(i).layout().itemAt(1).widget().text() for i in range(rows.count())]
+
+
+def test_switching_rows_replaces_list_items(window):
+    first = row("a", 9)
+    second = row("b", 7)
+    second["evaluation"]["have"] = ["SQL", "Git"]
+    window.on_evaluated(first)
+    window.on_evaluated(second)
+    window.table.selectRow(0)
+    window.table.selectRow(1)
+    assert list_texts(window, "have") == ["SQL", "Git"]
+    # Строки прошлой вакансии не должны оставаться в карточке, даже до удаления через цикл событий
+    labels = window.pages.widget(1).findChildren(QLabel)
+    assert "Python" not in [label.text() for label in labels]
+    assert window.lists["have"][0].text() == "ЕСТЬ · 2"
+
+
+def test_no_risks_shows_no_blockers(window):
+    window.on_evaluated(row("a", 9))
+    window.table.selectRow(0)
+    assert list_texts(window, "risks") == ["Блокеров не найдено"]
+
+
+def test_empty_state_until_row_selected(window):
+    window.on_evaluated(row("a", 9))
+    assert window.pages.currentIndex() == 0  # «Выберите вакансию в списке слева»
+    window.table.selectRow(0)
+    assert window.pages.currentIndex() == 1
+    window.hide_job()
+    assert window.pages.currentIndex() == 0
