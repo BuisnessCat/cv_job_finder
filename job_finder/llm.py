@@ -56,6 +56,10 @@ RULES = """Ты помогаешь кандидату решить, стоит �
 """
 
 
+class ModelLost(RuntimeError):
+    """Ответила не наша модель: её выгрузили из LM Studio посреди оценки (например, из окна чата)."""
+
+
 def _lms(*args: str, timeout: int = 120) -> subprocess.CompletedProcess:
     return subprocess.run(
         [str(config.LMS_EXE), *args], stdin=subprocess.DEVNULL, capture_output=True,
@@ -118,7 +122,11 @@ def evaluate(cv_text: str, job: Job) -> dict:
         timeout=120,
     )
     response.raise_for_status()
-    result = json.loads(response.json()["choices"][0]["message"]["content"])
+    data = response.json()
+    # Без нашей модели LM Studio молча отвечает любой загруженной — такой ответ не годится
+    if data.get("model") != config.MODEL_ID:
+        raise ModelLost(f"модель {config.MODEL_ID} выгружена (ответила {data.get('model')}), оценка остановлена")
+    result = json.loads(data["choices"][0]["message"]["content"])
     result["score"] = int(result["score"])
     return result
 

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from job_finder import config, llm
 from job_finder.sources import Job
 
@@ -21,7 +23,7 @@ def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
 
     def fake_post(url, **kwargs):
         sent.update(url=url, **kwargs)
-        return FakeResponse({"choices": [{"message": {"content": json.dumps(answer)}}]})
+        return FakeResponse({"model": config.MODEL_ID, "choices": [{"message": {"content": json.dumps(answer)}}]})
 
     monkeypatch.setattr(llm.requests, "post", fake_post)
     job = Job(url="u", source="Jobicy", title="Python Dev", company="ACME", city="Praha",
@@ -38,3 +40,14 @@ def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
     user = body["messages"][1]["content"]
     assert "Python Dev" in user and "ACME" in user and "Praha" in user
     assert user.count("x") == config.MAX_DESCRIPTION_CHARS
+
+
+def test_evaluate_rejects_answer_from_another_model(monkeypatch):
+    # Если нашу модель выгрузили (например, из окна LM Studio), сервер отвечает другой моделью
+    answer = {"score": 5, "summary": "", "have": [], "missing": [], "risks": []}
+    monkeypatch.setattr(llm.requests, "post", lambda url, **kwargs: FakeResponse(
+        {"model": "qwen/qwen3.8-27b", "choices": [{"message": {"content": json.dumps(answer)}}]}))
+    job = Job(url="u", source="Jobicy", title="Python Dev", company="ACME", city="", published="2026-10-01",
+              description="")
+    with pytest.raises(llm.ModelLost, match="qwen/qwen3.8-27b"):
+        llm.evaluate("CV", job)
