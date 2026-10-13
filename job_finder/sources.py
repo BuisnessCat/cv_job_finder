@@ -1,0 +1,151 @@
+"""Источники вакансий: четыре агрегатора с открытым API."""
+import csv
+import io
+import logging
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+import requests
+from bs4 import BeautifulSoup
+
+from job_finder import config
+
+log = logging.getLogger(__name__)
+csv.field_size_limit(10_000_000)  # на случай очень длинных описаний в CSV junior.guru
+HEADERS = {"User-Agent": "job-finder/1.0 (personal desktop app)"}
+
+
+@dataclass
+class Job:
+    url: str
+    source: str
+    title: str
+    company: str
+    city: str
+    published: str  # YYYY-MM-DD
+    description: str  # обычный текст
+
+
+def html_to_text(html: str | None) -> str:
+    return BeautifulSoup(html or "", "html.parser").get_text("\n", strip=True)
+
+
+def parse_juniorguru(text: str) -> list[Job]:
+    jobs = []
+    for row in csv.DictReader(io.StringIO(text)):
+        city = row.get("locations_0_name") or ("Удалённо" if row.get("remote") == "True" else "")
+        jobs.append(Job(
+            url=row["url"], source="junior.guru", title=row["title"], company=row["company_name"],
+            city=city, published=row["first_seen_at"][:10],
+            description=html_to_text(row.get("description_html")),
+        ))
+    return jobs
+
+
+def parse_himalayas(data: dict) -> list[Job]:
+    jobs = []
+    for item in data.get("jobs") or []:
+        countries = item.get("locationRestrictions") or []
+        city = "Удалённо"
+        if countries:
+            city += f" ({', '.join(countries[:3])}{' …' if len(countries) > 3 else ''})"
+        published = datetime.fromtimestamp(int(item["pubDate"]), timezone.utc).strftime("%Y-%m-%d")
+        jobs.append(Job(
+            url=item["guid"], source="Himalayas", title=item["title"], company=item["companyName"],
+            city=city, published=published, description=html_to_text(item.get("description")),
+        ))
+    return jobs
+
+
+def parse_jobicy(data: dict) -> list[Job]:
+    return [
+        Job(
+            url=item["url"], source="Jobicy", title=item["jobTitle"], company=item["companyName"],
+            city=f"Удалённо: {item['jobGeo']}" if item.get("jobGeo") else "Удалённо",
+            published=item["pubDate"][:10], description=html_to_text(item.get("jobDescription")),
+        )
+        for item in data.get("jobs") or []
+    ]
+
+
+def parse_workingnomads(data: list) -> list[Job]:
+    return [
+        Job(
+            url=item["url"], source="Working Nomads", title=item["title"], company=item["company_name"],
+            city=f"Удалённо: {item['location']}" if item.get("location") else "Удалённо",
+            published=item["pub_date"][:10], description=html_to_text(item.get("description")),
+        )
+        for item in data
+        if item.get("category_name") == "Development"
+    ]
+
+
+def _get(url: str, params: dict | None = None) -> requests.Response:
+    response = requests.get(url, params=params, headers=HEADERS, timeout=config.HTTP_TIMEOUT)
+    response.raise_for_status()
+    return response
+
+
+def fetch_juniorguru() -> list[Job]:
+    # Декодируем сами: так не зависим от заголовка ответа и убираем BOM
+    return parse_juniorguru(_get(config.JUNIORGURU_URL).content.decode("utf-8-sig"))
+
+
+def fetch_himalayas() -> list[Job]:
+    jobs = []
+    for page in range(1, config.HIMALAYAS_MAX_PAGES + 1):
+        if page > 1:
+            time.sleep(1)  # Himalayas ограничивает частоту запросов
+        batch = parse_himalayas(_get(config.HIMALAYAS_URL, {**config.HIMALAYAS_PARAMS, "page": page}).json())
+        if not batch:
+            break
+        jobs += batch
+    return jobs
+
+
+def fetch_jobicy() -> list[Job]:
+    return parse_jobicy(_get(config.JOBICY_URL, config.JOBICY_PARAMS).json())
+
+
+def fetch_workingnomads() -> list[Job]:
+    return parse_workingnomads(_get(config.WORKINGNOMADS_URL).json())
+
+
+# Порядок — приоритет при удалении дублей
+SOURCES = [
+    ("junior.guru", fetch_juniorguru),
+    ("Himalayas", fetch_himalayas),
+    ("Jobicy", fetch_jobicy),
+    ("Working Nomads", fetch_workingnomads),
+]
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def dedupe(fetched: dict[str, list[Job]]) -> dict[str, list[Job]]:
+    """Убрать повторы по «компания + название»; остаётся запись источника, который раньше в словаре."""
+    seen = set()
+    result = {}
+    for name, jobs in fetched.items():
+        result[name] = []
+        for job in jobs:
+            key = (_norm(job.company), _norm(job.title))
+            if key not in seen:
+                seen.add(key)
+                result[name].append(job)
+    return result
+
+
+def fetch_all() -> tuple[dict[str, list[Job]], dict[str, str]]:
+    """Загрузить все источники: (вакансии по источникам без дублей, ошибки по источникам)."""
+    fetched, errors = {}, {}
+    for name, fetch in SOURCES:
+        try:
+            fetched[name] = fetch()
+        except Exception as error:
+            log.exception("Источник %s не загрузился", name)
+            errors[name] = str(error)[:150]
+    return dedupe(fetched), errors
