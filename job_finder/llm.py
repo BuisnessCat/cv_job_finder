@@ -94,7 +94,13 @@ def prepare() -> None:
     if not config.LMS_EXE.exists():
         raise RuntimeError(f"не найден {config.LMS_EXE}")
     if not _server_up():
-        _lms("server", "start", "--port", str(config.LM_PORT), timeout=60)
+        # Вывод не перехватываем: запущенный командой сервис LM Studio унаследовал бы наши каналы,
+        # и subprocess.run ждал бы их закрытия бесконечно, несмотря на timeout
+        subprocess.run(
+            [str(config.LMS_EXE), "server", "start", "--port", str(config.LM_PORT)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=60, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
         deadline = time.monotonic() + 30
         while not _server_up():
             if time.monotonic() > deadline:

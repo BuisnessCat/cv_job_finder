@@ -2,11 +2,19 @@
 import logging
 import os
 import sys
+from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QLockFile
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from job_finder import config, db
 from job_finder.window import MainWindow
+
+
+def acquire_lock(path: Path) -> QLockFile | None:
+    """Блокировка «приложение уже открыто»; None, если её держит другой запущенный экземпляр."""
+    lock = QLockFile(str(path))
+    return lock if lock.tryLock(0) else None
 
 
 def main() -> None:
@@ -16,8 +24,13 @@ def main() -> None:
     )
     # У pythonw нет консоли: необработанные исключения пишем в лог
     sys.excepthook = lambda *exc_info: logging.critical("Необработанное исключение", exc_info=exc_info)
-    db.init()
     app = QApplication(sys.argv)
+    # Второй двойной клик по ярлыку: два окна делили бы одну модель, и закрытие одного выгружало бы её у другого
+    lock = acquire_lock(config.ROOT / "job_finder.lock")
+    if lock is None:
+        QMessageBox.information(None, "Подбор вакансий", "Приложение уже открыто.")
+        os._exit(0)
+    db.init()
     window = MainWindow()
     window.show()
     code = app.exec()

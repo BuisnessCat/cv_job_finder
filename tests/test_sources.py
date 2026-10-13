@@ -148,3 +148,20 @@ def test_fetch_himalayas_respects_max_pages(monkeypatch):
     monkeypatch.setattr(config, "HIMALAYAS_MAX_PAGES", 2)
     sources.fetch_himalayas()
     assert calls == [1, 2]
+
+
+def test_parsers_tolerate_null_fields():
+    # В ответах API бывают null: одна такая запись не должна ронять источник или всё обновление
+    him = sources.parse_himalayas({"jobs": [
+        {"title": None, "companyName": None, "guid": "https://himalayas.app/1", "pubDate": None,
+         "locationRestrictions": None, "description": None}]})
+    jobicy = sources.parse_jobicy({"jobs": [
+        {"url": "https://jobicy.com/1", "jobTitle": "Dev", "companyName": None, "jobGeo": None, "pubDate": None,
+         "jobDescription": None}]})
+    nomads = sources.parse_workingnomads([
+        {"url": "https://www.workingnomads.com/1", "title": "Ops", "company_name": None,
+         "category_name": "Development", "location": None, "pub_date": None, "description": None}])
+    assert [(j.title, j.company, j.city, j.published) for j in him + jobicy + nomads] == [
+        ("", "", "Удалённо", ""), ("Dev", "", "Удалённо", ""), ("Ops", "", "Удалённо", "")]
+    deduped = sources.dedupe({"Himalayas": him, "Jobicy": jobicy, "Working Nomads": nomads})
+    assert sum(len(jobs) for jobs in deduped.values()) == 3

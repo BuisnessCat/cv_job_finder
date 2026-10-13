@@ -3,6 +3,7 @@ master_cv.md
 *.db
 *.db-*
 *.log
+*.lock
 
 # Python
 .venv/

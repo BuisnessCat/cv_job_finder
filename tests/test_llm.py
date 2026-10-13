@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 import pytest
 
@@ -51,3 +52,26 @@ def test_evaluate_rejects_answer_from_another_model(monkeypatch):
               description="")
     with pytest.raises(llm.ModelLost, match="qwen/qwen3.8-27b"):
         llm.evaluate("CV", job)
+
+
+def test_prepare_starts_server_without_capturing_output(tmp_path, monkeypatch):
+    # Сервис LM Studio, запущенный командой, может унаследовать перехваченные каналы вывода,
+    # и тогда subprocess.run ждёт их закрытия бесконечно, несмотря на timeout
+    exe = tmp_path / "lms.exe"
+    exe.write_text("")
+    monkeypatch.setattr(config, "LMS_EXE", exe)
+    states = iter([False, True])
+    monkeypatch.setattr(llm, "_server_up", lambda: next(states))
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((args[1:], kwargs))
+        return subprocess.CompletedProcess(args, 0, stdout=f'[{{"identifier": "{config.MODEL_ID}"}}]', stderr="")
+
+    monkeypatch.setattr(llm.subprocess, "run", fake_run)
+    llm.prepare()
+    (start_args, start_kwargs), (ps_args, _) = calls
+    assert start_args[:2] == ["server", "start"]
+    assert start_kwargs.get("stdout") is subprocess.DEVNULL
+    assert start_kwargs.get("stderr") is subprocess.DEVNULL
+    assert ps_args == ["ps", "--json"]

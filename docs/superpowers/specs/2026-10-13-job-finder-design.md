@@ -222,7 +222,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   проекта. Установку и ярлык выполняет исполнитель плана, а не пользователь.
 - Пути (`master_cv.md`, `jobs.db`, `job_finder.log`) считаются от корня проекта, а не от текущей
   папки.
-- `.gitignore`: `master_cv.md`, `*.db`, `*.log`, `.venv/`, `__pycache__/`, `.pytest_cache/`.
+- Повторный запуск ярлыка, пока окно открыто, показывает «Приложение уже открыто.» и завершается
+  (блокировка `job_finder.lock` в корне проекта через `QLockFile`): два окна делили бы одну модель.
+- `.gitignore`: `master_cv.md`, `*.db`, `*.log`, `*.lock`, `.venv/`, `__pycache__/`, `.pytest_cache/`.
 
 ## 10. Структура
 

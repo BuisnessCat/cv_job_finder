@@ -3,7 +3,7 @@ import csv
 import io
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime, timezone
 
 import requests
@@ -26,6 +26,12 @@ class Job:
     published: str  # YYYY-MM-DD
     description: str  # обычный текст
 
+    def __post_init__(self):
+        # В ответах API бывают null: одна такая запись не должна ронять удаление дублей и запись в базу
+        for field in fields(self):
+            if getattr(self, field.name) is None:
+                setattr(self, field.name, "")
+
 
 def html_to_text(html: str | None) -> str:
     return BeautifulSoup(html or "", "html.parser").get_text("\n", strip=True)
@@ -37,7 +43,7 @@ def parse_juniorguru(text: str) -> list[Job]:
         city = row.get("locations_0_name") or ("Удалённо" if row.get("remote") == "True" else "")
         jobs.append(Job(
             url=row["url"], source="junior.guru", title=row["title"], company=row["company_name"],
-            city=city, published=row["first_seen_at"][:10],
+            city=city, published=(row.get("first_seen_at") or "")[:10],
             description=html_to_text(row.get("description_html")),
         ))
     return jobs
@@ -49,8 +55,9 @@ def parse_himalayas(data: dict) -> list[Job]:
         countries = item.get("locationRestrictions") or []
         city = "Удалённо"
         if countries:
-            city += f" ({', '.join(countries[:3])}{' …' if len(countries) > 3 else ''})"
-        published = datetime.fromtimestamp(int(item["pubDate"]), timezone.utc).strftime("%Y-%m-%d")
+            city += f" ({', '.join(map(str, countries[:3]))}{' …' if len(countries) > 3 else ''})"
+        pub_date = item.get("pubDate")
+        published = datetime.fromtimestamp(int(pub_date), timezone.utc).strftime("%Y-%m-%d") if pub_date else ""
         jobs.append(Job(
             url=item["guid"], source="Himalayas", title=item["title"], company=item["companyName"],
             city=city, published=published, description=html_to_text(item.get("description")),
@@ -63,7 +70,7 @@ def parse_jobicy(data: dict) -> list[Job]:
         Job(
             url=item["url"], source="Jobicy", title=item["jobTitle"], company=item["companyName"],
             city=f"Удалённо: {item['jobGeo']}" if item.get("jobGeo") else "Удалённо",
-            published=item["pubDate"][:10], description=html_to_text(item.get("jobDescription")),
+            published=(item.get("pubDate") or "")[:10], description=html_to_text(item.get("jobDescription")),
         )
         for item in data.get("jobs") or []
     ]
@@ -74,7 +81,7 @@ def parse_workingnomads(data: list) -> list[Job]:
         Job(
             url=item["url"], source="Working Nomads", title=item["title"], company=item["company_name"],
             city=f"Удалённо: {item['location']}" if item.get("location") else "Удалённо",
-            published=item["pub_date"][:10], description=html_to_text(item.get("description")),
+            published=(item.get("pub_date") or "")[:10], description=html_to_text(item.get("description")),
         )
         for item in data
         if item.get("category_name") == "Development"
