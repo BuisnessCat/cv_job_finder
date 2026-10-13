@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     evaluation  TEXT,               -- JSON-ответ модели
     cv_hash     TEXT,               -- ключ оценки: SHA-256 резюме, модели и правил
     status      TEXT,               -- отклик: NULL, 'applied', 'accepted', 'rejected'
-    applied_at  TEXT                -- дата отклика YYYY-MM-DD
+    applied_at  TEXT,               -- дата отклика YYYY-MM-DD
+    notes       TEXT,               -- заметка к отклику
+    seen        INTEGER NOT NULL DEFAULT 0  -- 0 — появилась после прошлого закрытия окна (новая)
 )
 """
 
@@ -48,11 +50,14 @@ def _connect():
 def init() -> None:
     with _connect() as conn:
         conn.execute(SCHEMA)
-        # База, созданная до появления откликов: добавить новые колонки, вакансии и оценки сохраняются
+        # База, созданная до новых колонок: добавить недостающие, вакансии и оценки сохраняются
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
-        for column in ("status", "applied_at"):
+        for column in ("status", "applied_at", "notes"):
             if column not in columns:
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} TEXT")
+        if "seen" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN seen INTEGER NOT NULL DEFAULT 0")
+            conn.execute("UPDATE jobs SET seen = 1")  # имевшиеся вакансии — уже просмотренные, не новые
 
 
 def save_jobs(source: str, jobs: list[Job]) -> None:
@@ -114,6 +119,24 @@ def unapply(url: str) -> None:
         conn.execute("UPDATE jobs SET status = NULL, applied_at = NULL WHERE url = ?", (url,))
 
 
+def set_notes(url: str, notes: str) -> None:
+    """Заметка к отклику: с кем общались, когда собеседование."""
+    with _connect() as conn:
+        conn.execute("UPDATE jobs SET notes = ? WHERE url = ?", (notes, url))
+
+
+def mark_all_seen() -> None:
+    """Отметить все вакансии просмотренными (при закрытии окна): новыми станут только пришедшие потом."""
+    with _connect() as conn:
+        conn.execute("UPDATE jobs SET seen = 1 WHERE seen = 0")
+
+
+def unseen_urls() -> set[str]:
+    """url вакансий, появившихся после прошлого закрытия окна."""
+    with _connect() as conn:
+        return {row["url"] for row in conn.execute("SELECT url FROM jobs WHERE seen = 0")}
+
+
 def count_evaluated(cv_hash: str) -> int:
     """Сколько активных нескрытых вакансий оценено с текущим ключом."""
     with _connect() as conn:
@@ -146,12 +169,12 @@ def list_applied() -> list[dict]:
     """Отклики для вкладки «Мои отклики»: все, новые сверху, независимо от active, hidden и ключа оценки."""
     with _connect() as conn:
         rows = conn.execute(
-            f"""SELECT {JOB_FIELDS}, evaluation, status, applied_at FROM jobs
+            f"""SELECT {JOB_FIELDS}, evaluation, status, applied_at, notes FROM jobs
                 WHERE status IS NOT NULL
                 ORDER BY applied_at DESC, title""",
         ).fetchall()
     return [
         {**make_row(Job(*tuple(row)[:7]), json.loads(row["evaluation"])),
-         "status": row["status"], "applied_at": row["applied_at"]}
+         "status": row["status"], "applied_at": row["applied_at"], "notes": row["notes"] or ""}
         for row in rows
     ]

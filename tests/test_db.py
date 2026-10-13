@@ -151,3 +151,41 @@ def test_init_adds_columns_to_old_database(tmp_path, monkeypatch):
     assert [row["url"] for row in db.list_jobs("h1", 5)] == ["a"]  # данные сохранились
     db.apply("a")
     assert db.list_applied()[0]["status"] == "applied"
+
+
+def test_new_rows_are_unseen_until_marked():
+    db.save_jobs("Jobicy", [job("a"), job("b")])
+    assert db.unseen_urls() == {"a", "b"}
+    db.mark_all_seen()
+    assert db.unseen_urls() == set()
+    db.save_jobs("Jobicy", [job("a"), job("c")])  # «a» уже была — остаётся просмотренной
+    assert db.unseen_urls() == {"c"}
+
+
+def test_init_marks_existing_rows_seen(tmp_path, monkeypatch):
+    old = tmp_path / "old.db"
+    conn = sqlite3.connect(old)
+    conn.execute("""CREATE TABLE jobs (url TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL,
+        company TEXT NOT NULL, city TEXT NOT NULL, published TEXT NOT NULL, description TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, score INTEGER, evaluation TEXT,
+        cv_hash TEXT, status TEXT, applied_at TEXT)""")
+    conn.execute("INSERT INTO jobs (url, source, title, company, city, published, description, score, evaluation,"
+                 " cv_hash) VALUES ('a', 'Jobicy', 'Job a', 'ACME', 'Praha', '2026-10-01', 'Python', 8, ?, 'h1')",
+                 (json.dumps(evaluation(8)),))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(config, "DB_PATH", old)
+    db.init()
+    assert db.unseen_urls() == set()  # имевшиеся вакансии не «засвечиваются» новыми
+    assert [row["url"] for row in db.list_jobs("h1", 5)] == ["a"]
+    db.save_jobs("Jobicy", [job("a"), job("b")])
+    assert db.unseen_urls() == {"b"}
+
+
+def test_notes_saved_and_listed():
+    db.save_jobs("Jobicy", [job("a")])
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.apply("a")
+    assert db.list_applied()[0]["notes"] == ""
+    db.set_notes("a", "Писал HR 30.09")
+    assert db.list_applied()[0]["notes"] == "Писал HR 30.09"

@@ -10,6 +10,9 @@ ICON_PATH = ROOT / "job_finder" / "icon.ico"
 # Показываем вакансии с оценкой не ниже порога
 MIN_SCORE = 5
 
+# Отклик без ответа дольше этого числа дней подсвечивается: пора напомнить о себе или закрыть
+STALE_DAYS = 14
+
 # LM Studio
 LMS_EXE = Path.home() / ".lmstudio" / "bin" / "lms.exe"
 LM_PORT = 1234
