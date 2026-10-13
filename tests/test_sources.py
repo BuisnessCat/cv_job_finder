@@ -177,3 +177,7 @@ def test_parsers_tolerate_null_fields():
         ("", "", "Удалённо", ""), ("Dev", "", "Удалённо", ""), ("Ops", "", "Удалённо", "")]
     deduped = sources.dedupe({"Himalayas": him, "Jobicy": jobicy, "Working Nomads": nomads})
     assert sum(len(jobs) for jobs in deduped.values()) == 3
+
+
+def test_same_job_key_ignores_case_and_spaces():
+    assert sources.same_job_key(" ACME ", "Python  Dev") == sources.same_job_key("acme", "python dev")

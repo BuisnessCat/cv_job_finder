@@ -3,6 +3,7 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict
+from datetime import date
 
 from job_finder import config
 from job_finder.sources import Job
@@ -20,12 +21,16 @@ CREATE TABLE IF NOT EXISTS jobs (
     hidden      INTEGER NOT NULL DEFAULT 0,
     score       INTEGER,            -- NULL, пока не оценена
     evaluation  TEXT,               -- JSON-ответ модели
-    cv_hash     TEXT                -- SHA-256 master_cv.md на момент оценки
+    cv_hash     TEXT,               -- ключ оценки: SHA-256 резюме, модели и правил
+    status      TEXT,               -- отклик: NULL, 'applied', 'accepted', 'rejected'
+    applied_at  TEXT                -- дата отклика YYYY-MM-DD
 )
 """
 
 # Порядок совпадает с полями Job
 JOB_FIELDS = "url, source, title, company, city, published, description"
+
+STATUSES = ("applied", "accepted", "rejected")  # ждём ответа, приняли, отказали
 
 
 @contextmanager
@@ -43,6 +48,11 @@ def _connect():
 def init() -> None:
     with _connect() as conn:
         conn.execute(SCHEMA)
+        # База, созданная до появления откликов: добавить новые колонки, вакансии и оценки сохраняются
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+        for column in ("status", "applied_at"):
+            if column not in columns:
+                conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} TEXT")
 
 
 def save_jobs(source: str, jobs: list[Job]) -> None:
@@ -61,11 +71,11 @@ def save_jobs(source: str, jobs: list[Job]) -> None:
 
 
 def pending_jobs(cv_hash: str) -> list[Job]:
-    """Активные нескрытые вакансии без оценки по текущему резюме, сначала самые новые."""
+    """Активные нескрытые вакансии без отклика и без оценки по текущему ключу, сначала самые новые."""
     with _connect() as conn:
         rows = conn.execute(
             f"""SELECT {JOB_FIELDS} FROM jobs
-                WHERE active = 1 AND hidden = 0 AND (cv_hash IS NULL OR cv_hash != ?)
+                WHERE active = 1 AND hidden = 0 AND status IS NULL AND (cv_hash IS NULL OR cv_hash != ?)
                 ORDER BY published DESC""",
             (cv_hash,),
         ).fetchall()
@@ -85,11 +95,31 @@ def hide(url: str) -> None:
         conn.execute("UPDATE jobs SET hidden = 1 WHERE url = ?", (url,))
 
 
+def apply(url: str) -> None:
+    """«Подался»: вакансия уходит из найденных в отклики со статусом «ждём ответа» и сегодняшней датой."""
+    with _connect() as conn:
+        conn.execute("UPDATE jobs SET status = 'applied', applied_at = ? WHERE url = ?",
+                     (date.today().isoformat(), url))
+
+
+def set_status(url: str, status: str) -> None:
+    """Итог отклика: один из STATUSES; дата отклика не меняется."""
+    with _connect() as conn:
+        conn.execute("UPDATE jobs SET status = ? WHERE url = ?", (status, url))
+
+
+def unapply(url: str) -> None:
+    """«Вернуть в найденные»: убрать статус и дату отклика."""
+    with _connect() as conn:
+        conn.execute("UPDATE jobs SET status = NULL, applied_at = NULL WHERE url = ?", (url,))
+
+
 def count_evaluated(cv_hash: str) -> int:
     """Сколько активных нескрытых вакансий оценено с текущим ключом."""
     with _connect() as conn:
         return conn.execute(
-            "SELECT COUNT(*) FROM jobs WHERE active = 1 AND hidden = 0 AND cv_hash = ?", (cv_hash,),
+            "SELECT COUNT(*) FROM jobs WHERE active = 1 AND hidden = 0 AND status IS NULL AND cv_hash = ?",
+            (cv_hash,),
         ).fetchone()[0]
 
 
@@ -105,8 +135,23 @@ def list_jobs(cv_hash: str, min_score: int) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
             f"""SELECT {JOB_FIELDS}, evaluation FROM jobs
-                WHERE active = 1 AND hidden = 0 AND cv_hash = ? AND score >= ?
+                WHERE active = 1 AND hidden = 0 AND status IS NULL AND cv_hash = ? AND score >= ?
                 ORDER BY score DESC, published DESC""",
             (cv_hash, min_score),
         ).fetchall()
     return [make_row(Job(*tuple(row)[:7]), json.loads(row["evaluation"])) for row in rows]
+
+
+def list_applied() -> list[dict]:
+    """Отклики для вкладки «Мои отклики»: все, новые сверху, независимо от active, hidden и ключа оценки."""
+    with _connect() as conn:
+        rows = conn.execute(
+            f"""SELECT {JOB_FIELDS}, evaluation, status, applied_at FROM jobs
+                WHERE status IS NOT NULL
+                ORDER BY applied_at DESC, title""",
+        ).fetchall()
+    return [
+        {**make_row(Job(*tuple(row)[:7]), json.loads(row["evaluation"])),
+         "status": row["status"], "applied_at": row["applied_at"]}
+        for row in rows
+    ]

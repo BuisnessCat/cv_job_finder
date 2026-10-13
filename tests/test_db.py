@@ -1,3 +1,7 @@
+import json
+import sqlite3
+from datetime import date
+
 import pytest
 
 from job_finder import config, db
@@ -85,3 +89,65 @@ def test_count_evaluated_counts_current_key_only():
     assert db.count_evaluated("h1") == 2
     db.hide("b")
     assert db.count_evaluated("h1") == 1
+
+
+def test_apply_moves_job_out_of_found_list():
+    db.save_jobs("Jobicy", [job("a"), job("b")])
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.save_evaluation("b", evaluation(7), "h1")
+    db.apply("a")
+    assert [row["url"] for row in db.list_jobs("h1", 5)] == ["b"]
+    applied = db.list_applied()
+    assert [(row["url"], row["status"], row["applied_at"]) for row in applied] == [
+        ("a", "applied", date.today().isoformat())]
+    assert applied[0]["evaluation"]["score"] == 8
+    assert db.count_evaluated("h1") == 1
+    assert urls(db.pending_jobs("h2")) == ["b"]  # отклик не оценивается заново даже после смены ключа
+
+
+def test_application_survives_deactivation_and_new_key():
+    db.save_jobs("Jobicy", [job("a"), job("b")])
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.apply("a")
+    db.save_jobs("Jobicy", [job("b")])  # «a» пропала с сайта
+    assert [row["url"] for row in db.list_applied()] == ["a"]
+
+
+def test_set_status_and_unapply():
+    db.save_jobs("Jobicy", [job("a")])
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.apply("a")
+    db.set_status("a", "accepted")
+    applied = db.list_applied()
+    assert (applied[0]["status"], applied[0]["applied_at"]) == ("accepted", date.today().isoformat())
+    db.unapply("a")
+    assert db.list_applied() == []
+    assert [row["url"] for row in db.list_jobs("h1", 5)] == ["a"]
+
+
+def test_unapply_gone_job_leaves_both_lists():
+    db.save_jobs("Jobicy", [job("a")])
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.apply("a")
+    db.save_jobs("Jobicy", [])  # вакансия пропала с сайта
+    db.unapply("a")
+    assert db.list_applied() == []
+    assert db.list_jobs("h1", 5) == []
+
+
+def test_init_adds_columns_to_old_database(tmp_path, monkeypatch):
+    old = tmp_path / "old.db"
+    conn = sqlite3.connect(old)
+    conn.execute("""CREATE TABLE jobs (url TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL,
+        company TEXT NOT NULL, city TEXT NOT NULL, published TEXT NOT NULL, description TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, score INTEGER, evaluation TEXT,
+        cv_hash TEXT)""")
+    conn.execute("INSERT INTO jobs VALUES ('a', 'Jobicy', 'Job a', 'ACME', 'Praha', '2026-10-01', 'Python',"
+                 " 1, 0, 8, ?, 'h1')", (json.dumps(evaluation(8)),))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(config, "DB_PATH", old)
+    db.init()
+    assert [row["url"] for row in db.list_jobs("h1", 5)] == ["a"]  # данные сохранились
+    db.apply("a")
+    assert db.list_applied()[0]["status"] == "applied"

@@ -140,6 +140,11 @@ def _norm(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+def same_job_key(company: str, title: str) -> tuple[str, str]:
+    """Ключ «та же вакансия»: компания и название без учёта регистра и лишних пробелов."""
+    return _norm(company), _norm(title)
+
+
 def dedupe(fetched: dict[str, list[Job]]) -> dict[str, list[Job]]:
     """Убрать повторы по «компания + название»; остаётся запись источника, который раньше в словаре."""
     seen = set()
@@ -147,7 +152,7 @@ def dedupe(fetched: dict[str, list[Job]]) -> dict[str, list[Job]]:
     for name, jobs in fetched.items():
         result[name] = []
         for job in jobs:
-            key = (_norm(job.company), _norm(job.title))
+            key = same_job_key(job.company, job.title)
             if key not in seen:
                 seen.add(key)
                 result[name].append(job)
