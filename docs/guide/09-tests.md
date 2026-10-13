@@ -2,7 +2,7 @@
 
 [← Окно и оформление](08-window-and-style.md) · [Оглавление](README.md) · [Дальше: рецепты и ограничения →](10-howto-and-limits.md)
 
-Папка: [tests/](../../tests/). 46 тестов, проходят примерно за 1,5 секунды.
+Папка: [tests/](../../tests/). 57 тестов, проходят примерно за 1,5 секунды.
 
 ## Как запускать
 
@@ -55,7 +55,7 @@
 > Поэтому в [test_key_changes_with_cv_and_rules](../../tests/test_worker.py#L48) правила возвращаются
 > вручную через `setattr`, а не через `undo()`.
 
-## test_sources.py — разбор источников (11 тестов)
+## test_sources.py — разбор источников (12 тестов)
 
 Образцы ответов: CSV junior.guru, JSON Himalayas, Jobicy, Working Nomads ([строки 4-33](../../tests/test_sources.py#L4-L33)).
 
@@ -72,6 +72,7 @@
 | `test_fetch_himalayas_pages_until_empty` | постраничная загрузка останавливается на пустой странице |
 | `test_fetch_himalayas_respects_max_pages` | не больше `HIMALAYAS_MAX_PAGES` страниц |
 | `test_parsers_tolerate_null_fields` | `null` в любых полях не роняет разбор и удаление дублей |
+| `test_same_job_key_ignores_case_and_spaces` | ключ «та же вакансия» не зависит от регистра и лишних пробелов |
 
 ## test_skills.py — отсев по навыкам (5 тестов)
 
@@ -91,7 +92,7 @@
 | `test_evaluate_rejects_answer_from_another_model` | ответ от другой модели → `ModelLost` с её именем |
 | `test_prepare_starts_server_without_capturing_output` | `lms server start` вызывается с выводом в `DEVNULL` (иначе зависание, см. `prepare()` в [разделе 5](05-llm.md)), затем `lms ps --json` |
 
-## test_db.py — база (8 тестов)
+## test_db.py — база (13 тестов)
 
 Фикстура `tmp_db` с `autouse=True` даёт каждому тесту свою пустую базу во временной папке.
 
@@ -105,6 +106,11 @@
 | `test_list_filters_by_threshold_and_sorts` | порог и порядок «оценка ↓, дата ↓»; строка совпадает с `make_row` |
 | `test_duplicate_url_in_one_batch` | два одинаковых `url` в одной выдаче не ломают upsert |
 | `test_count_evaluated_counts_current_key_only` | считаются только оценки с текущим ключом и только нескрытые |
+| `test_apply_moves_job_out_of_found_list` | «Подался» убирает из найденных, отклик со статусом и сегодняшней датой; не в счётчике и не в очереди даже после смены ключа |
+| `test_application_survives_deactivation_and_new_key` | отклик остаётся, когда вакансия пропала с сайта |
+| `test_set_status_and_unapply` | смена статуса не трогает дату; «вернуть» — снова в найденных |
+| `test_unapply_gone_job_leaves_both_lists` | вернуть пропавшую с сайта вакансию — её нет ни в одном списке |
+| `test_init_adds_columns_to_old_database` | старая база без `status` / `applied_at` дополняется, данные на месте |
 
 ## test_worker.py — фоновое обновление (3 теста)
 
@@ -117,7 +123,7 @@
 | `test_summary_counts_suitable_and_evaluated` | итог «Готово: 2 подходящих из 3 оценённых» |
 | `test_key_changes_with_cv_and_rules` | ключ меняется при смене правил и при смене резюме, возвращается при возврате правил |
 
-## test_window.py — окно (10 тестов)
+## test_window.py — окно (15 тестов)
 
 Фикстура `window`: временная база, резюме нет (значит, список изначально пуст), `Worker.start`
 заменён пустышкой — обновление не запускается. Строки подаются через `on_evaluated(...)`, как будто
@@ -135,6 +141,11 @@
 | `test_icon_file_has_small_and_large_sizes` | в `icon.ico` есть размеры 16×16 (окно) и 256×256 (ярлык) |
 | `test_cv_button_opens_one_cv_window` | кнопка «Резюме» открывает окно; повторное нажатие не создаёт второе |
 | `test_finished_reloads_rows_from_db` | после обновления таблица перечитывается из базы: строка, которой в базе нет, исчезает |
+| `test_apply_moves_row_to_applications` | «Подался» переносит строку во вкладку откликов, числа на переключателе |
+| `test_status_buttons_and_return` | «Приняли» / «Отказали» меняют статус в таблице и карточке; «Вернуть в найденные» |
+| `test_repost_marked` | вакансия с той же компанией и названием — «↻» в таблице и жёлтая плашка |
+| `test_card_extras_reset_between_rows` | при переходе на обычную вакансию плашки исчезают, кнопки — как у найденной |
+| `test_new_found_row_keeps_application_selected` | новая найденная вакансия из фона не сбрасывает открытый отклик |
 
 ## test_cv_window.py — окно «Резюме» (4 теста)
 
