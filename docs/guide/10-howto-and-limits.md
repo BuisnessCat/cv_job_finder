@@ -36,7 +36,7 @@
 Название — в `COLUMNS` ([window.py:15](../../job_finder/window.py#L15)), значение — в список
 `values` в `render()` ([window.py:378](../../job_finder/window.py#L378)); для вкладки откликов —
 `APPLIED_COLUMNS` и `values` в `render_applied()` ([window.py:400](../../job_finder/window.py#L400)). Если нужного поля нет в
-строке — добавить его в `make_row` ([db.py:149](../../job_finder/db.py#L149)).
+строке — добавить его в `make_row` ([db.py:151](../../job_finder/db.py#L151)).
 
 ### Добавить поле в ответ модели
 

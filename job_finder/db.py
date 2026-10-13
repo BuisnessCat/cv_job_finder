@@ -126,9 +126,11 @@ def set_notes(url: str, notes: str) -> None:
 
 
 def mark_all_seen() -> None:
-    """Отметить все вакансии просмотренными (при закрытии окна): новыми станут только пришедшие потом."""
+    """Отметить просмотренными (при закрытии окна) все оценённые вакансии: новыми станут только пришедшие потом.
+
+    Ещё не оценённые (ждали в очереди, LM Studio не поднялась) окно показать не могло — они остаются новыми."""
     with _connect() as conn:
-        conn.execute("UPDATE jobs SET seen = 1 WHERE seen = 0")
+        conn.execute("UPDATE jobs SET seen = 1 WHERE seen = 0 AND score IS NOT NULL")
 
 
 def unseen_urls() -> set[str]:

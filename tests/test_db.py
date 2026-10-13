@@ -156,6 +156,8 @@ def test_init_adds_columns_to_old_database(tmp_path, monkeypatch):
 def test_new_rows_are_unseen_until_marked():
     db.save_jobs("Jobicy", [job("a"), job("b")])
     assert db.unseen_urls() == {"a", "b"}
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.save_evaluation("b", evaluation(3), "h1")  # оценена, но ниже порога — тоже просмотрена
     db.mark_all_seen()
     assert db.unseen_urls() == set()
     db.save_jobs("Jobicy", [job("a"), job("c")])  # «a» уже была — остаётся просмотренной
@@ -189,3 +191,11 @@ def test_notes_saved_and_listed():
     assert db.list_applied()[0]["notes"] == ""
     db.set_notes("a", "Писал HR 30.09")
     assert db.list_applied()[0]["notes"] == "Писал HR 30.09"
+
+
+def test_mark_all_seen_keeps_unevaluated_jobs_new():
+    # Закрыли окно, пока вакансия ждала оценки (или LM Studio не поднялась): она ещё не показывалась
+    db.save_jobs("Jobicy", [job("shown"), job("queued")])
+    db.save_evaluation("shown", evaluation(8), "h1")
+    db.mark_all_seen()
+    assert db.unseen_urls() == {"queued"}
