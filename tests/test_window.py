@@ -353,3 +353,15 @@ def test_application_card_fits_window_width(window):
     window.show()
     assert window.applied_tab.text() == "My applications · 13"
     assert window.minimumSizeHint().width() <= 1200
+
+
+def test_long_location_does_not_squeeze_job_title(window):
+    # A remote job open to many regions must not push the title column down to a few letters
+    long_city = row("a", 8)
+    long_city["city"] = "Remote: APAC, EMEA, LATAM, Canada, USA, Australia, New Zealand"
+    window.on_evaluated(long_city)
+    window.on_evaluated(row("b", 7))
+    window.resize(1200, 750)
+    window.show()
+    QApplication.processEvents()
+    assert window.table.columnWidth(1) > window.table.columnWidth(3)

@@ -136,6 +136,9 @@ class MainWindow(QMainWindow):
         top.addWidget(self.cv_button)
 
         self.table = _make_table(COLUMNS, 0)
+        # A long list of remote regions must not squeeze the title: fixed width, the rest is elided (full text in the card)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Interactive)
+        self.table.setColumnWidth(3, 150)
         self.table.itemSelectionChanged.connect(self.on_select)
         self.applied_table = _make_table(APPLIED_COLUMNS, 5)
         self.applied_table.itemSelectionChanged.connect(self.on_select_applied)
