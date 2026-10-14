@@ -2,7 +2,7 @@
 
 [← Окно и оформление](08-window-and-style.md) · [Оглавление](README.md) · [Дальше: рецепты и ограничения →](10-howto-and-limits.md)
 
-Папка: [tests/](../../tests/). 76 тестов, проходят примерно за 2–3 секунды.
+Папка: [tests/](../../tests/). 90 тестов, проходят примерно за 2–3 секунды.
 
 ## Как запускать
 
@@ -74,7 +74,7 @@
 | `test_parsers_tolerate_null_fields` | `null` в любых полях не роняет разбор и удаление дублей |
 | `test_same_job_key_ignores_case_and_spaces` | ключ «та же вакансия» не зависит от регистра и лишних пробелов |
 
-## test_skills.py — отсев по навыкам (5 тестов)
+## test_skills.py — отсев по навыкам (6 тестов)
 
 | Тест | Проверяет |
 |---|---|
@@ -92,7 +92,7 @@
 | `test_evaluate_rejects_answer_from_another_model` | ответ от другой модели → `ModelLost` с её именем |
 | `test_prepare_starts_server_without_capturing_output` | `lms server start` вызывается с выводом в `DEVNULL` (иначе зависание, см. `prepare()` в [разделе 5](05-llm.md)), затем `lms ps --json` |
 
-## test_db.py — база (18 тестов)
+## test_db.py — база (19 тестов)
 
 Фикстура `tmp_db` с `autouse=True` даёт каждому тесту свою пустую базу во временной папке.
 
@@ -116,6 +116,7 @@
 | `test_notes_saved_and_listed` | заметка сохраняется и приходит в `list_applied` (пустая строка, если её нет) |
 | `test_mark_all_seen_keeps_unevaluated_jobs_new` | при закрытии окна просмотренными становятся только оценённые; вакансия из очереди остаётся новой |
 | `test_refetch_rewrites_city` | повторная загрузка переписывает место: старое значение («Praha») сменяется новым («Remote») |
+| `test_evaluations_match_the_evaluated_count` | `evaluations` отдаёт ту же выборку, что `count_evaluated`: без скрытых, откликов и чужого ключа |
 
 ## test_worker.py — фоновое обновление (4 теста)
 
@@ -129,7 +130,7 @@
 | `test_missing_cv_skips_evaluation` | без `master_cv.md` оценка не запускается, итог «No master_cv.md, evaluation skipped» |
 | `test_key_changes_with_cv_and_rules` | ключ меняется при смене правил и при смене резюме, возвращается при возврате правил |
 
-## test_window.py — окно (25 тестов)
+## test_window.py — окно (28 тестов)
 
 Фикстура `window`: временная база, резюме нет (значит, список изначально пуст), `Worker.start`
 заменён пустышкой — обновление не запускается. Строки подаются через `on_evaluated(...)`, как будто
@@ -162,6 +163,9 @@
 | `test_english_window_texts` | английские надписи: заголовок «Job Finder», кнопки, колонки обеих таблиц, «of 10» |
 | `test_application_card_fits_window_width` | с 13 откликами и длинным названием окно помещается в 1200 px (страж ширины) |
 | `test_long_location_does_not_squeeze_job_title` | длинный список регионов в месте не сжимает колонку с названием |
+| `test_insights_tab_counts_requirements` | вкладка Insights: строки и числа обоих списков, «✓» у навыка из резюме, строка внизу; возврат на «My applications» и «Found» |
+| `test_insights_messages_without_cv_or_evaluations` | надписи «No master_cv.md — nothing to analyse» и «Nothing evaluated yet» |
+| `test_insights_recounted_after_refresh` | конец обновления пересчитывает открытую вкладку и не переключает вид на другой |
 
 ## test_cv_window.py — окно «My CV» (5 тестов)
 
@@ -174,6 +178,20 @@
 | `test_english_cv_window_texts` | заголовок «My CV — master_cv.md» и кнопка «Open in editor» |
 | `test_missing_cv_shows_message` | без файла — понятное сообщение, «Open in editor» неактивна |
 | `test_links_use_theme_color` | ссылки из Markdown зелёные: цвет задаёт `style.apply_app_theme` |
+
+## test_insights.py — словарь требований и подсчёт (9 тестов)
+
+| Тест | Проверяет |
+|---|---|
+| `test_aliases_map_to_one_requirement` | варианты сводятся к одному названию (`k8s` → Kubernetes); одна фраза — несколько требований |
+| `test_c_sharp_is_not_c` | `C#` и `ASP.NET` — это C#/.NET, а не C/C++ |
+| `test_common_words_are_not_requirements` | «go-to-market», «R&D», «Scrum Master», «solid understanding» не дают ложных требований |
+| `test_experience_phrases` | «3+ years…» и «commercial … experience» — опыт 2+ года |
+| `test_analyze_counts_each_job_once_and_skips_cv_skills` | одно очко на вакансию, навыки из резюме не попадают в «missing», нераспознанные считаются |
+| `test_have_and_missing_in_one_job_count_once` | требование в обоих списках одной вакансии — одно очко, засчитано не больше, чем требуют |
+| `test_missing_lists_and_skills_section_are_optional` | разбор без списков и резюме без Skills не ломают подсчёт |
+| `test_lists_are_cut_to_top` | в каждом списке не больше 20 строк |
+| `test_testing_does_not_take_other_fields` | «A/B testing» и «penetration testing» — не Testing; «production experience» — не опыт 2+ года |
 
 ## test_english.py — код на английском (2 теста)
 

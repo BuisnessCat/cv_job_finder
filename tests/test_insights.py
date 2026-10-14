@@ -53,3 +53,9 @@ def test_missing_lists_and_skills_section_are_optional():
 def test_lists_are_cut_to_top():
     result = analyze([{"have": [], "missing": NAMES}], [])
     assert len(NAMES) == 25 and len(result.missing) == insights.TOP == 20
+
+
+def test_testing_does_not_take_other_fields():
+    assert find("A/B testing & causal inference") == set()
+    assert find("perimeter penetration testing") == {"Security"}
+    assert find("Kubernetes production experience") == {"Kubernetes"}

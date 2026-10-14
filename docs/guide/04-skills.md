@@ -13,9 +13,11 @@
 Проверка нарочно мягкая: достаточно **одного** совпавшего навыка. Её цель — выбросить совсем
 чужое, а не решать, подходит ли вакансия; это делает модель.
 
-## `load_skills(cv_text)` — [строка 7](../../job_finder/skills.py#L7)
+## `skill_lines(cv_text)` и `load_skills(cv_text)` — [строки 7](../../job_finder/skills.py#L7) и [20](../../job_finder/skills.py#L20)
 
-Достаёт список навыков из раздела `## Skills` резюме.
+`skill_lines` отбирает строки раздела `## Skills`, которые считаются навыками, а `load_skills` достаёт из
+них список навыков для отсева. Теми же строками пользуется вкладка Insights ([раздел 11](11-insights.md)),
+поэтому «есть в резюме» и при отсеве, и в анализе решается по одному правилу.
 
 ### Каким должен быть раздел в master_cv.md
 
@@ -38,19 +40,20 @@
 
 ### Алгоритм по строкам
 
-Функция идёт по строкам резюме и помнит одно состояние — `in_skills` («мы сейчас внутри раздела
-Skills?»).
+`skill_lines` идёт по строкам резюме и помнит одно состояние — `in_skills` («мы сейчас внутри
+раздела Skills?»); `load_skills` разбирает уже отобранные строки.
 
 ```python
+# skill_lines
 for line in cv_text.splitlines():
     if line.startswith("## "):                       # любой заголовок 2-го уровня
         in_skills = line.startswith("## Skills")     # вошли в Skills или вышли из него
         continue
-    if not in_skills or not line.startswith("- "):   # не тот раздел или не пункт списка
-        continue
-    item = line[2:]                                  # строка без «- »
-    if item.startswith(("Concepts", "In progress")): # эти строки пропускаем
-        continue
+    if in_skills and line.startswith("- ") and not line[2:].startswith(("Concepts", "In progress")):
+        lines.append(line[2:])                       # пункт списка без «- », кроме Concepts / In progress
+
+# load_skills
+for item in skill_lines(cv_text):
     for part in item.split(" — ")[0].split(","):     # до тире, по запятым
         words = part.split()
         if words:
@@ -88,7 +91,7 @@ item                 = "SQLAlchemy 2.0 ORM — models"
 - Если раздела нет или он пустой — возвращается `[]`, и `worker` сообщает «No Skills section in
   master_cv.md, evaluation skipped».
 
-## `matches(job, skills)` — [строка 27](../../job_finder/skills.py#L27)
+## `matches(job, skills)` — [строка 31](../../job_finder/skills.py#L31)
 
 ```python
 text = f"{job.title}\n{job.description}"

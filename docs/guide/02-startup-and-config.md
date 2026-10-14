@@ -87,7 +87,7 @@ return lock if lock.tryLock(0) else None
    панель задач.
 
 6. **Тема приложения** ([33](../../job_finder/__main__.py#L33)) — `style.apply_app_theme(app)`
-   ([style.py:94](../../job_finder/style.py#L94)). Она делает две вещи, которые не задаются стилями окна:
+   ([style.py:96](../../job_finder/style.py#L96)). Она делает две вещи, которые не задаются стилями окна:
    - `setColorScheme(Dark)` просит Qt и Windows рисовать тёмными заголовок окна и системные диалоги
      (например, «Job Finder is already open»). Метод появился в Qt 6.8.
    - задаёт зелёный цвет ссылок в палитре приложения: ссылки из Markdown в окне «My CV» Qt красит
