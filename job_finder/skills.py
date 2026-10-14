@@ -4,19 +4,23 @@ import re
 from job_finder.sources import Job
 
 
-def load_skills(cv_text: str) -> list[str]:
-    """Skills from the "## Skills" section: line part before " — ", split by commas, first word of each."""
-    skills = []
+def skill_lines(cv_text: str) -> list[str]:
+    """Items of the "## Skills" section that count as skills: "- " lines without Concepts and In progress."""
+    lines = []
     in_skills = False
     for line in cv_text.splitlines():
         if line.startswith("## "):
             in_skills = line.startswith("## Skills")
             continue
-        if not in_skills or not line.startswith("- "):
-            continue
-        item = line[2:]
-        if item.startswith(("Concepts", "In progress")):
-            continue
+        if in_skills and line.startswith("- ") and not line[2:].startswith(("Concepts", "In progress")):
+            lines.append(line[2:])
+    return lines
+
+
+def load_skills(cv_text: str) -> list[str]:
+    """Skills from the "## Skills" section: line part before " — ", split by commas, first word of each."""
+    skills = []
+    for item in skill_lines(cv_text):
         for part in item.split(" — ")[0].split(","):
             words = part.split()
             if words:

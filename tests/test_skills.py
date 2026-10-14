@@ -48,3 +48,8 @@ def test_matches_whole_words_case_insensitive():
 
 def test_matches_nothing_without_skills():
     assert not skills.matches(job("Python developer"), [])
+
+
+def test_skill_lines_skip_concepts_and_in_progress():
+    cv = "## Skills\n- Python — main\n- Concepts — OOP\n- In progress: pytest\n- SQL, Git — daily\n\n## Projects\n- x\n"
+    assert skills.skill_lines(cv) == ["Python — main", "SQL, Git — daily"]
