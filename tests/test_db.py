@@ -209,3 +209,15 @@ def test_refetch_rewrites_city():
     db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Job a", company="ACME", city="Remote",
                                 published="2026-10-01", description="Python")])
     assert db.list_jobs("h1", 5)[0]["city"] == "Remote"
+
+
+def test_evaluations_match_the_evaluated_count():
+    db.save_jobs("Jobicy", [job("a"), job("b"), job("c"), job("d")])
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.save_evaluation("b", evaluation(3), "h1")
+    db.save_evaluation("c", evaluation(7), "h2")  # other key
+    db.save_evaluation("d", evaluation(9), "h1")
+    db.hide("b")
+    db.apply("d")
+    assert db.evaluations("h1") == [evaluation(8)]
+    assert len(db.evaluations("h1")) == db.count_evaluated("h1")

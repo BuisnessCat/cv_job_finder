@@ -51,12 +51,14 @@ QPushButton:disabled {{ color: {muted}; }}
 QPushButton#primary {{ background: {accent}; color: white; border: none; font-weight: 600; }}
 QPushButton#primary:hover {{ background: {accent_hover}; }}
 QPushButton#primary:disabled {{ background: {border}; color: {muted}; }}
-QPushButton#segmentLeft, QPushButton#segmentRight {{ background: {panel}; color: {muted}; font-weight: 600;
-                                                     border: 1px solid {border}; padding: 6px 14px; }}
+QPushButton#segmentLeft, QPushButton#segmentMiddle, QPushButton#segmentRight {{ background: {panel}; color: {muted};
+    font-weight: 600; border: 1px solid {border}; padding: 6px 14px; }}
 QPushButton#segmentLeft {{ border-radius: 0; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }}
+QPushButton#segmentMiddle {{ border-radius: 0; border-left: none; }}
 QPushButton#segmentRight {{ border-radius: 0; border-top-right-radius: 6px; border-bottom-right-radius: 6px;
                            border-left: none; }}
-QPushButton#segmentLeft:checked, QPushButton#segmentRight:checked {{ background: {accent_soft}; color: {text}; }}
+QPushButton#segmentLeft:checked, QPushButton#segmentMiddle:checked, QPushButton#segmentRight:checked {{
+    background: {accent_soft}; color: {text}; }}
 QLabel#notice {{ background: {notice_bg}; color: {notice_text}; border-radius: 6px; padding: 8px 12px;
                 margin-top: 12px; }}
 QLabel#staleHint {{ color: {notice_text}; margin-top: 6px; }}
@@ -77,7 +79,7 @@ QScrollArea#detailsScroll, QWidget#details, QWidget#detailsPage, QWidget#emptyPa
 QWidget#footer {{ background: transparent; border-top: 1px solid {border}; }}
 QLabel#title {{ font-size: 15pt; font-weight: 600; }}
 QLabel#company {{ font-size: 11pt; }}
-QLabel#metaKey, QLabel#muted {{ color: {muted}; }}
+QLabel#metaKey, QLabel#muted, QLabel#barCount {{ color: {muted}; }}
 QLabel#section {{ color: {muted}; font-weight: 600; font-size: 9pt; }}
 QLabel#empty {{ color: {muted}; font-size: 11pt; }}
 QFrame#divider {{ background: {border}; border: none; min-height: 1px; max-height: 1px; }}

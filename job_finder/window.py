@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from job_finder import config, db, llm, sources, style
+from job_finder import config, db, insights, llm, skills, sources, style
 from job_finder.worker import Worker, read_cv
 
 COLUMNS = ["Score", "Job", "Company", "Location", "Date"]
@@ -19,6 +19,7 @@ EMPTY_LIST = {"have": "—", "missing": "Nothing major"}
 STATUS_TEXT = {"applied": "Waiting", "accepted": "Accepted", "rejected": "Rejected"}
 REPOST_MARK = "↻ "  # before the title of a found job you already applied to
 NEW_MARK = "• "  # before the title of a job that appeared after the window was last closed
+BAR_WIDTH = 220  # the longest bar on the Insights tab
 
 
 def _label(name: str = "") -> QLabel:
@@ -90,6 +91,35 @@ def plural_days(n: int) -> str:
     """"1 day", "3 days"."""
     return f"{n} day" if n == 1 else f"{n} days"
 
+def _bar_row(name: str, count: int, yours: int, scale: int, mine: bool = False) -> QWidget:
+    """Insights row: name, a bar (green part counted as yours, red part missing) and the number of jobs."""
+    row = QWidget()
+    line = QHBoxLayout(row)
+    line.setContentsMargins(0, 0, 0, 0)
+    line.setSpacing(10)
+    label = QLabel(("✓ " if mine else "") + name)
+    label.setObjectName("barName")
+    label.setFixedWidth(180)
+    if mine:
+        label.setStyleSheet(f"color: {style.LIST_COLORS['have']};")
+    track = QFrame()
+    track.setFixedSize(max(2, round(BAR_WIDTH * count / scale)), 10)
+    parts = QHBoxLayout(track)
+    parts.setContentsMargins(0, 0, 0, 0)
+    parts.setSpacing(0)
+    for color, size in ((style.LIST_COLORS["have"], yours), (style.LIST_COLORS["missing"], count - yours)):
+        if size > 0:
+            part = QFrame()
+            part.setStyleSheet(f"background: {color}; border-radius: 3px;")
+            parts.addWidget(part, size)
+    number = QLabel(str(count))
+    number.setObjectName("barCount")
+    line.addWidget(label)
+    line.addWidget(track)
+    line.addWidget(number)
+    line.addStretch(1)
+    return row
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -108,9 +138,11 @@ class MainWindow(QMainWindow):
         self.found_tab = QPushButton()
         self.found_tab.setObjectName("segmentLeft")
         self.applied_tab = QPushButton()
-        self.applied_tab.setObjectName("segmentRight")
-        self.tabs = QButtonGroup(self)  # the "Found | My applications" switch: exactly one button is checked
-        for index, button in enumerate((self.found_tab, self.applied_tab)):
+        self.applied_tab.setObjectName("segmentMiddle")
+        self.insights_tab = QPushButton("Insights")
+        self.insights_tab.setObjectName("segmentRight")
+        self.tabs = QButtonGroup(self)  # "Found | My applications | Insights": exactly one button is checked
+        for index, button in enumerate((self.found_tab, self.applied_tab, self.insights_tab)):
             button.setCheckable(True)
             self.tabs.addButton(button, index)
         self.found_tab.setChecked(True)
@@ -119,6 +151,7 @@ class MainWindow(QMainWindow):
         tabs.setSpacing(0)
         tabs.addWidget(self.found_tab)
         tabs.addWidget(self.applied_tab)
+        tabs.addWidget(self.insights_tab)
         self.status_label = _label()
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(250)
@@ -158,7 +191,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(style.GAP, style.GAP, style.GAP, style.GAP)
         layout.setSpacing(style.GAP)
         layout.addLayout(top)
-        layout.addWidget(splitter, 1)
+        self.views = QStackedWidget()  # 0: list and card, 1: insights
+        self.views.addWidget(splitter)
+        self.views.addWidget(self._build_insights())
+        layout.addWidget(self.views, 1)
         self.setCentralWidget(central)
         self.setStyleSheet(style.STYLESHEET)
 
@@ -328,6 +364,43 @@ class MainWindow(QMainWindow):
         self.show_details(None)
         return card
 
+    def _build_insights(self) -> QWidget:
+        """Insights tab: two cards of requirement bars and a note below (spec section 13)."""
+        page = QWidget()
+        box = QVBoxLayout(page)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(style.GAP)
+        self.insights_message = QLabel(alignment=Qt.AlignCenter)
+        self.insights_message.setObjectName("empty")
+        self.insights_cards = QWidget()
+        cards = QHBoxLayout(self.insights_cards)
+        cards.setContentsMargins(0, 0, 0, 0)
+        cards.setSpacing(style.GAP)
+        self.missing_rows = QVBoxLayout()
+        self.required_rows = QVBoxLayout()
+        for title, subtitle, rows in [
+                ("MOST OFTEN MISSING", "In how many jobs the model listed it under Missing", self.missing_rows),
+                ("MOST OFTEN REQUIRED", "Green: counted as yours · red: missing", self.required_rows)]:
+            card = QFrame()
+            card.setObjectName("card")
+            inner = QVBoxLayout(card)
+            inner.setContentsMargins(20, 18, 20, 18)
+            inner.setSpacing(8)
+            inner.addWidget(_caption(title))
+            note = _label("muted")
+            note.setText(subtitle)
+            inner.addWidget(note)
+            inner.addSpacing(6)
+            rows.setSpacing(6)
+            inner.addLayout(rows)
+            inner.addStretch(1)
+            cards.addWidget(card)
+        self.insights_note = _label("muted")
+        box.addWidget(self.insights_message, 1)
+        box.addWidget(self.insights_cards, 1)
+        box.addWidget(self.insights_note)
+        return page
+
     def _fill_list(self, key: str, mark: str, items: list[str]) -> None:
         """Fill a "you have / missing / risks" list with rows that have a colored marker."""
         header, caption, rows = self.detail_lists[key]
@@ -410,13 +483,48 @@ class MainWindow(QMainWindow):
         if selected and selected not in (row["url"] for row in self.applied):
             self.show_details(None)
 
+    def render_insights(self) -> None:
+        """Recount the Insights tab from the analyses of all evaluated jobs (spec section 13)."""
+        cv = read_cv()
+        evaluations = db.evaluations(cv[1]) if cv else []
+        message = ("No master_cv.md — nothing to analyse" if cv is None
+                   else "Nothing evaluated yet" if not evaluations else "")
+        self.insights_message.setText(message)
+        self.insights_message.setVisible(bool(message))
+        self.insights_cards.setVisible(not message)
+        self.insights_note.setVisible(not message)
+        if message:
+            return
+        result = insights.analyze(evaluations, skills.skill_lines(cv[0]))
+        lists = [(self.missing_rows, [(name, count, 0) for name, count in result.missing], set()),
+                 (self.required_rows, result.required, result.in_cv)]
+        for rows, items, mine in lists:
+            while rows.count():
+                rows.takeAt(0).widget().setParent(None)  # remove now, not after deleteLater
+            scale = max((count for _, count, _ in items), default=1)
+            for name, count, yours in items:
+                rows.addWidget(_bar_row(name, count, yours, scale, name in mine))
+            if not items:
+                empty = _label("muted")
+                empty.setText("—")
+                rows.addWidget(empty)
+        jobs = "job" if result.total == 1 else "jobs"
+        items = "item" if result.unknown == 1 else "items"
+        self.insights_note.setText(f"Based on {result.total} evaluated {jobs} · {result.unknown} missing {items}"
+                                   " not recognised")
+
     def show_tab(self, index: int) -> None:
-        """Switch the list on the left: 0 for found jobs, 1 for my applications."""
-        self.lists.setCurrentIndex(index)
+        """Switch the view: 0 found jobs, 1 my applications, 2 insights."""
         self.tabs.button(index).setChecked(True)
         for table in (self.table, self.applied_table):
             table.clearSelection()
         self.show_details(None)
+        if index == 2:
+            self.render_insights()
+            self.views.setCurrentIndex(1)
+        else:
+            self.lists.setCurrentIndex(index)
+            self.views.setCurrentIndex(0)
 
     def on_select(self) -> None:
         indexes = self.table.selectionModel().selectedRows()
@@ -507,6 +615,8 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.refresh_button.setEnabled(True)
         self.load_rows()  # drop jobs that vanished from the source or were filtered out by location
+        if self.views.currentIndex() == 1:
+            self.render_insights()  # the numbers changed while the tab was open
 
     def show_cv(self) -> None:
         """Show the "My CV" window with the current file; one window for the whole app."""

@@ -138,7 +138,7 @@ def test_cv_button_opens_one_cv_window(window):
     first.close()
 
 
-def add_found(url, score, title=None, company="ACME", new=False):
+def add_found(url, score, title=None, company="ACME", new=False, evaluation=None):
     """A found job in the database, scored under the fixture's temporary CV; new=False: already seen."""
     if not config.CV_PATH.exists():
         config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # temporary CV
@@ -146,7 +146,7 @@ def add_found(url, score, title=None, company="ACME", new=False):
     job = Job(url=url, source=f"src-{url}", title=title or f"Job {url}", company=company, city="Prague",
               published="2026-10-01", description="")
     db.save_jobs(job.source, [job])
-    db.save_evaluation(url, row(url, score)["evaluation"], worker.read_cv()[1])
+    db.save_evaluation(url, evaluation or row(url, score)["evaluation"], worker.read_cv()[1])
     if not new:
         with sqlite3.connect(config.DB_PATH) as conn:
             conn.execute("UPDATE jobs SET seen = 1 WHERE url = ?", (url,))
@@ -365,3 +365,49 @@ def test_long_location_does_not_squeeze_job_title(window):
     window.show()
     QApplication.processEvents()
     assert window.table.columnWidth(1) > window.table.columnWidth(3)
+
+
+def evaluation_with(have, missing, score=6):
+    return {"score": score, "summary": "ok", "have": have, "missing": missing, "risks": []}
+
+
+def bar_texts(rows):
+    return [(rows.itemAt(i).widget().findChild(QLabel, "barName").text(),
+             rows.itemAt(i).widget().findChild(QLabel, "barCount").text()) for i in range(rows.count())]
+
+
+def test_insights_tab_counts_requirements(window):
+    add_found("a", 8, evaluation=evaluation_with(["Python backend"], ["Kubernetes (k8s)", "AWS cloud"]))
+    add_found("b", 3, evaluation=evaluation_with(["Python"], ["AWS", "underwater basket weaving"]))
+    window.load_rows()
+    window.insights_tab.click()
+    assert window.views.currentIndex() == 1 and not window.insights_cards.isHidden()
+    assert bar_texts(window.missing_rows) == [("AWS", "2"), ("Cloud (any)", "1"), ("Kubernetes", "1")]
+    assert bar_texts(window.required_rows)[:2] == [("AWS", "2"), ("✓ Python", "2")]
+    assert window.insights_note.text() == "Based on 2 evaluated jobs · 1 missing item not recognised"
+    window.applied_tab.click()
+    assert window.views.currentIndex() == 0 and window.lists.currentIndex() == 1
+    window.found_tab.click()
+    assert window.views.currentIndex() == 0 and window.lists.currentIndex() == 0
+
+
+def test_insights_messages_without_cv_or_evaluations(window):
+    window.insights_tab.click()
+    assert window.insights_message.text() == "No master_cv.md — nothing to analyse"
+    assert window.insights_cards.isHidden()
+    config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # temporary CV from the fixture
+    window.render_insights()
+    assert window.insights_message.text() == "Nothing evaluated yet"
+
+
+def test_insights_recounted_after_refresh(window):
+    add_found("a", 8, evaluation=evaluation_with([], ["AWS"]))
+    window.load_rows()
+    window.insights_tab.click()
+    add_found("b", 7, evaluation=evaluation_with([], ["AWS", "Docker"]))  # the background refresh scored one more
+    window.on_finished()
+    assert window.views.currentIndex() == 1
+    assert bar_texts(window.missing_rows) == [("AWS", "2"), ("Docker", "1")]
+    window.found_tab.click()
+    window.on_finished()
+    assert window.views.currentIndex() == 0  # a finished refresh does not switch the view

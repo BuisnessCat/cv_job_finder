@@ -148,6 +148,16 @@ def count_evaluated(cv_hash: str) -> int:
         ).fetchone()[0]
 
 
+def evaluations(cv_hash: str) -> list[dict]:
+    """Model analyses of the jobs counted in "Done: … evaluated": active, not hidden, no application, current key."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT evaluation FROM jobs WHERE active = 1 AND hidden = 0 AND status IS NULL AND cv_hash = ?",
+            (cv_hash,),
+        ).fetchall()
+    return [json.loads(row["evaluation"]) for row in rows]
+
+
 def make_row(job: Job, evaluation: dict) -> dict:
     """A row for the window: job fields without the description, the score and the model's analysis."""
     row = asdict(job)
