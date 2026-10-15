@@ -74,7 +74,8 @@ QHeaderView::section {{ background: {panel}; color: {muted}; font-weight: 600; b
 QFrame#card {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
 QTextBrowser {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 12px 16px;
                selection-background-color: {accent_soft}; }}
-QScrollArea#detailsScroll, QWidget#details, QWidget#detailsPage, QWidget#emptyPage {{
+QScrollArea#detailsScroll, QWidget#details, QWidget#detailsPage, QWidget#emptyPage, QScrollArea#insightsScroll,
+QWidget#insightsPage {{
     background: transparent; border: none; }}
 QWidget#footer {{ background: transparent; border-top: 1px solid {border}; }}
 QLabel#title {{ font-size: 15pt; font-weight: 600; }}

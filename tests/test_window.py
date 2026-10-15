@@ -411,3 +411,20 @@ def test_insights_recounted_after_refresh(window):
     window.found_tab.click()
     window.on_finished()
     assert window.views.currentIndex() == 0  # a finished refresh does not switch the view
+
+
+def test_insights_page_does_not_raise_window_minimum(window):
+    # Twenty rows of fixed-width bars must not make the whole window impossible to shrink on any tab
+    names = ["AWS", "Azure", "GCP", "Kubernetes", "Docker", "Terraform", "Linux", "Git", "JavaScript", "TypeScript",
+             "React", "Vue", "Angular", "Java", "Go", "Rust", "PHP", "Ruby", "Kotlin", "Swift"]
+    add_found("a", 8, evaluation=evaluation_with([], names))
+    window.load_rows()
+    window.show()  # layouts are only recalculated for a shown window
+    QApplication.processEvents()
+    before = window.minimumSizeHint()
+    window.insights_tab.click()
+    QApplication.processEvents()
+    window.found_tab.click()
+    QApplication.processEvents()
+    after = window.minimumSizeHint()
+    assert after.width() <= max(before.width(), 700) and after.height() <= max(before.height(), 450)

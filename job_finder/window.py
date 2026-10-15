@@ -367,6 +367,7 @@ class MainWindow(QMainWindow):
     def _build_insights(self) -> QWidget:
         """Insights tab: two cards of requirement bars and a note below (spec section 13)."""
         page = QWidget()
+        page.setObjectName("insightsPage")
         box = QVBoxLayout(page)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(style.GAP)
@@ -399,7 +400,12 @@ class MainWindow(QMainWindow):
         box.addWidget(self.insights_message, 1)
         box.addWidget(self.insights_cards, 1)
         box.addWidget(self.insights_note)
-        return page
+        # In a scroll area: twenty fixed-width rows must not raise the whole window's minimum size
+        scroll = QScrollArea()
+        scroll.setObjectName("insightsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        return scroll
 
     def _fill_list(self, key: str, mark: str, items: list[str]) -> None:
         """Fill a "you have / missing / risks" list with rows that have a colored marker."""
