@@ -1,4 +1,4 @@
-# Личные данные и данные приложения — никогда не коммитить
+# Personal data and app data: never commit
 master_cv.md
 *.db
 *.db-*

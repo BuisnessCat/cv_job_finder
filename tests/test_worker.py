@@ -60,3 +60,11 @@ def test_key_changes_with_cv_and_rules(setup, monkeypatch):
     assert worker.read_cv()[1] == key
     config.CV_PATH.write_text("## Skills\n- SQL — x\n", encoding="utf-8")  # temporary CV from the fixture
     assert worker.read_cv()[1] != key
+
+
+def test_summary_uses_singular_for_one_match(setup, monkeypatch):
+    scores = {"u1": 7, "u2": 3, "u3": 2}
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job: {
+        "score": scores[job.url], "summary": "", "have": [], "missing": [], "risks": []})
+
+    assert worker.Worker()._refresh() == "Done: 1 match out of 3 evaluated"

@@ -86,7 +86,8 @@ class Worker(QObject):
 
         suitable = len(db.list_jobs(cv_hash, config.MIN_SCORE))
         evaluated = db.count_evaluated(cv_hash)
-        return _join(f"Done: {suitable} matches out of {evaluated} evaluated", notes)
+        matches = "match" if suitable == 1 else "matches"
+        return _join(f"Done: {suitable} {matches} out of {evaluated} evaluated", notes)
 
     def _evaluate(self, todo: list[sources.Job], cv_text: str, cv_hash: str) -> int:
         """Evaluate jobs one by one; returns the number of failed evaluations."""
