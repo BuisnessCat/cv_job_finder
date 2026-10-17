@@ -68,3 +68,13 @@ def test_summary_uses_singular_for_one_match(setup, monkeypatch):
         "score": scores[job.url], "summary": "", "have": [], "missing": [], "risks": []})
 
     assert worker.Worker()._refresh() == "Done: 1 match out of 3 evaluated"
+
+
+def test_evaluated_rows_carry_first_seen(setup, monkeypatch):
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job: {
+        "score": 7, "summary": "", "have": [], "missing": [], "risks": []})
+    w = worker.Worker()
+    rows = []
+    w.evaluated.connect(rows.append)
+    w._refresh()
+    assert len(rows) == 3 and all(r["first_seen"] for r in rows)

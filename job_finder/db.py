@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import date
 
 from job_finder import config
-from job_finder.sources import Job
+from job_finder.sources import Job, same_job_key
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     status      TEXT,               -- application: NULL, 'applied', 'accepted', 'rejected'
     applied_at  TEXT,               -- application date YYYY-MM-DD
     notes       TEXT,               -- application notes
-    seen        INTEGER NOT NULL DEFAULT 0  -- 0: appeared after the window was last closed (new)
+    seen        INTEGER NOT NULL DEFAULT 0, -- 0: appeared after the window was last closed (new)
+    first_seen  TEXT                -- YYYY-MM-DD when the app first saw this job (or its twin)
 )
 """
 
@@ -58,20 +59,34 @@ def init() -> None:
         if "seen" not in columns:
             conn.execute("ALTER TABLE jobs ADD COLUMN seen INTEGER NOT NULL DEFAULT 0")
             conn.execute("UPDATE jobs SET seen = 1")  # existing jobs count as already seen, not new
+        if "first_seen" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN first_seen TEXT")
+            # The site's date for existing jobs: no false "reposted" marks right after the update
+            conn.execute("UPDATE jobs SET first_seen = COALESCE(NULLIF(published, ''), ?)",
+                         (date.today().isoformat(),))
 
 
-def save_jobs(source: str, jobs: list[Job]) -> None:
-    """Store a source's fresh batch; its jobs missing from the batch become inactive."""
+def save_jobs(source: str, jobs: list[Job], today: str | None = None) -> None:
+    """Store a source's fresh batch; its jobs missing from the batch become inactive.
+
+    A new job gets first_seen = the earliest first_seen of a job with the same company and title, else today;
+    an existing job keeps its first_seen."""
+    today = today or date.today().isoformat()
     with _connect() as conn:
+        earliest: dict[tuple[str, str], str] = {}
+        for row in conn.execute("SELECT company, title, first_seen FROM jobs WHERE first_seen IS NOT NULL"):
+            key = same_job_key(row["company"], row["title"])
+            earliest[key] = min(earliest.get(key, row["first_seen"]), row["first_seen"])
         conn.execute("UPDATE jobs SET active = 0 WHERE source = ?", (source,))
         conn.executemany(
-            f"""INSERT INTO jobs ({JOB_FIELDS})
-                VALUES (:url, :source, :title, :company, :city, :published, :description)
+            f"""INSERT INTO jobs ({JOB_FIELDS}, first_seen)
+                VALUES (:url, :source, :title, :company, :city, :published, :description, :first_seen)
                 ON CONFLICT(url) DO UPDATE SET
                     source = excluded.source, title = excluded.title, company = excluded.company,
                     city = excluded.city, published = excluded.published,
                     description = excluded.description, active = 1""",
-            [asdict(job) for job in jobs],
+            [{**asdict(job), "first_seen": earliest.get(same_job_key(job.company, job.title), today)}
+             for job in jobs],
         )
 
 
@@ -98,6 +113,26 @@ def save_evaluation(url: str, evaluation: dict, cv_hash: str) -> None:
 def hide(url: str) -> None:
     with _connect() as conn:
         conn.execute("UPDATE jobs SET hidden = 1 WHERE url = ?", (url,))
+
+
+def unhide(url: str) -> None:
+    """Undo for "Hide"."""
+    with _connect() as conn:
+        conn.execute("UPDATE jobs SET hidden = 0 WHERE url = ?", (url,))
+
+
+def first_seen(url: str) -> str:
+    """When the app first saw the job (YYYY-MM-DD), "" if unknown."""
+    with _connect() as conn:
+        row = conn.execute("SELECT first_seen FROM jobs WHERE url = ?", (url,)).fetchone()
+    return (row["first_seen"] if row else None) or ""
+
+
+def description(url: str) -> str:
+    """The job description, read only when the card shows it."""
+    with _connect() as conn:
+        row = conn.execute("SELECT description FROM jobs WHERE url = ?", (url,)).fetchone()
+    return row["description"] if row else ""
 
 
 def apply(url: str) -> None:
@@ -158,35 +193,40 @@ def evaluations(cv_hash: str) -> list[dict]:
     return [json.loads(row["evaluation"]) for row in rows]
 
 
-def make_row(job: Job, evaluation: dict) -> dict:
+def make_row(job: Job, evaluation: dict, first_seen: str = "") -> dict:
     """A row for the window: job fields without the description, the score and the model's analysis."""
     row = asdict(job)
     del row["description"]
-    return {**row, "score": evaluation["score"], "evaluation": evaluation}
+    return {**row, "score": evaluation["score"], "evaluation": evaluation, "first_seen": first_seen}
 
 
 def list_jobs(cv_hash: str, min_score: int) -> list[dict]:
     """Jobs for the window: scored under the current CV at or above the threshold, best first."""
     with _connect() as conn:
         rows = conn.execute(
-            f"""SELECT {JOB_FIELDS}, evaluation FROM jobs
+            f"""SELECT {JOB_FIELDS}, evaluation, first_seen FROM jobs
                 WHERE active = 1 AND hidden = 0 AND status IS NULL AND cv_hash = ? AND score >= ?
                 ORDER BY score DESC, published DESC""",
             (cv_hash, min_score),
         ).fetchall()
-    return [make_row(Job(*tuple(row)[:7]), json.loads(row["evaluation"])) for row in rows]
+    return [make_row(Job(*tuple(row)[:7]), json.loads(row["evaluation"]), row["first_seen"] or "") for row in rows]
 
 
 def list_applied() -> list[dict]:
     """Applications for the "My applications" tab: all, newest first, regardless of active, hidden and key."""
     with _connect() as conn:
         rows = conn.execute(
-            f"""SELECT {JOB_FIELDS}, evaluation, status, applied_at, notes FROM jobs
+            f"""SELECT {JOB_FIELDS}, evaluation, status, applied_at, notes, first_seen, active FROM jobs
                 WHERE status IS NOT NULL
                 ORDER BY applied_at DESC, title""",
         ).fetchall()
+        listed = {same_job_key(r["company"], r["title"])
+                  for r in conn.execute("SELECT company, title FROM jobs WHERE active = 1")}
     return [
-        {**make_row(Job(*tuple(row)[:7]), json.loads(row["evaluation"])),
-         "status": row["status"], "applied_at": row["applied_at"], "notes": row["notes"] or ""}
+        {**make_row(Job(*tuple(row)[:7]), json.loads(row["evaluation"]), row["first_seen"] or ""),
+         "status": row["status"], "applied_at": row["applied_at"], "notes": row["notes"] or "",
+         # Only sources that return their whole list tell honestly that a job was taken down
+         "closed": (not row["active"] and row["source"] in config.FULL_LIST_SOURCES
+                    and same_job_key(row["company"], row["title"]) not in listed)}
         for row in rows
     ]

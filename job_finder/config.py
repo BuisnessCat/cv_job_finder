@@ -13,6 +13,12 @@ MIN_SCORE = 5
 # An application with no reply for longer than this many days is highlighted: time to follow up or close it
 STALE_DAYS = 14
 
+# A job older than this many days is shown muted in the found list
+STALE_JOB_DAYS = 21
+
+# Sources that return their whole list: a job missing from them was probably taken down
+FULL_LIST_SOURCES = ("junior.guru", "Jobicy")
+
 # LM Studio
 LMS_EXE = Path.home() / ".lmstudio" / "bin" / "lms.exe"
 LM_PORT = 1234

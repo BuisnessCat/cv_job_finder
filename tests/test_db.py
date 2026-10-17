@@ -73,7 +73,7 @@ def test_list_filters_by_threshold_and_sorts():
         db.save_evaluation(url, evaluation(score), "h1")
     rows = db.list_jobs("h1", 5)
     assert [row["url"] for row in rows] == ["c", "d", "a"]
-    assert rows[0] == db.make_row(job("c"), evaluation(9))
+    assert rows[0] == db.make_row(job("c"), evaluation(9), date.today().isoformat())
 
 
 def test_duplicate_url_in_one_batch():
@@ -221,3 +221,77 @@ def test_evaluations_match_the_evaluated_count():
     db.apply("d")
     assert db.evaluations("h1") == [evaluation(8)]
     assert len(db.evaluations("h1")) == db.count_evaluated("h1")
+
+
+def test_first_seen_is_set_once():
+    db.save_jobs("Jobicy", [job("a")], today="2026-10-01")
+    db.save_jobs("Jobicy", [job("a", published="2026-10-10")], today="2026-10-12")
+    assert db.first_seen("a") == "2026-10-01"
+
+
+def test_first_seen_inherited_from_same_company_and_title():
+    db.save_jobs("Jobicy", [job("old")], today="2026-09-01")  # "Job old" at ACME
+    repost = Job(url="new", source="Himalayas", title="Job old", company="acme ", city="Remote",
+                 published="2026-10-10", description="")
+    db.save_jobs("Himalayas", [repost], today="2026-10-12")
+    assert db.first_seen("new") == "2026-09-01"
+
+
+def test_list_rows_carry_first_seen_and_description_is_read_on_demand():
+    db.save_jobs("Jobicy", [job("a")], today="2026-10-01")
+    db.save_evaluation("a", evaluation(8), "h1")
+    assert db.list_jobs("h1", 5)[0]["first_seen"] == "2026-10-01"
+    assert db.description("a") == "Python"
+
+
+def test_unhide_returns_job():
+    db.save_jobs("Jobicy", [job("a")])
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.hide("a")
+    db.unhide("a")
+    assert [r["url"] for r in db.list_jobs("h1", 5)] == ["a"]
+
+
+def test_closed_mark_only_for_full_list_sources():
+    jg = Job(url="jg", source="junior.guru", title="Dev", company="A", city="Prague", published="2026-10-01",
+             description="")
+    him = Job(url="him", source="Himalayas", title="Dev", company="B", city="Remote", published="2026-10-01",
+              description="")
+    db.save_jobs("junior.guru", [jg])
+    db.save_jobs("Himalayas", [him])
+    for url in ("jg", "him"):
+        db.save_evaluation(url, evaluation(8), "h1")
+        db.apply(url)
+    db.save_jobs("junior.guru", [])
+    db.save_jobs("Himalayas", [])
+    closed = {r["url"]: r["closed"] for r in db.list_applied()}
+    assert closed == {"jg": True, "him": False}
+
+
+def test_closed_mark_skipped_when_listed_elsewhere():
+    jg = Job(url="jg", source="junior.guru", title="Dev", company="A", city="Prague", published="2026-10-01",
+             description="")
+    db.save_jobs("junior.guru", [jg])
+    db.save_evaluation("jg", evaluation(8), "h1")
+    db.apply("jg")
+    db.save_jobs("junior.guru", [])
+    db.save_jobs("Jobicy", [Job(url="jb", source="Jobicy", title="dev", company="a", city="Remote",
+                                published="2026-10-02", description="")])
+    assert db.list_applied()[0]["closed"] is False
+
+
+def test_init_sets_first_seen_on_old_database(tmp_path, monkeypatch):
+    old = tmp_path / "old.db"
+    conn = sqlite3.connect(old)
+    conn.execute("""CREATE TABLE jobs (url TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL,
+        company TEXT NOT NULL, city TEXT NOT NULL, published TEXT NOT NULL, description TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, score INTEGER, evaluation TEXT,
+        cv_hash TEXT, status TEXT, applied_at TEXT, notes TEXT, seen INTEGER NOT NULL DEFAULT 0)""")
+    conn.execute("INSERT INTO jobs (url, source, title, company, city, published, description, score, evaluation,"
+                 " cv_hash, seen) VALUES ('a', 'Jobicy', 'Job a', 'ACME', 'Praha', '2026-10-01', 'Python', 8, ?, 'h1', 1)",
+                 (json.dumps(evaluation(8)),))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(config, "DB_PATH", old)
+    db.init()
+    assert db.first_seen("a") == "2026-10-01"  # no false "reposted" marks right after the update

@@ -103,6 +103,6 @@ class Worker(QObject):
                 failed += 1
             else:
                 db.save_evaluation(job.url, evaluation, cv_hash)
-                self.evaluated.emit(db.make_row(job, evaluation))
+                self.evaluated.emit(db.make_row(job, evaluation, db.first_seen(job.url)))
             self.progress.emit(done, len(todo))
         return failed
