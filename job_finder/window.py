@@ -1,11 +1,13 @@
 """Main window: found jobs and applications, a card with the selected job's analysis."""
+import time
 from datetime import date
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
-    QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
+    QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
@@ -122,6 +124,8 @@ def _bar_row(name: str, count: int, yours: int, scale: int, mine: bool = False) 
 
 
 class MainWindow(QMainWindow):
+    clock = staticmethod(time.monotonic)  # for the time-left estimate; tests replace it
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Job Finder")
@@ -132,6 +136,9 @@ class MainWindow(QMainWindow):
         self.applied_by_key: dict[tuple[str, str], dict] = {}  # latest application by "company + title"
         self.new_urls: set[str] = set()  # unseen: appeared after the window was last closed
         self.current: dict | None = None  # selected row: a found job or an application (has a status key)
+        self.refreshing = False  # a refresh (download or scoring) is running
+        self.started = 0.0  # when the current scoring pass began, by clock()
+        self.description_open = False  # the card's description stays open from job to job
 
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.setObjectName("primary")
@@ -179,6 +186,7 @@ class MainWindow(QMainWindow):
         self.lists = QStackedWidget()  # 0: found, 1: applications
         self.lists.addWidget(self._build_found())
         self.lists.addWidget(self.applied_table)
+        self._build_undo()
 
         splitter = QSplitter()
         splitter.setHandleWidth(style.GAP)
@@ -278,6 +286,10 @@ class MainWindow(QMainWindow):
         box.addLayout(head)
         box.addWidget(self.d_status, 0, Qt.AlignLeft)  # top margin is in the pill style, a hidden pill has none
         box.addWidget(self.d_stale)
+        self.d_closed = _label("muted")  # "No longer listed on …", applications only
+        self.d_closed.setContentsMargins(0, 6, 0, 0)
+        self.d_closed.hide()
+        box.addWidget(self.d_closed)
         box.addWidget(self.notes_box)
         box.addWidget(self.d_notice)
         box.addSpacing(14)
@@ -298,6 +310,18 @@ class MainWindow(QMainWindow):
             box.addSpacing(8)
             box.addLayout(rows)
             self.detail_lists[key] = (header, caption, rows)
+        description_head = QHBoxLayout()
+        description_head.addWidget(_caption("DESCRIPTION"))
+        description_head.addStretch(1)
+        self.description_button = QPushButton("Show description")
+        self.description_button.clicked.connect(self.toggle_description)
+        description_head.addWidget(self.description_button)
+        self.d_description = _label()
+        self.d_description.hide()
+        box.addSpacing(18)
+        box.addLayout(description_head)
+        box.addSpacing(8)
+        box.addWidget(self.d_description)
         box.addStretch(1)
 
         details = QWidget()
@@ -411,6 +435,59 @@ class MainWindow(QMainWindow):
         box.addWidget(self.found_pages, 1)
         box.addWidget(self.shown_label)
         return card
+
+    def _build_undo(self) -> None:
+        """The toast shown for 10 s after "Hide": "Hidden: <title>" and a green Undo, over the bottom of the list."""
+        self.undo_url: str | None = None
+        self.undo_toast = QFrame(self.lists)  # a free child: placed by hand, not a page of the stack
+        self.undo_toast.setObjectName("toast")
+        line = QHBoxLayout(self.undo_toast)
+        line.setContentsMargins(14, 6, 6, 6)
+        line.setSpacing(12)
+        self.undo_label = QLabel()
+        self.undo_button = QPushButton("Undo")
+        self.undo_button.setObjectName("primary")
+        self.undo_button.clicked.connect(self.undo)
+        line.addWidget(self.undo_label)
+        line.addWidget(self.undo_button)
+        self.undo_toast.hide()
+        self.undo_timer = QTimer(self)
+        self.undo_timer.setSingleShot(True)
+        self.undo_timer.setInterval(10_000)
+        self.undo_timer.timeout.connect(self.undo_toast.hide)
+
+    def _show_undo(self, row: dict) -> None:
+        self.undo_url = row["url"]
+        self.undo_label.setText(f"Hidden: {row['title']}")
+        self.undo_toast.adjustSize()
+        self.undo_toast.move((self.lists.width() - self.undo_toast.width()) // 2,
+                             self.lists.height() - self.undo_toast.height() - 16)
+        self.undo_toast.raise_()
+        self.undo_toast.show()
+        self.undo_timer.start()  # a newer hide restarts the 10 s and replaces the older undo
+
+    def undo(self) -> None:
+        """Bring back the job hidden last and select it if the filters show it."""
+        self.undo_timer.stop()
+        self.undo_toast.hide()
+        if self.undo_url is None:
+            return
+        url, self.undo_url = self.undo_url, None
+        db.unhide(url)
+        self.load_rows()
+        for index, row in enumerate(self.visible):
+            if row["url"] == url:
+                self.table.selectRow(index)
+                break
+
+    def confirm_close(self) -> bool:
+        """Ask before closing while a refresh runs; True means close."""
+        box = QMessageBox(QMessageBox.Question, "Job Finder",
+                          "A refresh is in progress. Close anyway? Jobs scored so far are saved.", parent=self)
+        close = box.addButton("Close", QMessageBox.AcceptRole)
+        box.addButton("Keep open", QMessageBox.RejectRole)
+        box.exec()
+        return box.clickedButton() is close
 
     def _build_insights(self) -> QWidget:
         """Insights tab: two cards of requirement bars and a note below (spec section 13)."""
@@ -548,7 +625,10 @@ class MainWindow(QMainWindow):
                 waiting.setText(str(days))
                 if days > config.STALE_DAYS:
                     waiting.setForeground(QColor(style.COLORS["notice_text"]))
-            return [row["applied_at"], row["title"], row["company"], status, waiting, _score_item(row["score"])]
+            title = QTableWidgetItem(("⊘ " if row["closed"] else "") + row["title"])
+            if row["closed"]:  # taken down from a source that returns its whole list
+                title.setForeground(QColor(style.COLORS["muted"]))
+            return [row["applied_at"], title, row["company"], status, waiting, _score_item(row["score"])]
 
         _fill_table(self.applied_table, self.applied, values, selected)
         self.applied_tab.setText(f"My applications · {len(self.applied)}")
@@ -659,6 +739,12 @@ class MainWindow(QMainWindow):
         else:
             self.notes_url = None
         self.d_stale.setVisible(stale)
+        closed = is_application and row["closed"]
+        self.d_closed.setVisible(closed)
+        if closed:
+            self.d_closed.setText(f"No longer listed on {row['source']} — probably filled")
+        self.d_description.setText(db.description(row["url"]))
+        self.d_description.setVisible(self.description_open)
         previous = None if is_application else self._previous_application(row)
         self.d_notice.setVisible(previous is not None)
         if previous:
@@ -670,7 +756,13 @@ class MainWindow(QMainWindow):
         for status, button in self.status_buttons.items():
             button.setVisible(is_application and status != row["status"])
 
+    def toggle_description(self) -> None:
+        self.description_open = not self.description_open
+        self.d_description.setVisible(self.description_open)
+        self.description_button.setText("Collapse" if self.description_open else "Show description")
+
     def refresh(self) -> None:
+        self.refreshing = True
         self.refresh_button.setEnabled(False)
         self.load_rows()  # if the CV changed, old scores leave the list
         self.worker.start()
@@ -679,7 +771,10 @@ class MainWindow(QMainWindow):
         self.progress.setMaximum(total)
         self.progress.setValue(done)
         self.progress.show()
-        self.status_label.setText(f"Evaluated {done} of {total}")
+        if done == 0:
+            self.started = self.clock()
+        left = freshness.time_left_text(self.clock() - self.started, done, total) if done else ""
+        self.status_label.setText(f"Evaluated {done} of {total}" + (f" · {left}" if left else ""))
 
     def on_evaluated(self, row: dict) -> None:
         if row["score"] < config.MIN_SCORE:
@@ -689,6 +784,7 @@ class MainWindow(QMainWindow):
         self.render()
 
     def on_finished(self) -> None:
+        self.refreshing = False
         self.progress.hide()
         self.refresh_button.setEnabled(True)
         self.load_rows()  # drop jobs that vanished from the source or were filtered out by location
@@ -712,6 +808,7 @@ class MainWindow(QMainWindow):
     def hide_job(self) -> None:
         url = self.current["url"]
         db.hide(url)
+        self._show_undo(self.current)
         self.rows = [row for row in self.rows if row["url"] != url]
         self.show_details(None)
         self.render()
@@ -748,6 +845,9 @@ class MainWindow(QMainWindow):
         row["notes"] = text
 
     def closeEvent(self, event) -> None:
+        if self.refreshing and not self.confirm_close():
+            event.ignore()
+            return
         self.save_notes()
         db.mark_all_seen()  # on the next start only jobs arriving after this will be new
         if self.worker.model_loaded:

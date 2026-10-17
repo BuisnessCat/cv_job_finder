@@ -495,3 +495,106 @@ def test_card_published_shows_site_date_and_first_seen(window):
     window.on_evaluated(r)
     window.table.selectRow(0)
     assert window.facts["published"].text() == f"{days_ago(0)} (today) · first seen 30 days ago"
+
+
+def set_description(url, text):
+    with sqlite3.connect(config.DB_PATH) as conn:
+        conn.execute("UPDATE jobs SET description = ? WHERE url = ?", (text, url))
+
+
+def test_description_collapsed_then_shown(window):
+    add_found("a", 8)
+    add_found("b", 7)
+    set_description("a", "Build REST APIs")
+    set_description("b", "Write tests")
+    window.load_rows()
+    window.table.selectRow(0)
+    assert window.d_description.isHidden() and window.description_button.text() == "Show description"
+    window.description_button.click()
+    assert not window.d_description.isHidden() and window.d_description.text() == "Build REST APIs"
+    assert window.description_button.text() == "Collapse"
+    window.table.selectRow(1)
+    assert window.d_description.text() == "Write tests"
+
+
+def test_progress_shows_time_left(window, monkeypatch):
+    ticks = iter([100.0, 120.0, 130.0])
+    monkeypatch.setattr(MainWindow, "clock", staticmethod(lambda: next(ticks)))
+    window.on_progress(0, 213)
+    window.on_progress(2, 213)
+    assert window.status_label.text() == "Evaluated 2 of 213"
+    window.on_progress(3, 213)
+    assert window.status_label.text() == "Evaluated 3 of 213 · ~35 min left"
+
+
+def test_close_during_refresh_asks(window, monkeypatch):
+    marked = []
+    monkeypatch.setattr(db, "mark_all_seen", lambda: marked.append(True))
+    window.show()
+    window.refreshing = True
+    monkeypatch.setattr(window, "confirm_close", lambda: False)
+    window.close()
+    assert window.isVisible() and marked == []
+    monkeypatch.setattr(window, "confirm_close", lambda: True)
+    window.close()
+    assert not window.isVisible() and marked == [True]
+
+
+def test_close_without_refresh_does_not_ask(window, monkeypatch):
+    asked = []
+    monkeypatch.setattr(window, "confirm_close", lambda: asked.append(True) or True)
+    window.refresh()
+    assert window.refreshing
+    window.on_finished()
+    window.show()
+    window.close()
+    assert asked == [] and not window.refreshing
+
+
+def test_undo_hide(window):
+    add_found("a", 8)
+    add_found("b", 7)
+    window.load_rows()
+    window.table.selectRow(0)
+    window.hide_button.click()
+    assert not window.undo_toast.isHidden() and window.undo_label.text() == "Hidden: Job a"
+    window.undo_button.click()
+    assert titles(window) == ["Job a", "Job b"] and window.current["url"] == "a"
+    assert window.undo_toast.isHidden()
+    window.hide_button.click()  # "a" is selected again
+    window.undo_timer.timeout.emit()
+    assert window.undo_toast.isHidden()
+    window.table.selectRow(0)  # "b"
+    window.hide_button.click()  # a newer hide replaces the older undo
+    window.undo()
+    assert titles(window) == ["Job b"]
+
+
+def test_undo_for_filtered_job_does_not_crash(window):
+    add_found("a", 8)
+    window.load_rows()
+    window.table.selectRow(0)
+    window.hide_button.click()
+    window.search.setText("zzz")
+    window.undo()
+    assert [r["url"] for r in window.rows] == ["a"] and window.current is None
+
+
+def test_closed_application_marked(window):
+    config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # temporary CV from the fixture
+    key = worker.read_cv()[1]
+    for url, source, title in [("jg", "junior.guru", "Dev JG"), ("him", "Himalayas", "Dev H")]:
+        db.save_jobs(source, [Job(url=url, source=source, title=title, company=url, city="Prague",
+                                  published="2026-10-01", description="")])
+        db.save_evaluation(url, row(url, 8)["evaluation"], key)
+        db.apply(url)
+        db.save_jobs(source, [])  # gone from the source's results
+    window.load_rows()
+    window.show_tab(1)
+    by_title = {window.applied_table.item(i, 1).text(): i for i in range(window.applied_table.rowCount())}
+    assert set(by_title) == {"⊘ Dev JG", "Dev H"}
+    window.applied_table.selectRow(by_title["⊘ Dev JG"])
+    assert not window.d_closed.isHidden()
+    assert window.d_closed.text() == "No longer listed on junior.guru — probably filled"
+    window.applied_table.selectRow(by_title["Dev H"])
+    assert window.d_closed.isHidden()
