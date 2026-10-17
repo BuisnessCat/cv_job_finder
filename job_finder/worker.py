@@ -59,7 +59,7 @@ class Worker(QObject):
     def _refresh(self) -> str:
         """One refresh. Returns the final status line."""
         s = settings.load()
-        if s is None:
+        if s is None or settings.missing(s):
             return "Finish the setup in Settings first"
         self.status.emit("Loading jobs…")
         fetched, errors = sources.fetch_all(s)

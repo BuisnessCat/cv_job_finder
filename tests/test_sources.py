@@ -147,7 +147,7 @@ def test_fetch_himalayas_pages_until_empty(monkeypatch):
 
     monkeypatch.setattr(sources.requests, "get", fake_get)
     monkeypatch.setattr(sources.time, "sleep", lambda seconds: None)
-    assert len(sources.fetch_himalayas(["python"], "junior")) == 3
+    assert len(sources.fetch_himalayas("Python", ["junior"])) == 3
     assert calls == [1, 2, 3]
 
 
@@ -161,7 +161,7 @@ def test_fetch_himalayas_respects_max_pages(monkeypatch):
     monkeypatch.setattr(sources.requests, "get", fake_get)
     monkeypatch.setattr(sources.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(config, "HIMALAYAS_MAX_PAGES", 2)
-    sources.fetch_himalayas(["python"], "junior")
+    sources.fetch_himalayas("Python", ["junior"])
     assert calls == [1, 2]
 
 
@@ -186,8 +186,7 @@ def test_same_job_key_ignores_case_and_spaces():
     assert sources.same_job_key(" ACME ", "Python  Dev") == sources.same_job_key("acme", "python dev")
 
 
-SETTINGS = Settings(cv_path="cv.md", skills=["Python"], keywords=["python"], english="B2", czech="none",
-                    needs_permit=False)
+SETTINGS = Settings(cv_path="cv.md", skills=["Python"], main_skill="Python", languages={"English": "B2"})
 
 
 def test_juniorguru_filters_by_chosen_city():
@@ -197,7 +196,7 @@ def test_juniorguru_filters_by_chosen_city():
         ("https://www.jobs.cz/rpd/1/?utm_source=juniorguru", "Prague"), ("https://example.com/4", "Prague")]
 
 
-def test_himalayas_splits_pages_between_keywords_and_uses_level(monkeypatch):
+def test_himalayas_searches_main_skill_with_level_seniority(monkeypatch):
     calls = []
 
     def fake_get(url, params=None):
@@ -206,9 +205,12 @@ def test_himalayas_splits_pages_between_keywords_and_uses_level(monkeypatch):
 
     monkeypatch.setattr(sources, "_get", fake_get)
     monkeypatch.setattr(sources.time, "sleep", lambda seconds: None)
-    sources.fetch_himalayas(["python", "java"], "mid")
-    assert [(c["q"], c["page"]) for c in calls] == [("python", p) for p in range(1, 6)] + [("java", p) for p in range(1, 6)]
-    assert {c["seniority"] for c in calls} == {"Mid-level,Senior"}
+    sources.fetch_himalayas("C#/.NET", ["intern", "junior"])
+    assert [(c["q"], c["page"]) for c in calls] == [("C#", page) for page in range(1, 11)]  # one search, 10 pages
+    assert {c["seniority"] for c in calls} == {"Entry-level,Mid-level"}  # merged, no repeats, in order
+    calls.clear()
+    sources.fetch_himalayas("Kotlin Multiplatform", ["senior", "lead"])  # a skill typed by hand: searched as written
+    assert {(c["q"], c["seniority"]) for c in calls} == {("Kotlin Multiplatform", "Senior,Manager")}
 
 
 def test_no_remote_skips_remote_sources(monkeypatch):

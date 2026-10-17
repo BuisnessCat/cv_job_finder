@@ -8,10 +8,15 @@ from job_finder import db, insights
 # junior.guru regions the app can filter by
 CITIES = ["Praha", "Brno", "Ostrava", "Plzeň", "Olomouc", "Liberec", "České Budějovice", "Hradec Králové",
           "Pardubice", "Zlín", "Jihlava", "Karlovy Vary", "Ústí nad Labem"]
-LEVELS = ["junior", "mid"]
-LANGUAGE_LEVELS = ["none", "A1", "A2", "B1", "B2", "C1", "C2"]
+LEVELS = ["intern", "junior", "mid", "senior", "lead"]
+LANGUAGE_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2", "Native"]
+# Suggestions in the language list; any other language can be typed in
+LANGUAGES = ["English", "Czech", "Slovak", "German", "Polish", "Russian", "Ukrainian", "French", "Spanish", "Italian"]
+# The "Languages" group of the dictionary: the main skill is guessed among these
+PROGRAMMING_LANGUAGES = ["Python", "Java", "C#/.NET", "C/C++", "Go", "Rust", "JavaScript", "TypeScript", "PHP",
+                         "Ruby", "Kotlin", "Swift", "Scala", "R"]
 # Changing any of these changes the scoring rules or the CV, so every job is scored again
-SCORING_FIELDS = ("cv_path", "city", "remote", "level", "english", "czech", "needs_permit")
+SCORING_FIELDS = ("cv_path", "city", "remote", "levels", "languages")
 # Dictionary groups that are not skills you list in a CV's skills
 NOT_SKILLS = {"Experience 2+ years", "Czech", "German", "Other languages", "English C1+", "Degree",
               "Domain knowledge", "Soft skills", "Project management"}
@@ -21,13 +26,12 @@ NOT_SKILLS = {"Experience 2+ years", "Czech", "German", "Other languages", "Engl
 class Settings:
     cv_path: str = ""
     skills: list[str] = field(default_factory=list)
+    main_skill: str = ""  # one of the skills: searched for on the remote job sites
     city: str = "Praha"
     remote: bool = True
-    keywords: list[str] = field(default_factory=list)
-    level: str = "junior"
-    english: str = ""                 # one of LANGUAGE_LEVELS; "" = not answered yet
-    czech: str = ""
-    needs_permit: bool | None = None  # None = not answered yet
+    levels: list[str] = field(default_factory=lambda: ["junior"])  # one or more of LEVELS
+    # language -> one of LANGUAGE_LEVELS; "" = the level is not chosen yet
+    languages: dict[str, str] = field(default_factory=lambda: {"English": ""})
     min_score: int = 5
     stale_days: int = 14
     stale_job_days: int = 21
@@ -38,7 +42,7 @@ class CvError(Exception):
 
 
 def load() -> Settings | None:
-    """The saved settings, or None before the first-run wizard was finished."""
+    """The saved settings, or None before the first-run wizard was finished; fields of older versions are dropped."""
     data = db.get_settings()
     if data is None:
         return None
@@ -55,10 +59,10 @@ def missing(s: Settings) -> list[str]:
     empty = {
         "cv_path": not s.cv_path,
         "skills": not s.skills,
-        "keywords": not 1 <= len(s.keywords) <= 3,
-        "english": s.english not in LANGUAGE_LEVELS,
-        "czech": s.czech not in LANGUAGE_LEVELS,
-        "needs_permit": s.needs_permit is None,
+        "main_skill": s.main_skill not in s.skills,
+        "levels": not s.levels or any(level not in LEVELS for level in s.levels),
+        "languages": not s.languages or any(not name.strip() or level not in LANGUAGE_LEVELS
+                                            for name, level in s.languages.items()),
     }
     return [name for name, is_empty in empty.items() if is_empty]
 
@@ -91,12 +95,21 @@ def detect_skills(text: str) -> list[str]:
     return [name for name in insights.REQUIREMENTS if name in found]
 
 
+def guess_main_skill(skills: list[str], cv_text: str) -> str:
+    """The programming language among the skills that the CV mentions most; without one, the first skill."""
+    languages = [name for name in skills if name in PROGRAMMING_LANGUAGES]
+    if languages:
+        return max(languages, key=lambda name: insights.mentions(name, cv_text))  # a tie: the earlier one
+    return skills[0] if skills else ""
+
+
 def initial(cv: Path) -> Settings:
-    """Wizard prefill: an existing CV file and the skills found in it; everything else is asked."""
+    """Wizard prefill: an existing CV file, the skills found in it and a guess of the main one; the rest is asked."""
     if not cv.is_file():
         return Settings()
     try:
-        skills = detect_skills(read_cv_text(str(cv)))
+        text = read_cv_text(str(cv))
     except CvError:
-        skills = []
-    return Settings(cv_path=str(cv), skills=skills)
+        return Settings(cv_path=str(cv))
+    skills = detect_skills(text)
+    return Settings(cv_path=str(cv), skills=skills, main_skill=guess_main_skill(skills, text))

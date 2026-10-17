@@ -27,7 +27,7 @@ BAR_WIDTH = 220  # the longest bar on the Insights tab
 
 def _search_changed(old: Settings, new: Settings) -> bool:
     """What is downloaded, filtered or how it is scored changed, not only a threshold: a new search is needed."""
-    return settings.scoring_changed(old, new) or (old.keywords, old.skills) != (new.keywords, new.skills)
+    return settings.scoring_changed(old, new) or (old.main_skill, old.skills) != (new.main_skill, new.skills)
 
 
 def _label(name: str = "") -> QLabel:

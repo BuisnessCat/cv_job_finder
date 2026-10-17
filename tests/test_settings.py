@@ -20,8 +20,7 @@ def app():
 
 
 def filled(**overrides):
-    values = dict(cv_path="cv.md", skills=["Python"], keywords=["python"], english="B2", czech="none",
-                  needs_permit=False)
+    values = dict(cv_path="cv.md", skills=["Python"], main_skill="Python", languages={"English": "B2"})
     return Settings(**{**values, **overrides})
 
 
@@ -33,15 +32,38 @@ def test_no_settings_until_saved():
 
 
 def test_missing_lists_required_fields_in_order():
-    assert settings.missing(Settings()) == ["cv_path", "skills", "keywords", "english", "czech", "needs_permit"]
-    assert settings.missing(filled(english="none", czech="A1", needs_permit=True)) == []
+    assert settings.missing(Settings()) == ["cv_path", "skills", "main_skill", "languages"]  # junior by default
+    assert settings.missing(filled()) == []
+    assert settings.missing(filled(main_skill="Java")) == ["main_skill"]  # not one of the skills
+    assert settings.missing(filled(levels=[])) == ["levels"]
+    assert settings.missing(filled(levels=["expert"])) == ["levels"]
+    assert settings.missing(filled(languages={"English": "B2", "Czech": ""})) == ["languages"]  # a level is required
+    assert settings.missing(filled(languages={})) == ["languages"]
+
+
+def test_old_settings_load_without_errors():
+    # Settings saved by the first version: keywords, two languages, a work permit and one level
+    db.put_settings({"cv_path": "cv.md", "skills": ["Python"], "city": "Brno", "remote": False,
+                     "keywords": ["python"], "level": "junior", "english": "B2", "czech": "B1",
+                     "needs_permit": False, "min_score": 5, "stale_days": 14, "stale_job_days": 21})
+    s = settings.load()
+    assert (s.cv_path, s.skills, s.city, s.remote) == ("cv.md", ["Python"], "Brno", False)
+    assert settings.missing(s) == ["main_skill", "languages"]
+
+
+def test_guess_main_skill():
+    text = "Java, Spring and Java EE. Python scripts. Java 17. Docker."
+    assert settings.guess_main_skill(["Docker", "Python", "Java"], text) == "Java"  # the most mentioned language
+    assert settings.guess_main_skill(["Docker", "SQL"], text) == "Docker"  # no programming language: the first skill
+    assert settings.guess_main_skill([], text) == ""
 
 
 def test_scoring_changed_only_for_scoring_fields():
     base = filled()
-    assert not settings.scoring_changed(base, replace(base, skills=["Python", "SQL"], keywords=["java"], min_score=6))
+    assert not settings.scoring_changed(base, replace(base, skills=["Python", "SQL"], main_skill="SQL", min_score=6))
     assert settings.scoring_changed(base, replace(base, city="Brno"))
-    assert settings.scoring_changed(base, replace(base, needs_permit=True))
+    assert settings.scoring_changed(base, replace(base, levels=["junior", "mid"]))
+    assert settings.scoring_changed(base, replace(base, languages={"English": "C1"}))
 
 
 def test_read_cv_text_from_markdown_and_pdf(tmp_path, app):
@@ -67,9 +89,8 @@ def test_detect_skills_skips_non_technical_groups():
     assert found == ["Python", "FastAPI", "PostgreSQL", "Docker"]
 
 
-def test_initial_prefills_only_cv_and_skills(tmp_path):
+def test_initial_prefills_cv_skills_and_main_skill(tmp_path):
     cv = tmp_path / "master_cv.md"
-    cv.write_text("Python and Docker", encoding="utf-8")
-    s = settings.initial(cv)
-    assert (s.cv_path, s.skills, s.keywords, s.english, s.needs_permit) == (str(cv), ["Python", "Docker"], [], "", None)
+    cv.write_text("Docker and Python", encoding="utf-8")
+    assert settings.initial(cv) == Settings(cv_path=str(cv), skills=["Python", "Docker"], main_skill="Python")
     assert settings.initial(tmp_path / "none.md") == Settings()

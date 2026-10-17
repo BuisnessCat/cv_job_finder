@@ -48,6 +48,12 @@ def test_summary_counts_suitable_and_evaluated(setup, monkeypatch):
     assert worker.Worker()._refresh() == "Done: 2 matches out of 3 evaluated"
 
 
+def test_incomplete_settings_stop_the_refresh(setup, monkeypatch):
+    settings.save(replace(settings.load(), languages={}))  # e.g. saved by an older version of the app
+    monkeypatch.setattr(sources, "fetch_all", lambda s: pytest.fail("nothing is fetched without complete settings"))
+    assert worker.Worker()._refresh() == "Finish the setup in Settings first"
+
+
 def test_unreadable_cv_stops_before_evaluation(setup, monkeypatch):
     s = settings.load()
     settings.save(replace(s, cv_path=s.cv_path + ".missing"))
@@ -59,7 +65,7 @@ def test_key_changes_with_cv_and_scoring_settings(setup):
     s = settings.load()
     key = worker.read_cv(s)[1]
     assert worker.read_cv(replace(s, city="Brno"))[1] != key
-    assert worker.read_cv(replace(s, keywords=["java"], skills=["Go"]))[1] == key
+    assert worker.read_cv(replace(s, main_skill="Go", skills=["Go"]))[1] == key
     Path(s.cv_path).write_text("Senior SQL developer", encoding="utf-8")  # temporary CV from the fixture
     assert worker.read_cv(s)[1] != key
     assert worker.read_cv(None) is None

@@ -32,10 +32,12 @@ MAX_DESCRIPTION_CHARS = 8000
 HTTP_TIMEOUT = 30
 JUNIORGURU_URL = "https://junior.guru/api/jobs.csv"
 HIMALAYAS_URL = "https://himalayas.app/jobs/api/search"
-# To shorten the first evaluation, keep only "Entry-level"
-# The search words and the seniority come from the settings (keywords, level)
+# The search word (the main skill) and the seniority (the levels) come from the settings
 HIMALAYAS_PARAMS = {"country": "CZ", "sort": "recent"}
-HIMALAYAS_SENIORITY = {"junior": "Entry-level,Mid-level", "mid": "Mid-level,Senior"}
+HIMALAYAS_SENIORITY = {"intern": ["Entry-level"], "junior": ["Entry-level", "Mid-level"],
+                       "mid": ["Mid-level", "Senior"], "senior": ["Senior"], "lead": ["Senior", "Manager"]}
+# Skills whose dictionary name is not a good search word
+HIMALAYAS_QUERY = {"C#/.NET": "C#", "C/C++": "C++"}
 HIMALAYAS_MAX_PAGES = 10  # 20 jobs per page
 JOBICY_URL = "https://jobicy.com/api/v2/remote-jobs"
 JOBICY_PARAMS = {"count": 50, "geo": "czechia", "industry": "dev"}

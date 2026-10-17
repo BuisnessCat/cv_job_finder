@@ -117,6 +117,11 @@ def find(text: str) -> set[str]:
     return {name for name, pattern in _PATTERNS.items() if pattern.search(text)}
 
 
+def mentions(name: str, text: str) -> int:
+    """How many times a requirement from the dictionary is written in a text."""
+    return len(_PATTERNS[name].findall(text))
+
+
 @dataclass
 class Insights:
     total: int                            # evaluated jobs counted

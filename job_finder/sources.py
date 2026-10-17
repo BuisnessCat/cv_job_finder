@@ -114,22 +114,22 @@ def fetch_juniorguru(city: str, remote: bool) -> list[Job]:
     return parse_juniorguru(_get(config.JUNIORGURU_URL).content.decode("utf-8-sig"), city, remote)
 
 
-def fetch_himalayas(keywords: list[str], level: str) -> list[Job]:
-    """One search per keyword; the pages are shared so that there are at most HIMALAYAS_MAX_PAGES in all."""
+def fetch_himalayas(main_skill: str, levels: list[str]) -> list[Job]:
+    """One search by the main skill, up to HIMALAYAS_MAX_PAGES pages; the seniority of all chosen levels."""
+    seniority = []
+    for level, values in config.HIMALAYAS_SENIORITY.items():
+        if level in levels:
+            seniority += [value for value in values if value not in seniority]
+    params = {**config.HIMALAYAS_PARAMS, "q": config.HIMALAYAS_QUERY.get(main_skill, main_skill),
+              "seniority": ",".join(seniority)}
     jobs = []
-    pages = max(1, config.HIMALAYAS_MAX_PAGES // max(1, len(keywords)))
-    first = True
-    for keyword in keywords:
-        for page in range(1, pages + 1):
-            if not first:
-                time.sleep(1)  # Himalayas rate-limits requests
-            first = False
-            params = {**config.HIMALAYAS_PARAMS, "q": keyword, "seniority": config.HIMALAYAS_SENIORITY[level],
-                      "page": page}
-            batch = parse_himalayas(_get(config.HIMALAYAS_URL, params).json())
-            if not batch:
-                break
-            jobs += batch
+    for page in range(1, config.HIMALAYAS_MAX_PAGES + 1):
+        if page > 1:
+            time.sleep(1)  # Himalayas rate-limits requests
+        batch = parse_himalayas(_get(config.HIMALAYAS_URL, {**params, "page": page}).json())
+        if not batch:
+            break
+        jobs += batch
     return jobs
 
 
@@ -149,7 +149,7 @@ def sources_for(s: Settings) -> list[tuple[str, Callable[[], list[Job]]]]:
     """The sources and how to fetch them for these settings; the order is the priority when removing duplicates."""
     return [
         ("junior.guru", lambda: fetch_juniorguru(s.city, s.remote)),
-        ("Himalayas", lambda: fetch_himalayas(s.keywords, s.level)),
+        ("Himalayas", lambda: fetch_himalayas(s.main_skill, s.levels)),
         ("Jobicy", fetch_jobicy),
         ("Working Nomads", fetch_workingnomads),
     ]

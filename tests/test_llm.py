@@ -81,17 +81,21 @@ def test_prepare_starts_server_without_capturing_output(tmp_path, monkeypatch):
 
 
 def test_rules_follow_settings():
-    s = Settings(cv_path="a", skills=["Java"], city="Brno", remote=False, keywords=["java"], level="mid",
-                 english="C1", czech="B2", needs_permit=True)
+    s = Settings(cv_path="a", skills=["Java"], main_skill="Java", city="Brno", remote=False,
+                 levels=["intern", "junior"], languages={"English": "C1", "Russian": "Native"})
     rules = llm.render_rules(s)
     assert "Brno" in rules and "remote-only jobs are not a fit" in rules
-    assert "5+ years" in rules and "English: C1" in rules and "Czech: B2" in rules
-    assert "needs a work permit" in rules
+    assert "internship or junior roles" in rules and "2+ years" in rules  # the blocker of the highest level
+    assert "English C1" in rules and "Russian native" in rules
+    assert "permit" not in rules.lower()
     assert "student" not in rules.lower() and "(Java, C#" not in rules  # nothing assumes a Python student
+    senior = llm.render_rules(replace(s, levels=["senior"]))
+    assert "10+ years" in senior and "clearly below senior level" in senior
     assert "Write all texts in English" in rules and rules.endswith("Candidate's CV:" + chr(10))
 
 
-def test_fingerprint_ignores_keywords_and_skills():
-    s = Settings(cv_path="a", skills=["Python"], keywords=["python"], english="B2", czech="none", needs_permit=False)
-    assert llm.fingerprint(s) == llm.fingerprint(replace(s, keywords=["java"], skills=["Go"], min_score=7))
-    assert llm.fingerprint(s) != llm.fingerprint(replace(s, level="mid"))
+def test_fingerprint_ignores_skills_and_main_skill():
+    s = Settings(cv_path="a", skills=["Python"], main_skill="Python", languages={"English": "B2"})
+    assert llm.fingerprint(s) == llm.fingerprint(replace(s, skills=["Go"], main_skill="Go", min_score=7))
+    assert llm.fingerprint(s) != llm.fingerprint(replace(s, levels=["mid"]))
+    assert llm.fingerprint(s) != llm.fingerprint(replace(s, languages={"English": "C1"}))
