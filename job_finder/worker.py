@@ -62,7 +62,7 @@ class Worker(QObject):
         if s is None:
             return "Finish the setup in Settings first"
         self.status.emit("Loading jobs…")
-        fetched, errors = sources.fetch_all()
+        fetched, errors = sources.fetch_all(s)
         for name, jobs in fetched.items():
             db.save_jobs(name, jobs)
         log.info("Loaded: %s", {name: len(jobs) for name, jobs in fetched.items()})

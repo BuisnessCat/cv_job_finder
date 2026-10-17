@@ -16,7 +16,7 @@ def setup(tmp_path, monkeypatch):
     use_settings(cv)
     jobs = [Job(url=f"u{i}", source="Jobicy", title=f"Python dev {i}", company="A", city="",
                 published=f"2026-10-0{i}", description="") for i in (1, 2, 3)]
-    monkeypatch.setattr(sources, "fetch_all", lambda: ({"Jobicy": jobs}, {}))
+    monkeypatch.setattr(sources, "fetch_all", lambda s: ({"Jobicy": jobs}, {}))
     monkeypatch.setattr(llm, "prepare", lambda: None)
     released = []
     monkeypatch.setattr(llm, "release", lambda wait=True: released.append(wait))

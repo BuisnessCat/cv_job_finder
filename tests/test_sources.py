@@ -1,4 +1,7 @@
+from dataclasses import replace
+
 from job_finder import config, sources
+from job_finder.settings import Settings
 from job_finder.sources import Job
 
 JG_CSV = (
@@ -54,7 +57,7 @@ def make(url, source, company="ACME", title="Python Dev"):
 
 
 def test_parse_juniorguru():
-    jobs = sources.parse_juniorguru(JG_CSV)
+    jobs = sources.parse_juniorguru(JG_CSV, "Praha", True)
     assert jobs[0] == Job(
         url="https://www.jobs.cz/rpd/1/?utm_source=juniorguru", source="junior.guru",
         title="Junior Python vývojář", company="Firma s.r.o.", city="Prague", published="2026-10-12",
@@ -64,7 +67,7 @@ def test_parse_juniorguru():
 
 
 def test_parse_juniorguru_keeps_only_prague_or_remote():
-    jobs = sources.parse_juniorguru(JG_CSV)
+    jobs = sources.parse_juniorguru(JG_CSV, "Praha", True)
     # Brno without remote and a job without places are dropped; Prague listed second (Háje district) stays
     assert [(job.url, job.city) for job in jobs] == [
         ("https://www.jobs.cz/rpd/1/?utm_source=juniorguru", "Prague"),
@@ -115,11 +118,11 @@ def test_fetch_all_isolates_source_errors(monkeypatch):
     def broken():
         raise RuntimeError("timeout")
 
-    monkeypatch.setattr(sources, "SOURCES", [
+    monkeypatch.setattr(sources, "sources_for", lambda s: [
         ("junior.guru", lambda: [make("u1", "junior.guru")]),
         ("Jobicy", broken),
     ])
-    fetched, errors = sources.fetch_all()
+    fetched, errors = sources.fetch_all(SETTINGS)
     assert list(fetched) == ["junior.guru"]
     assert "timeout" in errors["Jobicy"]
 
@@ -127,7 +130,7 @@ def test_fetch_all_isolates_source_errors(monkeypatch):
 def test_fetch_juniorguru_decodes_utf8_with_bom(monkeypatch):
     content = ("﻿" + JG_CSV).encode("utf-8")
     monkeypatch.setattr(sources.requests, "get", lambda *args, **kwargs: FakeResponse(content=content))
-    assert sources.fetch_juniorguru()[0].title == "Junior Python vývojář"
+    assert sources.fetch_juniorguru("Praha", True)[0].title == "Junior Python vývojář"
 
 
 def test_fetch_himalayas_pages_until_empty(monkeypatch):
@@ -144,7 +147,7 @@ def test_fetch_himalayas_pages_until_empty(monkeypatch):
 
     monkeypatch.setattr(sources.requests, "get", fake_get)
     monkeypatch.setattr(sources.time, "sleep", lambda seconds: None)
-    assert len(sources.fetch_himalayas()) == 3
+    assert len(sources.fetch_himalayas(["python"], "junior")) == 3
     assert calls == [1, 2, 3]
 
 
@@ -158,7 +161,7 @@ def test_fetch_himalayas_respects_max_pages(monkeypatch):
     monkeypatch.setattr(sources.requests, "get", fake_get)
     monkeypatch.setattr(sources.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(config, "HIMALAYAS_MAX_PAGES", 2)
-    sources.fetch_himalayas()
+    sources.fetch_himalayas(["python"], "junior")
     assert calls == [1, 2]
 
 
@@ -181,3 +184,41 @@ def test_parsers_tolerate_null_fields():
 
 def test_same_job_key_ignores_case_and_spaces():
     assert sources.same_job_key(" ACME ", "Python  Dev") == sources.same_job_key("acme", "python dev")
+
+
+SETTINGS = Settings(cv_path="cv.md", skills=["Python"], keywords=["python"], english="B2", czech="none",
+                    needs_permit=False)
+
+
+def test_juniorguru_filters_by_chosen_city():
+    assert [(j.url, j.city) for j in sources.parse_juniorguru(JG_CSV, "Brno", True)] == [
+        ("https://example.com/2", "Brno"), ("https://example.com/3", "Brno")]
+    assert [(j.url, j.city) for j in sources.parse_juniorguru(JG_CSV, "Praha", False)] == [
+        ("https://www.jobs.cz/rpd/1/?utm_source=juniorguru", "Prague"), ("https://example.com/4", "Prague")]
+
+
+def test_himalayas_splits_pages_between_keywords_and_uses_level(monkeypatch):
+    calls = []
+
+    def fake_get(url, params=None):
+        calls.append(dict(params))
+        return FakeResponse(data=HIMALAYAS)
+
+    monkeypatch.setattr(sources, "_get", fake_get)
+    monkeypatch.setattr(sources.time, "sleep", lambda seconds: None)
+    sources.fetch_himalayas(["python", "java"], "mid")
+    assert [(c["q"], c["page"]) for c in calls] == [("python", p) for p in range(1, 6)] + [("java", p) for p in range(1, 6)]
+    assert {c["seniority"] for c in calls} == {"Mid-level,Senior"}
+
+
+def test_no_remote_skips_remote_sources(monkeypatch):
+    def must_not_run(*args):
+        raise AssertionError("a remote-only source was fetched")
+
+    monkeypatch.setattr(sources, "fetch_juniorguru", lambda city, remote: [make("u1", "junior.guru")])
+    for name in ("fetch_himalayas", "fetch_jobicy", "fetch_workingnomads"):
+        monkeypatch.setattr(sources, name, must_not_run)
+    fetched, errors = sources.fetch_all(replace(SETTINGS, remote=False))
+    assert {name: [j.url for j in jobs] for name, jobs in fetched.items()} == {
+        "junior.guru": ["u1"], "Himalayas": [], "Jobicy": [], "Working Nomads": []}
+    assert errors == {}

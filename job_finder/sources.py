@@ -1,15 +1,22 @@
 """Job sources: four aggregators with open APIs."""
+from __future__ import annotations
+
 import csv
 import io
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, fields
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import requests
 from bs4 import BeautifulSoup
 
 from job_finder import config
+
+if TYPE_CHECKING:  # settings imports db, which imports this module
+    from job_finder.settings import Settings
 
 log = logging.getLogger(__name__)
 csv.field_size_limit(10_000_000)  # in case of very long descriptions in the junior.guru CSV
@@ -37,21 +44,21 @@ def html_to_text(html: str | None) -> str:
     return BeautifulSoup(html or "", "html.parser").get_text("\n", strip=True)
 
 
-def parse_juniorguru(text: str) -> list[Job]:
-    """Only jobs in Prague or remote: the other sources return remote jobs only anyway."""
+def parse_juniorguru(text: str, city: str, remote: bool) -> list[Job]:
+    """Only jobs in the chosen region (city) and, if remote is fine, remote ones."""
     jobs = []
     for row in csv.DictReader(io.StringIO(text)):
         # A region is more reliable than a name: a Prague district (e.g. "Háje") has no "Praha" in its name
         regions = [value for key, value in row.items() if key.startswith("locations_") and key.endswith("_region")]
-        if "Praha" in regions:
-            city = "Prague"
-        elif row.get("remote") == "True":
-            city = "Remote"
+        if city in regions:
+            place = "Prague" if city == "Praha" else city
+        elif remote and row.get("remote") == "True":
+            place = "Remote"
         else:
             continue
         jobs.append(Job(
             url=row["url"], source="junior.guru", title=row["title"], company=row["company_name"],
-            city=city, published=(row.get("first_seen_at") or "")[:10],
+            city=place, published=(row.get("first_seen_at") or "")[:10],
             description=html_to_text(row.get("description_html")),
         ))
     return jobs
@@ -102,20 +109,27 @@ def _get(url: str, params: dict | None = None) -> requests.Response:
     return response
 
 
-def fetch_juniorguru() -> list[Job]:
+def fetch_juniorguru(city: str, remote: bool) -> list[Job]:
     # Decode ourselves: this does not depend on the response header and strips the BOM
-    return parse_juniorguru(_get(config.JUNIORGURU_URL).content.decode("utf-8-sig"))
+    return parse_juniorguru(_get(config.JUNIORGURU_URL).content.decode("utf-8-sig"), city, remote)
 
 
-def fetch_himalayas() -> list[Job]:
+def fetch_himalayas(keywords: list[str], level: str) -> list[Job]:
+    """One search per keyword; the pages are shared so that there are at most HIMALAYAS_MAX_PAGES in all."""
     jobs = []
-    for page in range(1, config.HIMALAYAS_MAX_PAGES + 1):
-        if page > 1:
-            time.sleep(1)  # Himalayas rate-limits requests
-        batch = parse_himalayas(_get(config.HIMALAYAS_URL, {**config.HIMALAYAS_PARAMS, "page": page}).json())
-        if not batch:
-            break
-        jobs += batch
+    pages = max(1, config.HIMALAYAS_MAX_PAGES // max(1, len(keywords)))
+    first = True
+    for keyword in keywords:
+        for page in range(1, pages + 1):
+            if not first:
+                time.sleep(1)  # Himalayas rate-limits requests
+            first = False
+            params = {**config.HIMALAYAS_PARAMS, "q": keyword, "seniority": config.HIMALAYAS_SENIORITY[level],
+                      "page": page}
+            batch = parse_himalayas(_get(config.HIMALAYAS_URL, params).json())
+            if not batch:
+                break
+            jobs += batch
     return jobs
 
 
@@ -127,13 +141,18 @@ def fetch_workingnomads() -> list[Job]:
     return parse_workingnomads(_get(config.WORKINGNOMADS_URL).json())
 
 
-# Order is the priority when removing duplicates
-SOURCES = [
-    ("junior.guru", fetch_juniorguru),
-    ("Himalayas", fetch_himalayas),
-    ("Jobicy", fetch_jobicy),
-    ("Working Nomads", fetch_workingnomads),
-]
+# Sources that list remote jobs only: not fetched when remote work is not fine
+REMOTE_ONLY = ("Himalayas", "Jobicy", "Working Nomads")
+
+
+def sources_for(s: Settings) -> list[tuple[str, Callable[[], list[Job]]]]:
+    """The sources and how to fetch them for these settings; the order is the priority when removing duplicates."""
+    return [
+        ("junior.guru", lambda: fetch_juniorguru(s.city, s.remote)),
+        ("Himalayas", lambda: fetch_himalayas(s.keywords, s.level)),
+        ("Jobicy", fetch_jobicy),
+        ("Working Nomads", fetch_workingnomads),
+    ]
 
 
 def _norm(text: str) -> str:
@@ -159,10 +178,15 @@ def dedupe(fetched: dict[str, list[Job]]) -> dict[str, list[Job]]:
     return result
 
 
-def fetch_all() -> tuple[dict[str, list[Job]], dict[str, str]]:
-    """Fetch all sources: (jobs by source without duplicates, errors by source)."""
+def fetch_all(s: Settings) -> tuple[dict[str, list[Job]], dict[str, str]]:
+    """Fetch all sources: (jobs by source without duplicates, errors by source).
+
+    Without remote work the remote-only sources are not fetched; their empty lists make their old jobs inactive."""
     fetched, errors = {}, {}
-    for name, fetch in SOURCES:
+    for name, fetch in sources_for(s):
+        if not s.remote and name in REMOTE_ONLY:
+            fetched[name] = []
+            continue
         try:
             fetched[name] = fetch()
         except Exception as error:
