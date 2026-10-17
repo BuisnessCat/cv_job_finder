@@ -44,6 +44,11 @@ def html_to_text(html: str | None) -> str:
     return BeautifulSoup(html or "", "html.parser").get_text("\n", strip=True)
 
 
+def juniorguru_place(city: str) -> str:
+    """How a junior.guru job from the chosen region shows its place: Praha as Prague."""
+    return "Prague" if city == "Praha" else city
+
+
 def parse_juniorguru(text: str, city: str, remote: bool) -> list[Job]:
     """Only jobs in the chosen region (city) and, if remote is fine, remote ones."""
     jobs = []
@@ -51,7 +56,7 @@ def parse_juniorguru(text: str, city: str, remote: bool) -> list[Job]:
         # A region is more reliable than a name: a Prague district (e.g. "Háje") has no "Praha" in its name
         regions = [value for key, value in row.items() if key.startswith("locations_") and key.endswith("_region")]
         if city in regions:
-            place = "Prague" if city == "Praha" else city
+            place = juniorguru_place(city)
         elif remote and row.get("remote") == "True":
             place = "Remote"
         else:
@@ -150,6 +155,15 @@ def fetch_workingnomads() -> list[Job]:
 
 # Sources that list remote jobs only: not fetched when remote work is not fine
 REMOTE_ONLY = ("Himalayas", "Jobicy", "Working Nomads")
+
+
+def still_fetched(source: str, city: str, s: Settings) -> bool:
+    """Whether these settings still ask the source for such a job: only then does its absence mean it was taken down."""
+    if source in REMOTE_ONLY:
+        return s.remote
+    if source == "junior.guru":
+        return city == juniorguru_place(s.city) or (city == "Remote" and s.remote)
+    return True
 
 
 def sources_for(s: Settings) -> list[tuple[str, Callable[[], list[Job]]]]:

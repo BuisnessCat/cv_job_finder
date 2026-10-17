@@ -636,6 +636,50 @@ def test_undo_for_filtered_job_does_not_crash(window):
     assert [r["url"] for r in window.rows] == ["a"] and window.current is None
 
 
+def test_closed_mark_only_for_jobs_still_searched(window):
+    s = use_settings(config.CV_PATH)  # temporary CV from the fixture; Praha, remote is fine
+    key = worker.read_cv(s)[1]
+    for url, source, city in [("jg", "junior.guru", "Prague"), ("jy", "Jobicy", "Remote")]:
+        db.save_jobs(source, [Job(url=url, source=source, title=f"Dev {url}", company=url, city=city,
+                                  published="2026-10-01", description="")])
+        db.save_evaluation(url, row(url, 8)["evaluation"], key)
+        db.apply(url)
+        db.save_jobs(source, [])  # gone from the source's results
+
+    def marks():
+        window.load_rows()
+        return sorted(window.applied_table.item(i, 1).text() for i in range(window.applied_table.rowCount()))
+
+    assert marks() == ["⊘ Dev jg", "⊘ Dev jy"]
+    settings.save(replace(s, city="Brno", remote=False))  # such jobs are not searched for any more
+    assert marks() == ["Dev jg", "Dev jy"]
+
+
+def test_settings_save_reloads_open_cv_window(window, monkeypatch, tmp_path):
+    s = use_settings(config.CV_PATH, text="First CV")
+    window.load_rows()
+    window.cv_button.click()
+    other = tmp_path / "other.md"
+    other.write_text("Second CV", encoding="utf-8")
+
+    class FakeDialog:  # "Save" in the Settings window picks another CV file
+        def __init__(self, current, parent):
+            pass
+
+        def exec(self):
+            settings.save(replace(s, cv_path=str(other)))
+            return QDialog.Accepted
+
+        def deleteLater(self):
+            pass
+
+    monkeypatch.setattr(settings_window, "SettingsDialog", FakeDialog)
+    monkeypatch.setattr(window, "refresh", lambda: None)
+    window.settings_button.click()
+    assert "Second CV" in window.cv_window.body.toPlainText()
+    window.cv_window.close()
+
+
 def test_closed_application_marked(window):
     use_settings(config.CV_PATH)  # temporary CV from the fixture
     key = worker.read_cv(settings.load())[1]

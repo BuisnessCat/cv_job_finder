@@ -592,6 +592,9 @@ class MainWindow(QMainWindow):
         cv = read_cv(self.settings)
         self.rows = db.list_jobs(cv[1], self.settings.min_score) if cv else []
         self.applied = db.list_applied()
+        for row in self.applied:  # "probably filled" only if still searched for: after a city change it isn't fetched
+            row["closed"] = row["closed"] and (self.settings is None
+                                               or sources.still_fetched(row["source"], row["city"], self.settings))
         # reversed: with several applications under one key, the newest stays
         self.applied_by_key = {sources.same_job_key(r["company"], r["title"]): r for r in reversed(self.applied)}
         self.new_urls = db.unseen_urls()
@@ -848,6 +851,8 @@ class MainWindow(QMainWindow):
         if not accepted:
             return
         self.load_rows()
+        if self.cv_window is not None:
+            self.cv_window.reload()  # the CV file may have changed
         if old is None or _search_changed(old, self.settings):
             self.refresh()
 

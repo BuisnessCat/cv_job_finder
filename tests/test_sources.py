@@ -220,6 +220,15 @@ def test_himalayas_query_for_dictionary_names():
     assert [(skill, sources.himalayas_query(skill)) for skill, _ in pairs] == pairs
 
 
+def test_still_fetched_follows_settings():
+    s = replace(SETTINGS, city="Praha", remote=True)
+    assert sources.still_fetched("junior.guru", "Prague", s) and sources.still_fetched("junior.guru", "Remote", s)
+    assert not sources.still_fetched("junior.guru", "Prague", replace(s, city="Brno"))
+    assert not sources.still_fetched("junior.guru", "Remote", replace(s, remote=False))
+    assert sources.still_fetched("Jobicy", "Remote", s)
+    assert not sources.still_fetched("Jobicy", "Remote", replace(s, remote=False))
+
+
 def test_no_remote_skips_remote_sources(monkeypatch):
     def must_not_run(*args):
         raise AssertionError("a remote-only source was fetched")
