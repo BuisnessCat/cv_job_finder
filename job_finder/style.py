@@ -80,8 +80,18 @@ QLineEdit#search:focus {{ border-color: {accent}; }}
 QLineEdit, QComboBox, QSpinBox {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; padding: 5px 10px;
     selection-background-color: {accent_soft}; }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border-color: {accent}; }}
-QListWidget {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; padding: 4px; outline: none; }}
-QListWidget::item:selected {{ background: {accent_soft}; color: {text}; }}
+QFrame#chip {{ background: {alt}; border: 1px solid {border}; border-radius: 13px; }}
+QToolButton#chipX {{ background: transparent; border: none; color: {muted}; font-size: 11pt; padding: 0 4px; }}
+QToolButton#chipX:hover, QToolButton#rowX:hover {{ color: {text}; }}
+QLineEdit#chipInput {{ background: transparent; border: 1px dashed {border}; border-radius: 13px; padding: 3px 10px; }}
+QPushButton#link {{ background: transparent; border: none; color: {link}; padding: 4px 0; }}
+QPushButton#link:hover {{ text-decoration: underline; }}
+QToolButton#rowX {{ background: transparent; border: none; color: {muted}; font-size: 13pt; padding: 0 6px; }}
+QListWidget#nav {{ background: {panel}; border: none; border-right: 1px solid {border}; padding: 12px 8px;
+                   outline: none; font-size: 10.5pt; }}
+QListWidget#nav::item {{ padding: 9px 12px; border-radius: 6px; margin: 1px 0; }}
+QListWidget#nav::item:selected {{ background: {accent_soft}; color: {text}; }}
+QStackedWidget#details {{ background: transparent; }}
 QTextBrowser {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 12px 16px;
                selection-background-color: {accent_soft}; }}
 QScrollArea#detailsScroll, QWidget#details, QWidget#detailsPage, QWidget#emptyPage, QScrollArea#insightsScroll,

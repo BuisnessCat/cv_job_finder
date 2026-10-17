@@ -188,6 +188,12 @@ def unseen_urls() -> set[str]:
         return {row["url"] for row in conn.execute("SELECT url FROM jobs WHERE seen = 0")}
 
 
+def has_evaluations() -> bool:
+    """Whether any job has a score, under any key: the wizard warns that they will be scored again."""
+    with _connect() as conn:
+        return conn.execute("SELECT 1 FROM jobs WHERE score IS NOT NULL LIMIT 1").fetchone() is not None
+
+
 def count_evaluated(cv_hash: str) -> int:
     """How many active, not hidden jobs are evaluated under the current key."""
     with _connect() as conn:

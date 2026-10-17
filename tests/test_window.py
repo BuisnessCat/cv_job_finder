@@ -158,6 +158,9 @@ def test_settings_button_reloads_and_refreshes_on_city_change(window, monkeypatc
             settings.save(new)
             return QDialog.Accepted
 
+        def deleteLater(self):
+            pass
+
     monkeypatch.setattr(settings_window, "SettingsDialog", FakeDialog)
     window.settings_button.click()
     assert window.settings.min_score == 8 and refreshed == []  # a threshold: only the list is re-read

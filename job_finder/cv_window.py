@@ -35,7 +35,7 @@ class CvWindow(QDialog):
         self.body.setOpenExternalLinks(True)
 
         self.open_button = QPushButton("Open in editor")
-        self.open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.path)))
+        self.open_button.clicked.connect(self.open_file)  # a method: a lambda with self would keep the window alive
         close_button = QPushButton("Close")
         close_button.clicked.connect(self.close)
         buttons = QHBoxLayout()
@@ -50,6 +50,9 @@ class CvWindow(QDialog):
         layout.addWidget(self.body, 1)
         layout.addLayout(buttons)
         self.reload()
+
+    def open_file(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.path))
 
     def reload(self) -> None:
         """Re-read the file: the window always shows the current version of the CV."""

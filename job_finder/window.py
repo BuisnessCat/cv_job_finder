@@ -842,7 +842,10 @@ class MainWindow(QMainWindow):
         # Imported here, not at the top: settings_window itself takes _label from this module
         from job_finder import settings_window
         old = self.settings
-        if settings_window.SettingsDialog(old or Settings(), self).exec() != QDialog.Accepted:
+        dialog = settings_window.SettingsDialog(old or Settings(), self)
+        accepted = dialog.exec() == QDialog.Accepted
+        dialog.deleteLater()  # a child of the main window: otherwise every opened window stays in memory
+        if not accepted:
             return
         self.load_rows()
         if old is None or _search_changed(old, self.settings):

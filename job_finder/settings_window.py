@@ -1,30 +1,36 @@
-"""The first-run wizard and the Settings window (spec section 15): the same fields, as steps or on one page."""
+"""The first-run wizard and the Settings window (spec section 15): the same three pages, as steps or by a side menu."""
+from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame,
-                               QGridLayout, QHBoxLayout, QLineEdit, QListWidget, QMessageBox, QProgressBar,
-                               QPushButton, QRadioButton, QScrollArea, QSpinBox, QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QGridLayout,
+                               QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox, QProgressBar, QPushButton,
+                               QScrollArea, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
 from job_finder import db, settings, skills, style
+from job_finder.flow_layout import FlowLayout
 from job_finder.settings import Settings
 from job_finder.window import _label
 
 SECONDS_PER_JOB = 8  # one model answer on a mid-range GPU, for the "about N min" estimate
-SECTIONS = {"cv": "YOUR CV", "search": "WHAT YOU'RE LOOKING FOR", "about": "ABOUT YOU", "advanced": "ADVANCED"}
+PAGES = {  # page: title, one-line hint
+    "cv": ("Your CV", "The file the AI compares jobs with, and the skills a job must mention to be scored."),
+    "search": ("What you're looking for", "Where you want to work and at what level."),
+    "languages": ("Languages", "The AI checks the language requirements of each job against these."),
+}
 WELCOME = ("Job Finder collects fresh jobs from several sites, keeps the ones that mention your skills and has a "
            "local AI model score each of them against your CV.\n\n"
            "Answer a few questions, it takes about a minute. You can change everything later in Settings.")
-# Wizard steps: title, hint, form sections, required fields that keep "Next" disabled until filled
-STEPS = [
-    ("Welcome to Job Finder", WELCOME, [], ()),
-    ("Your CV", "Pick the file with your CV (.md, .txt or .pdf). The app finds the skills in it: remove what's "
-                "wrong and add what's missing. Only jobs that mention at least one of these skills are scored.",
-     ["cv"], ("cv_path", "skills")),
-    ("What you're looking for", "Where to look and for what kind of role.", ["search"], ("keywords",)),
-    ("About you", "The AI takes this into account when it scores a job.", ["about"],
-     ("english", "czech", "needs_permit")),
-]
+# Wizard steps after Welcome: the page and the required fields that keep "Next" disabled until filled
+STEPS = [("", ()), ("cv", ("cv_path", "skills", "main_skill")), ("search", ("levels",)), ("languages", ("languages",))]
+MISSING_TEXT = {"cv_path": "a CV file", "skills": "skills", "main_skill": "the main skill", "levels": "a level",
+                "languages": "language levels"}
+
+
+def _text(name: str, text: str) -> QLabel:
+    label = _label(name)
+    label.setText(text)
+    return label
 
 
 def _row(*widgets, stretch: int | None = None) -> QWidget:
@@ -39,10 +45,12 @@ def _row(*widgets, stretch: int | None = None) -> QWidget:
     return row
 
 
-def _text(name: str, text: str):
-    label = _label(name)
-    label.setText(text)
-    return label
+def _scroll(widget: QWidget) -> QScrollArea:
+    scroll = QScrollArea()
+    scroll.setObjectName("detailsScroll")
+    scroll.setWidgetResizable(True)
+    scroll.setWidget(widget)
+    return scroll
 
 
 def _buttons_without_enter(dialog: QDialog) -> None:
@@ -51,112 +59,130 @@ def _buttons_without_enter(dialog: QDialog) -> None:
         button.setAutoDefault(False)
 
 
+class LanguageRow(QWidget):
+    """One language: a name (from the list or typed in), its level and a button that removes the row."""
+
+    def __init__(self, name: str, level: str):
+        super().__init__()
+        self.name_box = QComboBox()
+        self.name_box.setEditable(True)
+        self.name_box.addItems(settings.LANGUAGES)
+        self.name_box.lineEdit().setPlaceholderText("Language")
+        self.name_box.setCurrentIndex(-1)
+        self.name_box.setEditText(name)
+        self.name_box.setFixedWidth(180)
+        self.level_box = QComboBox()
+        self.level_box.addItems(settings.LANGUAGE_LEVELS)
+        self.level_box.setPlaceholderText("Level")
+        self.level_box.setCurrentIndex(settings.LANGUAGE_LEVELS.index(level) if level in settings.LANGUAGE_LEVELS
+                                       else -1)
+        self.level_box.setFixedWidth(100)
+        self.remove_button = QToolButton()
+        self.remove_button.setText("×")
+        self.remove_button.setObjectName("rowX")
+        self.remove_button.setToolTip("Remove this language")
+        box = QHBoxLayout(self)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(self.name_box)
+        box.addWidget(self.level_box)
+        box.addWidget(self.remove_button)
+        box.addStretch(1)
+
+
 class SettingsForm(QObject):
-    """The settings fields; the wizard and the Settings window lay them out in grids by section."""
+    """The settings fields; the wizard shows its pages as steps, the Settings window by a side menu."""
     changed = Signal()  # a field was edited: the dialogs check again what is still missing
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.cv_path = ""
+        self.cv_text = ""  # for guessing the main skill
         self.cv_readable = False
         self.cv_input = QLineEdit(readOnly=True, placeholderText="No file chosen")
         self.cv_button = QPushButton("Choose file…")
         self.cv_button.clicked.connect(self.choose_cv)
         self.cv_error = _label("cvError")  # why the chosen file can't be read
         self.cv_error.hide()
-        self.skills_list = QListWidget()
-        self.skills_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.skills_list.setFixedHeight(150)
-        self.skill_input = QLineEdit(placeholderText="Add a skill")
+        self.file_box = QWidget()  # the error sits in the same grid cell: a hidden row would still leave a gap
+        file_layout = QVBoxLayout(self.file_box)
+        file_layout.setContentsMargins(0, 0, 0, 0)
+        file_layout.addWidget(_row(self.cv_input, self.cv_button, stretch=0))
+        file_layout.addWidget(self.cv_error)
+
+        self._skills: list[str] = []
+        self.chips_box = QWidget()
+        self.chips = FlowLayout(self.chips_box)
+        self.skill_input = QLineEdit(placeholderText="+ Add skill")
+        self.skill_input.setObjectName("chipInput")
+        self.skill_input.setFixedWidth(120)
         self.skill_input.returnPressed.connect(self.add_skill)
-        self.add_skill_button = QPushButton("Add")
-        self.add_skill_button.clicked.connect(self.add_skill)
-        self.remove_skill_button = QPushButton("Remove selected")
-        self.remove_skill_button.clicked.connect(self.remove_skills)
-        self.skills_box = QWidget()
-        skills_layout = QVBoxLayout(self.skills_box)
-        skills_layout.setContentsMargins(0, 0, 0, 0)
-        skills_layout.addWidget(self.skills_list)
-        skills_layout.addWidget(_row(self.skill_input, self.add_skill_button, self.remove_skill_button, stretch=0))
+        self.main_skill_box = QComboBox()
+        self.main_skill_box.setFixedWidth(240)
+        self.main_skill_box.currentTextChanged.connect(self.changed)
 
         self.city_box = QComboBox()
         self.city_box.addItems(settings.CITIES)
+        self.city_box.setFixedWidth(240)
         self.remote_check = QCheckBox("Remote is fine")
-        self.keywords_input = QLineEdit(placeholderText="python, fastapi")
-        self.keywords_input.textChanged.connect(self.changed)
         self.level_buttons = QButtonGroup(self)
-        level_widgets = []
-        for index, (level, text) in enumerate(zip(settings.LEVELS, ["Junior", "Mid"])):
-            button = QPushButton(text)
+        self.level_buttons.setExclusive(False)  # several levels at once
+        last = len(settings.LEVELS) - 1
+        for index, level in enumerate(settings.LEVELS):
+            button = QPushButton(level.capitalize())
             button.setCheckable(True)
-            button.setObjectName("segmentLeft" if index == 0 else "segmentRight")
+            button.setObjectName("segmentLeft" if index == 0 else "segmentRight" if index == last else "segmentMiddle")
             self.level_buttons.addButton(button, index)
-            level_widgets.append(button)
-        level_row = _row(*level_widgets)
+        self.level_buttons.buttonToggled.connect(self._level_toggled)
+        level_row = _row(*self.level_buttons.buttons())
         level_row.layout().setSpacing(0)
 
-        self.english_box, self.czech_box = self._language_box(), self._language_box()
-        self.permit_yes = QRadioButton("I need one for Czechia")
-        self.permit_no = QRadioButton("Not needed")
-        self.permit_buttons = QButtonGroup(self)
-        for button in (self.permit_yes, self.permit_no):
-            self.permit_buttons.addButton(button)
-        self.permit_buttons.buttonToggled.connect(self.changed)
+        self.language_rows: list[LanguageRow] = []
+        self.languages_box = QWidget()
+        languages_layout = QVBoxLayout(self.languages_box)
+        languages_layout.setContentsMargins(0, 0, 0, 0)
+        languages_layout.setSpacing(6)
+        self.rows_layout = QVBoxLayout()
+        self.rows_layout.setSpacing(6)
+        languages_layout.addLayout(self.rows_layout)
+        self.add_language_button = QPushButton("+ Add language")
+        self.add_language_button.setObjectName("link")
+        self.add_language_button.clicked.connect(self.add_empty_language)
+        languages_layout.addWidget(self.add_language_button, 0, Qt.AlignLeft)
 
-        self.min_score_box = self._number(1, 10, "")
-        self.stale_days_box = self._number(1, 365, " days")
-        self.stale_job_days_box = self._number(1, 365, " days")
-
-        self.rows = {  # section: (caption, widget) rows
-            "cv": [("File", _row(self.cv_input, self.cv_button, stretch=0)), ("", self.cv_error),
-                   ("Skills", self.skills_box)],
-            "search": [("City", self.city_box), ("", self.remote_check), ("Keywords", self.keywords_input),
-                       ("", _text("muted", "1–3, separated by commas: used to search the remote job sites")),
-                       ("Your level", level_row)],
-            "about": [("English", self.english_box), ("Czech", self.czech_box),
-                      ("Work permit", _row(self.permit_yes, self.permit_no))],
-            "advanced": [("Minimum score", self.min_score_box), ("Follow-up reminder after", self.stale_days_box),
-                         ("Grey out jobs older than", self.stale_job_days_box)],
+        self.rows = {  # page: (caption, widget) rows on its grid
+            "cv": [("File", self.file_box), ("Skills", self.chips_box), ("Main skill", self.main_skill_box),
+                   ("", _text("muted", "Searched for on the remote job sites"))],
+            "search": [("City", self.city_box), ("", self.remote_check), ("Level", level_row),
+                       ("", _text("muted", "You can pick several"))],
+            "languages": [("Spoken", self.languages_box)],
         }
 
-    def _language_box(self) -> QComboBox:
-        box = QComboBox()
-        box.addItems(settings.LANGUAGE_LEVELS)
-        box.setPlaceholderText("Choose…")
-        box.setCurrentIndex(-1)
-        box.currentIndexChanged.connect(self.changed)
-        return box
-
-    @staticmethod
-    def _number(low: int, high: int, suffix: str) -> QSpinBox:
-        box = QSpinBox()
-        box.setRange(low, high)
-        box.setSuffix(suffix)
-        return box
-
-    def grid(self, sections: list[str], titles: bool) -> QWidget:
-        """The fields of these sections on one grid, so every field lines up; titles: section headings."""
+    def page(self, name: str) -> QWidget:
+        """A page: title, hint and its fields on a grid, so every field lines up."""
+        title, hint = PAGES[name]
         page = QWidget()
         page.setObjectName("details")
-        grid = QGridLayout(page)
-        grid.setContentsMargins(0, 0, 0, 0)
+        box = QVBoxLayout(page)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(4)
+        box.addWidget(_text("h1", title))
+        box.addWidget(_text("muted", hint))
+        box.addSpacing(16)
+        grid = QGridLayout()
         grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(10)
+        grid.setColumnMinimumWidth(0, 90)
         grid.setColumnStretch(1, 1)
-        row = 0
-        for name in sections:
-            if titles:
-                if row:
-                    grid.setRowMinimumHeight(row, 8)
-                    row += 1
-                grid.addWidget(_text("section", SECTIONS[name]), row, 0, 1, 2)
-                row += 1
-            for caption, widget in self.rows[name]:
-                align = Qt.AlignTop if widget is self.skills_box else Qt.AlignVCenter
-                grid.addWidget(_text("metaKey", caption), row, 0, align)
-                grid.addWidget(widget, row, 1)
-                row += 1
-        grid.setRowStretch(row, 1)
+        for row, (caption, widget) in enumerate(self.rows[name]):
+            label = _text("metaKey", caption)
+            if widget in (self.file_box, self.chips_box, self.languages_box):  # may grow: line up with the top line
+                label.setContentsMargins(0, 7, 0, 0)
+                grid.addWidget(label, row, 0, Qt.AlignTop)
+            else:
+                grid.addWidget(label, row, 0, Qt.AlignVCenter)
+            grid.addWidget(widget, row, 1)
+        box.addLayout(grid)
+        box.addStretch(1)
         return page
 
     def set_values(self, s: Settings) -> None:
@@ -164,31 +190,28 @@ class SettingsForm(QObject):
         self.cv_input.setText(s.cv_path)
         if s.cv_path:
             self._read_cv()  # a moved or deleted file shows its error right away
-        self._set_skills(s.skills)
+        self._set_skills(s.skills, s.main_skill)  # the saved skills, not the ones found in the CV again
         self.city_box.setCurrentText(s.city)
         self.remote_check.setChecked(s.remote)
-        self.keywords_input.setText(", ".join(s.keywords))
-        self.level_buttons.button(settings.LEVELS.index(s.level)).setChecked(True)
-        for box, level in ((self.english_box, s.english), (self.czech_box, s.czech)):
-            box.setCurrentIndex(settings.LANGUAGE_LEVELS.index(level) if level in settings.LANGUAGE_LEVELS else -1)
-        self.permit_buttons.setExclusive(False)  # an exclusive group can't uncheck both
-        self.permit_yes.setChecked(s.needs_permit is True)
-        self.permit_no.setChecked(s.needs_permit is False)
-        self.permit_buttons.setExclusive(True)
-        self.min_score_box.setValue(s.min_score)
-        self.stale_days_box.setValue(s.stale_days)
-        self.stale_job_days_box.setValue(s.stale_job_days)
+        self.level_buttons.blockSignals(True)
+        for index, level in enumerate(settings.LEVELS):
+            self.level_buttons.button(index).setChecked(level in s.levels)
+        self.level_buttons.blockSignals(False)
+        for row in list(self.language_rows):
+            self.remove_language(row)
+        for name, level in s.languages.items():
+            self.add_language(name, level)
         self.changed.emit()
 
     def values(self) -> Settings:
-        permit = True if self.permit_yes.isChecked() else False if self.permit_no.isChecked() else None
-        return Settings(cv_path=self.cv_path, skills=self.skills(), city=self.city_box.currentText(),
-                        remote=self.remote_check.isChecked(),
-                        keywords=[word.strip() for word in self.keywords_input.text().split(",") if word.strip()],
-                        level=settings.LEVELS[self.level_buttons.checkedId()],
-                        english=self.english_box.currentText(), czech=self.czech_box.currentText(),
-                        needs_permit=permit, min_score=self.min_score_box.value(),
-                        stale_days=self.stale_days_box.value(), stale_job_days=self.stale_job_days_box.value())
+        languages = {}
+        for row in self.language_rows:  # the same language twice: the last row wins
+            languages[row.name_box.currentText().strip()] = row.level_box.currentText()
+        return Settings(cv_path=self.cv_path, skills=self.skill_chips(), main_skill=self.main_skill_box.currentText(),
+                        city=self.city_box.currentText(), remote=self.remote_check.isChecked(),
+                        levels=[level for index, level in enumerate(settings.LEVELS)
+                                if self.level_buttons.button(index).isChecked()],
+                        languages=languages)
 
     def missing(self) -> list[str]:
         """Required fields still empty; a CV file that can't be read counts as not chosen."""
@@ -197,12 +220,7 @@ class SettingsForm(QObject):
             empty.insert(0, "cv_path")
         return empty
 
-    def skills(self) -> list[str]:
-        return [self.skills_list.item(i).text() for i in range(self.skills_list.count())]
-
-    def _set_skills(self, names: list[str]) -> None:
-        self.skills_list.clear()
-        self.skills_list.addItems(names)
+    # Your CV
 
     def choose_cv(self) -> None:
         start = str(Path(self.cv_path).parent) if self.cv_path else str(Path.home())
@@ -215,67 +233,131 @@ class SettingsForm(QObject):
         """A newly chosen CV: read it and replace the skills with the ones found in it."""
         self.cv_path = path
         self.cv_input.setText(path)
-        text = self._read_cv()
-        if text is not None:
-            self._set_skills(settings.detect_skills(text))
+        if self._read_cv():
+            self._set_skills(settings.detect_skills(self.cv_text), "")
         self.changed.emit()
 
-    def _read_cv(self) -> str | None:
+    def _read_cv(self) -> bool:
         try:
-            text = settings.read_cv_text(self.cv_path)
+            self.cv_text = settings.read_cv_text(self.cv_path)
         except settings.CvError as error:
             self.cv_error.setText(f"Can't read this file: {error}")
             self.cv_error.show()
             self.cv_readable = False
-            return None
+            return False
         self.cv_error.hide()
         self.cv_readable = True
-        return text
+        return True
+
+    def skill_chips(self) -> list[str]:
+        return list(self._skills)
 
     def add_skill(self) -> None:
         name = self.skill_input.text().strip()
-        if name and name.lower() not in (skill.lower() for skill in self.skills()):
-            self.skills_list.addItem(name)
-            self.changed.emit()
         self.skill_input.clear()
+        if name and name.lower() not in (skill.lower() for skill in self._skills):
+            self._set_skills([*self._skills, name], self.main_skill_box.currentText())
+            self.changed.emit()
 
-    def remove_skills(self) -> None:
-        for item in self.skills_list.selectedItems():
-            self.skills_list.takeItem(self.skills_list.row(item))
+    def remove_skill(self, name: str, _checked: bool = False) -> None:
+        self._set_skills([skill for skill in self._skills if skill != name], self.main_skill_box.currentText())
+        self.changed.emit()
+
+    def _set_skills(self, names: list[str], main: str) -> None:
+        """Show the skills as chips and offer them as the main skill: keep main if it is still there, else guess."""
+        self._skills = list(names)
+        while self.chips.count():
+            widget = self.chips.takeAt(0).widget()
+            if widget is not self.skill_input:
+                widget.hide()
+                widget.deleteLater()  # not right away: the chip's own button may be the one clicked
+        for name in self._skills:
+            self.chips.addWidget(self._chip(name))
+        self.chips.addWidget(self.skill_input)
+        self.main_skill_box.blockSignals(True)
+        self.main_skill_box.clear()
+        self.main_skill_box.addItems(self._skills)
+        self.main_skill_box.setCurrentText(main if main in self._skills
+                                           else settings.guess_main_skill(self._skills, self.cv_text))
+        self.main_skill_box.blockSignals(False)
+
+    def _chip(self, name: str) -> QFrame:
+        chip = QFrame()
+        chip.setObjectName("chip")
+        box = QHBoxLayout(chip)
+        box.setContentsMargins(10, 2, 2, 2)
+        box.setSpacing(0)
+        box.addWidget(QLabel(name))
+        remove = QToolButton()
+        remove.setText("×")
+        remove.setObjectName("chipX")
+        remove.setToolTip(f"Remove {name}")
+        remove.clicked.connect(partial(self.remove_skill, name))
+        box.addWidget(remove)
+        return chip
+
+    # What you're looking for
+
+    def _level_toggled(self, button: QPushButton, checked: bool) -> None:
+        if not checked and not any(b.isChecked() for b in self.level_buttons.buttons()):
+            button.setChecked(True)  # at least one level stays chosen
+            return
+        self.changed.emit()
+
+    # Languages
+
+    def add_empty_language(self) -> None:
+        self.add_language("", "")
+
+    def add_language(self, name: str, level: str) -> None:
+        row = LanguageRow(name, level)
+        row.name_box.currentTextChanged.connect(self.changed)
+        row.level_box.currentIndexChanged.connect(self.changed)
+        row.remove_button.clicked.connect(partial(self.remove_language, row))
+        self.language_rows.append(row)
+        self.rows_layout.addWidget(row)
+        self.changed.emit()
+
+    def remove_language(self, row: LanguageRow, _checked: bool = False) -> None:
+        self.language_rows.remove(row)
+        row.hide()
+        row.deleteLater()  # not right away: its own button may be the one clicked
         self.changed.emit()
 
 
 class Wizard(QDialog):
-    """First run: Welcome, Your CV, What you're looking for, About you; one column with a progress bar."""
+    """First run: Welcome, Your CV, What you're looking for, Languages; one column with a progress bar."""
 
     def __init__(self, s: Settings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Job Finder — setup")
         self.setStyleSheet(style.STYLESHEET)
-        self.resize(640, 600)
+        self.resize(660, 600)
         self.step = 0
         self.form = SettingsForm(self)
         self.step_label = _label("muted")
         self.bar = QProgressBar()
         self.bar.setRange(0, len(STEPS))
         self.bar.setTextVisible(False)
+        welcome = QWidget()
+        welcome.setObjectName("details")
+        welcome_box = QVBoxLayout(welcome)
+        welcome_box.setContentsMargins(0, 0, 0, 0)
+        welcome_box.setSpacing(10)
+        welcome_box.addWidget(_text("h1", "Welcome to Job Finder"))
+        welcome_box.addWidget(_text("muted", WELCOME))
+        welcome_box.addStretch(1)
         self.pages = QStackedWidget()
-        for title, hint, sections, _ in STEPS:
-            page = QWidget()
-            page.setObjectName("details")
-            box = QVBoxLayout(page)
-            box.setContentsMargins(0, 0, 0, 0)
-            box.setSpacing(10)
-            box.addWidget(_text("h1", title))
-            box.addWidget(_text("muted", hint))
-            box.addSpacing(6)
-            if sections:
-                box.addWidget(self.form.grid(sections, titles=False))
-            box.addStretch(1)
-            self.pages.addWidget(page)
+        self.pages.setObjectName("details")
+        self.pages.addWidget(welcome)
+        for name, _ in STEPS[1:]:
+            self.pages.addWidget(self.form.page(name))
+        self.has_scores = db.has_evaluations()
+        self.rescore_note = _text("muted", "You already have scored jobs: they will all be scored again with "
+                                           "these settings.")
 
         self.back_button = QPushButton("Back")
-        self.back_button.clicked.connect(lambda: self.show_step(self.step - 1))
+        self.back_button.clicked.connect(self.go_back)
         self.next_button = QPushButton("Next")
         self.next_button.setObjectName("primary")
         self.next_button.clicked.connect(self.go_next)
@@ -290,7 +372,8 @@ class Wizard(QDialog):
         layout.addWidget(self.step_label)
         layout.addWidget(self.bar)
         layout.addSpacing(6)
-        layout.addWidget(self.pages, 1)
+        layout.addWidget(_scroll(self.pages), 1)
+        layout.addWidget(self.rescore_note)
         layout.addLayout(buttons)
         _buttons_without_enter(self)
 
@@ -300,15 +383,20 @@ class Wizard(QDialog):
 
     def show_step(self, step: int) -> None:
         self.step = step
+        last = step == len(STEPS) - 1
         self.pages.setCurrentIndex(step)
         self.step_label.setText(f"Step {step + 1} of {len(STEPS)}")
         self.bar.setValue(step + 1)
         self.back_button.setVisible(step > 0)
-        self.next_button.setText("Start search" if step == len(STEPS) - 1 else "Next")
+        self.next_button.setText("Start search" if last else "Next")
+        self.rescore_note.setVisible(last and self.has_scores)
         self.update_buttons()
 
     def update_buttons(self) -> None:
-        self.next_button.setEnabled(not set(STEPS[self.step][3]) & set(self.form.missing()))
+        self.next_button.setEnabled(not set(STEPS[self.step][1]) & set(self.form.missing()))
+
+    def go_back(self) -> None:
+        self.show_step(self.step - 1)
 
     def go_next(self) -> None:
         if self.step == len(STEPS) - 1:
@@ -321,49 +409,57 @@ class Wizard(QDialog):
 
 
 class SettingsDialog(QDialog):
-    """Settings: every field on one scrollable page; Save asks first if all jobs have to be scored again."""
+    """Settings: a side menu with the three pages; Save asks first if all jobs have to be scored again."""
 
     def __init__(self, s: Settings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setStyleSheet(style.STYLESHEET)
-        self.resize(640, 700)
+        self.resize(780, 560)
         self.saved = s
         self.form = SettingsForm(self)
-        page = self.form.grid(list(SECTIONS), titles=True)
-        page.layout().setContentsMargins(20, 16, 20, 16)
-        scroll = QScrollArea()
-        scroll.setObjectName("detailsScroll")
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(page)
-        card = QFrame()
-        card.setObjectName("card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(1, 1, 1, 1)
-        card_layout.addWidget(scroll)
+        self.nav = QListWidget()
+        self.nav.setObjectName("nav")
+        self.nav.setFixedWidth(210)
+        self.pages = QStackedWidget()
+        self.pages.setObjectName("details")
+        for name, (title, _) in PAGES.items():
+            self.nav.addItem(title)
+            self.pages.addWidget(self.form.page(name))
+        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.nav.setCurrentRow(0)
 
+        self.missing_label = _label("muted")  # "Still needed: …" while Save is disabled
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.reject)
         self.save_button = QPushButton("Save")
         self.save_button.setObjectName("primary")
         self.save_button.clicked.connect(self.save)
         buttons = QHBoxLayout()
-        buttons.addStretch(1)
+        buttons.addWidget(self.missing_label, 1)
         buttons.addWidget(self.cancel_button)
         buttons.addWidget(self.save_button)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(style.GAP, style.GAP, style.GAP, style.GAP)
-        layout.setSpacing(style.GAP)
-        layout.addWidget(card, 1)
-        layout.addLayout(buttons)
+        right = QVBoxLayout()
+        right.setContentsMargins(28, 22, 20, 16)
+        right.setSpacing(12)
+        right.addWidget(_scroll(self.pages), 1)
+        right.addLayout(buttons)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.nav)
+        layout.addLayout(right, 1)
         _buttons_without_enter(self)
 
         self.form.changed.connect(self.update_buttons)
         self.form.set_values(s)
 
     def update_buttons(self) -> None:
-        self.save_button.setEnabled(not self.form.missing())
+        missing = self.form.missing()
+        self.save_button.setEnabled(not missing)
+        self.missing_label.setText("Still needed: " + ", ".join(MISSING_TEXT[name] for name in missing)
+                                   if missing else "")
 
     def save(self) -> None:
         new = self.form.values()
@@ -383,10 +479,11 @@ class SettingsDialog(QDialog):
 
 
 def first_run(cv: Path) -> bool:
-    """Show the wizard when there are no settings yet; False if it was closed before the end (nothing is saved)."""
-    if settings.load() is not None:
+    """Show the wizard when settings are missing or incomplete; False if it was closed before the end."""
+    saved = settings.load()
+    if saved is not None and not settings.missing(saved):
         return True
-    wizard = Wizard(settings.initial(cv))
+    wizard = Wizard(saved or settings.initial(cv))
     if wizard.exec() != QDialog.Accepted:
         return False
     settings.save(wizard.values())
