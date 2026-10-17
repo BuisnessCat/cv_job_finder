@@ -209,6 +209,55 @@ def test_rescore_question_when_a_language_is_added_again(app, cv, monkeypatch):
     assert len(asked) == 1 and list(settings.load().languages) == ["Czech", "English"]
 
 
+def test_save_keeps_hidden_thresholds(app, cv):
+    dialog = SettingsDialog(use_settings(cv, min_score=7, stale_days=10, stale_job_days=30))
+    add_skill(dialog.form, "SQL")
+    dialog.save_button.click()
+    s = settings.load()
+    assert (s.min_score, s.stale_days, s.stale_job_days) == (7, 10, 30)
+    wizard = Wizard(Settings())
+    assert (wizard.values().min_score, wizard.values().stale_days, wizard.values().stale_job_days) == (5, 14, 21)
+
+
+def test_picking_a_cv_again_asks_before_replacing_skills(app, cv, tmp_path, monkeypatch):
+    dialog = SettingsDialog(use_settings(cv, skills=["Python", "SQL"], main_skill="SQL"))
+    other = tmp_path / "new.md"
+    other.write_text("Python and Docker", encoding="utf-8")
+    asked = []
+    monkeypatch.setattr(dialog.form, "confirm_replace_skills", lambda: asked.append("no") or False)
+    dialog.form.set_cv(str(other))
+    assert asked == ["no"] and dialog.form.skill_chips() == ["Python", "SQL"]
+    assert dialog.form.main_skill_box.currentText() == "SQL"
+    monkeypatch.setattr(dialog.form, "confirm_replace_skills", lambda: asked.append("yes") or True)
+    dialog.form.set_cv(str(other))
+    assert dialog.form.skill_chips() == ["Python", "Docker"]
+    assert dialog.form.main_skill_box.currentText() == "Python"  # SQL is gone: a new guess
+    asked.clear()
+    dialog.form.set_cv(str(cv))  # the found skills are the same as the chips: nothing to ask
+    assert asked == [] and dialog.form.skill_chips() == ["Python", "Docker"]
+
+
+def test_typed_names_match_known_ones(app, cv):
+    wizard = Wizard(Settings())
+    add_skill(wizard.form, "python")
+    assert wizard.form.skill_chips() == ["Python"]
+    form = wizard.form
+    form.language_rows[0].name_box.setCurrentText("english")
+    form.language_rows[0].level_box.setCurrentText("B2")
+    form.add_language_button.click()
+    form.language_rows[1].name_box.setCurrentText("English")
+    form.language_rows[1].level_box.setCurrentText("C1")
+    assert form.values().languages == {"English": "C1"}
+
+
+def test_still_needed_names_the_language_problem(app, cv):
+    dialog = SettingsDialog(use_settings(cv))
+    dialog.form.add_language_button.click()
+    assert dialog.missing_label.text() == "Still needed: a language name"
+    dialog.form.language_rows[1].name_box.setCurrentText("Czech")
+    assert dialog.missing_label.text() == "Still needed: language levels"
+
+
 def test_settings_flag_a_moved_cv(app, cv):
     s = use_settings(cv, skills=["Python", "SQL"])  # saved skills are kept, not found again
     assert SettingsDialog(s).form.skill_chips() == ["Python", "SQL"]

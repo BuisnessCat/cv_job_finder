@@ -72,6 +72,12 @@ def test_scoring_changed_sees_language_order_but_not_path_spelling():
     assert not settings.scoring_changed(base, replace(base, cv_path="./cv.md"))  # the same file
 
 
+def test_canonical_skill_and_language_names():
+    assert settings.skill_name("python") == "Python" and settings.skill_name("Kotlin MP") == "Kotlin MP"
+    assert settings.language_name("  english ") == "English"
+    assert settings.language_name("vietnamese") == "Vietnamese"
+
+
 def test_read_cv_text_from_markdown_and_pdf(tmp_path, app):
     md = tmp_path / "cv.md"
     md.write_text("# CV\nPython, Docker", encoding="utf-8")

@@ -132,7 +132,7 @@ class Insights:
     total: int                            # evaluated jobs counted
     missing: list[tuple[str, int]]        # (requirement, jobs where the model listed it under Missing)
     required: list[tuple[str, int, int]]  # (requirement, jobs that ask for it, of them counted as yours)
-    in_cv: set[str]                       # requirements found in the CV Skills section
+    in_cv: set[str]                       # requirements matching the skills in the settings
     unknown: int                          # "missing" items that match no requirement
 
 

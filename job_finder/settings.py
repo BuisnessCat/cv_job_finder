@@ -106,6 +106,18 @@ def detect_skills(text: str) -> list[str]:
     return [name for name in insights.REQUIREMENTS if name in found]
 
 
+def skill_name(name: str) -> str:
+    """A typed skill as the dictionary writes it ("python" -> "Python"); any other skill as typed."""
+    name = name.strip()
+    return next((known for known in insights.REQUIREMENTS if known.lower() == name.lower()), name)
+
+
+def language_name(name: str) -> str:
+    """A typed language as the list writes it ("english" -> "English"); any other with a capital letter."""
+    name = name.strip()
+    return next((known for known in LANGUAGES if known.lower() == name.lower()), name[:1].upper() + name[1:])
+
+
 def guess_main_skill(skills: list[str], cv_text: str) -> str:
     """The programming language among the skills that the CV mentions most; without one, the first skill."""
     languages = [name for name in skills if name in PROGRAMMING_LANGUAGES]

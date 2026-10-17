@@ -1,4 +1,5 @@
 """The first-run wizard and the Settings window (spec section 15): the same three pages, as steps or by a side menu."""
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
@@ -24,7 +25,7 @@ WELCOME = ("Job Finder collects fresh jobs from several sites, keeps the ones th
 # Wizard steps after Welcome: the page and the required fields that keep "Next" disabled until filled
 STEPS = [("", ()), ("cv", ("cv_path", "skills", "main_skill")), ("search", ("levels",)), ("languages", ("languages",))]
 MISSING_TEXT = {"cv_path": "a CV file", "skills": "skills", "main_skill": "the main skill", "levels": "a level",
-                "languages": "language levels"}
+                "languages": "a language"}
 
 
 def _text(name: str, text: str) -> QLabel:
@@ -95,6 +96,7 @@ class SettingsForm(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.saved = Settings()  # fields the form doesn't show (the thresholds) are kept from here
         self.cv_path = ""
         self.cv_text = ""  # for guessing the main skill
         self.cv_readable = False
@@ -186,6 +188,7 @@ class SettingsForm(QObject):
         return page
 
     def set_values(self, s: Settings) -> None:
+        self.saved = s
         self.cv_path = s.cv_path
         self.cv_input.setText(s.cv_path)
         if s.cv_path:
@@ -206,8 +209,9 @@ class SettingsForm(QObject):
     def values(self) -> Settings:
         languages = {}
         for row in self.language_rows:  # the same language twice: the last row wins
-            languages[row.name_box.currentText().strip()] = row.level_box.currentText()
-        return Settings(cv_path=self.cv_path, skills=self.skill_chips(), main_skill=self.main_skill_box.currentText(),
+            languages[settings.language_name(row.name_box.currentText())] = row.level_box.currentText()
+        return replace(self.saved, cv_path=self.cv_path, skills=self.skill_chips(),
+                       main_skill=self.main_skill_box.currentText(),
                         city=self.city_box.currentText(), remote=self.remote_check.isChecked(),
                         levels=[level for index, level in enumerate(settings.LEVELS)
                                 if self.level_buttons.button(index).isChecked()],
@@ -234,7 +238,10 @@ class SettingsForm(QObject):
         self.cv_path = path
         self.cv_input.setText(path)
         if self._read_cv():
-            self._set_skills(settings.detect_skills(self.cv_text), "")
+            found = settings.detect_skills(self.cv_text)
+            # Edited skills are not thrown away silently, e.g. when a moved CV is picked again
+            if found and (not self._skills or set(found) == set(self._skills) or self.confirm_replace_skills()):
+                self._set_skills(found, self.main_skill_box.currentText())
         self.changed.emit()
 
     def _read_cv(self) -> bool:
@@ -252,8 +259,28 @@ class SettingsForm(QObject):
     def skill_chips(self) -> list[str]:
         return list(self._skills)
 
+    def confirm_replace_skills(self) -> bool:
+        answer = QMessageBox.question(self.cv_button.window(), "Skills",
+                                      "Replace your skills with the ones found in the new file?",
+                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        return answer == QMessageBox.Yes
+
+    def missing_text(self) -> str:
+        """What is still needed, in words; for languages, whether a name or a level is missing."""
+        parts = []
+        for name in self.missing():
+            rows = [(row.name_box.currentText().strip(), row.level_box.currentText()) for row in self.language_rows]
+            if name != "languages" or not rows:
+                parts.append(MISSING_TEXT[name])
+                continue
+            if any(not language for language, _ in rows):
+                parts.append("a language name")
+            if any(language and not level for language, level in rows):
+                parts.append("language levels")
+        return "Still needed: " + ", ".join(parts) if parts else ""
+
     def add_skill(self) -> None:
-        name = self.skill_input.text().strip()
+        name = settings.skill_name(self.skill_input.text())
         self.skill_input.clear()
         if name and name.lower() not in (skill.lower() for skill in self._skills):
             self._set_skills([*self._skills, name], self.main_skill_box.currentText())
@@ -458,8 +485,7 @@ class SettingsDialog(QDialog):
     def update_buttons(self) -> None:
         missing = self.form.missing()
         self.save_button.setEnabled(not missing)
-        self.missing_label.setText("Still needed: " + ", ".join(MISSING_TEXT[name] for name in missing)
-                                   if missing else "")
+        self.missing_label.setText(self.form.missing_text())
 
     def save(self) -> None:
         new = self.form.values()
