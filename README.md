@@ -17,6 +17,9 @@ my CV, and asks a local AI model to score the rest from 1 to 10 and explain the 
 - Scores the rest with a model running in LM Studio on my own graphics card. For each job I get a
   score, a short reason, what I already have, what's missing and what could rule me out.
 - Shows jobs with a score of 5 or more, best first. Jobs that are new since last time are marked.
+- Shows how old each job really is. Job sites like to bump old listings so they look new, so the app
+  remembers when it first saw a job and marks those as "reposted". There's a search box, a
+  7 / 14 / 30 days filter and a "newest first" order above the list.
 - Keeps track of where I applied. One click moves a job to My applications, where I can mark it
   accepted or rejected, write notes and see how long I've been waiting for an answer.
 - The Insights tab counts what I'm missing most often across all jobs. Handy for deciding what to
