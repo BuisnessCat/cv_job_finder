@@ -4,6 +4,7 @@ from datetime import date
 
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QIcon
+from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSplitter,
@@ -147,6 +148,8 @@ class MainWindow(QMainWindow):
         self.new_urls: set[str] = set()  # unseen: appeared after the window was last closed
         self.current: dict | None = None  # selected row: a found job or an application (has a status key)
         self.refreshing = False  # a refresh (download or scoring) is running
+        self.refresh_again = False  # the search changed during a refresh: one more pass after it
+        self.scored_urls: set[str] = set()  # jobs scored during the current refresh, for the notification
         self.started = 0.0  # when the current scoring pass began, by clock()
         self.description_open = False  # the card's description stays open from job to job
         self.settings: Settings | None = None  # re-read with the list; None before the first-run wizard
@@ -227,7 +230,8 @@ class MainWindow(QMainWindow):
         self.worker.evaluated.connect(self.on_evaluated)
         self.worker.finished.connect(self.on_finished)
 
-        self.new_good = 0  # new jobs scored NOTIFY_SCORE+ during the current refresh, for the notification
+        self.jobs_message = False  # the last tray message was about new jobs (clicking it opens the window)
+        self.refresh_action = None  # "Refresh now" in the tray menu
         self.quitting = False  # Quit from the tray: closing the window really closes the app
         self.tray_hint_shown = False
         self.tray = self._build_tray() if self.tray_available() else None
@@ -816,12 +820,16 @@ class MainWindow(QMainWindow):
         self.description_button.setText("Collapse" if self.description_open else "Show description")
 
     def refresh(self) -> None:
+        if self.refreshing:  # one pass at a time: the timer may fire while a modal window is open
+            return
         self.refreshing = True
         self.refresh_button.setEnabled(False)
+        if self.refresh_action is not None:
+            self.refresh_action.setEnabled(False)
         self.settings_button.setEnabled(False)  # the pass reads the settings once, at its start
         self.settings_button.setToolTip("Available when the refresh finishes")
         self.load_rows()  # if the CV changed, old scores leave the list
-        self.new_good = 0
+        self.scored_urls = set()
         self.worker.start()
 
     def on_progress(self, done: int, total: int) -> None:
@@ -838,8 +846,7 @@ class MainWindow(QMainWindow):
             return
         self.rows.append(row)  # render() puts it in place according to the filters and order
         self.new_urls = db.unseen_urls()  # the job may have reached the database after the list was loaded
-        if row["score"] >= self.notify_score() and row["url"] in self.new_urls:  # a job seen before is not news
-            self.new_good += 1
+        self.scored_urls.add(row["url"])
         self.render()
 
     def notify_score(self) -> int:
@@ -849,16 +856,27 @@ class MainWindow(QMainWindow):
         self.refreshing = False
         self.progress.hide()
         self.refresh_button.setEnabled(True)
+        if self.refresh_action is not None:
+            self.refresh_action.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.settings_button.setToolTip("")
         self.load_rows()  # drop jobs that vanished from the source or were filtered out by location
         if self.views.currentIndex() == 1:
             self.render_insights()  # the numbers changed while the tab was open
-        if self.new_good and self.tray is not None and not self.isActiveWindow():  # hidden, minimized or behind
-            jobs = "job" if self.new_good == 1 else "jobs"
-            self.tray.showMessage("Job Finder", f"{self.new_good} new {jobs} with a score of {self.notify_score()}+",
+        # New = still unseen after the pass: jobs that were in the list when the window was hidden are seen
+        good = {row["url"] for row in self.rows if row["url"] in self.scored_urls and row["url"] in self.new_urls
+                and row["score"] >= self.notify_score()}
+        self.scored_urls = set()
+        if good and self.tray is not None and not self.isActiveWindow():  # hidden, minimized or behind
+            jobs = "job" if len(good) == 1 else "jobs"
+            self.jobs_message = True
+            self.tray.showMessage("Job Finder", f"{len(good)} new {jobs} with a score of {self.notify_score()}+",
                                   QSystemTrayIcon.Information, 10000)
-        self.new_good = 0
+        if self.worker.paused:
+            self.retry_timer.start()  # a full-screen game started during scoring: the rest comes later
+        if self.refresh_again:
+            self.refresh_again = False
+            self.refresh()
 
     def show_cv(self) -> None:
         """Show the "My CV" window with the current file; one window for the whole app."""
@@ -885,7 +903,10 @@ class MainWindow(QMainWindow):
         if self.cv_window is not None and self.cv_window.isVisible():
             self.cv_window.reload()  # the CV file may have changed; a closed window is read when it opens
         if old is None or _search_changed(old, self.settings):
-            self.refresh()
+            if self.refreshing:
+                self.refresh_again = True  # the running pass read the old settings
+            else:
+                self.refresh()
 
     def open_job(self) -> None:
         QDesktopServices.openUrl(QUrl(self.current["url"]))
@@ -934,14 +955,33 @@ class MainWindow(QMainWindow):
         tray.setToolTip("Job Finder")
         menu = QMenu(self)
         menu.addAction("Open Job Finder", self.show_window)
-        menu.addAction("Refresh now", self.refresh_now)
+        self.refresh_action = menu.addAction("Refresh now", self.refresh_now)
         menu.addSeparator()
         menu.addAction("Quit", self.quit_app)
         tray.setContextMenu(menu)
         tray.activated.connect(self.on_tray_activated)
-        tray.messageClicked.connect(self.show_window)
+        tray.messageClicked.connect(self.on_message_clicked)
         tray.show()
+        QApplication.instance().setQuitOnLastWindowClosed(False)  # hidden in the tray, only Quit ends the app
         return tray
+
+    def on_message_clicked(self) -> None:
+        if self.jobs_message:  # not the "keeps running in the tray" hint: that window was just closed
+            self.show_window()
+
+    def listen_for_launches(self, name: str) -> None:
+        """A second launch of the app (the shortcut clicked again) asks this one to show its window."""
+        QLocalServer.removeServer(name)  # a name left behind by a run that crashed
+        self.launch_server = QLocalServer(self)
+        self.launch_server.newConnection.connect(self.on_launch)
+        self.launch_server.listen(name)
+
+    def on_launch(self) -> None:
+        while self.launch_server.hasPendingConnections():
+            connection = self.launch_server.nextPendingConnection()
+            connection.disconnectFromServer()
+            connection.deleteLater()
+        self.show_window()
 
     def on_tray_activated(self, reason) -> None:
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
@@ -949,13 +989,13 @@ class MainWindow(QMainWindow):
 
     def show_window(self) -> None:
         self.load_rows()  # the "new" marks were cleared when the window was hidden
-        self.showNormal()
+        self.setWindowState(self.windowState() & ~Qt.WindowMinimized)  # a maximized window comes back maximized
+        self.show()
         self.raise_()
         self.activateWindow()
 
     def refresh_now(self) -> None:
-        if not self.refreshing:  # one refresh at a time; the Refresh button is disabled meanwhile, the menu is not
-            self.refresh()
+        self.refresh()  # does nothing while a refresh runs
 
     def auto_refresh(self) -> None:
         """The periodic refresh; while a full-screen game or presentation runs it waits a bit and tries again."""
@@ -980,6 +1020,7 @@ class MainWindow(QMainWindow):
         self.hide()
         if not self.tray_hint_shown:
             self.tray_hint_shown = True
+            self.jobs_message = False
             self.tray.showMessage("Job Finder", TRAY_HINT, QSystemTrayIcon.Information, 8000)
 
     def closeEvent(self, event) -> None:

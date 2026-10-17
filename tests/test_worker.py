@@ -105,3 +105,15 @@ def test_old_jobs_are_not_scored(setup, monkeypatch):
         "score": 6, "summary": "", "have": [], "missing": [], "risks": []})
     worker.Worker()._refresh()
     assert sorted(scored) == ["month", "undated"]
+
+
+def test_scoring_pauses_while_windows_is_busy(setup, monkeypatch):
+    answers = iter([False, True])  # a full-screen game starts after the first job
+    monkeypatch.setattr(worker.Worker, "pause_check", staticmethod(lambda: next(answers)))
+    scored = []
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules: scored.append(job.url) or {
+        "score": 6, "summary": "", "have": [], "missing": [], "risks": []})
+    w = worker.Worker()
+    message = w._refresh()
+    assert len(scored) == 1 and w.paused and message.startswith("Paused")
+    assert setup == [True]  # the model is unloaded, the game gets the graphics card

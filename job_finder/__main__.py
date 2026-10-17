@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QLockFile
+from PySide6.QtNetwork import QLocalSocket
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -13,11 +14,29 @@ from job_finder import config, db, style
 from job_finder.settings_window import first_run
 from job_finder.window import MainWindow
 
+SERVER_NAME = "job_finder"  # a second launch tells the running app through it to show its window
+
 
 def acquire_lock(path: Path) -> QLockFile | None:
     """The "app is already open" lock; None if another running instance holds it."""
     lock = QLockFile(str(path))
     return lock if lock.tryLock(0) else None
+
+
+def tell_running_instance(name: str = SERVER_NAME) -> bool:
+    """Ask a running Job Finder (maybe hidden in the tray) to show its window; False if none answers."""
+    try:
+        ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY: the running app may come to the front
+    except (AttributeError, OSError):
+        pass
+    socket = QLocalSocket()
+    socket.connectToServer(name)
+    if not socket.waitForConnected(1000):
+        return False
+    socket.write(b"show")
+    socket.waitForBytesWritten(1000)
+    socket.disconnectFromServer()
+    return True
 
 
 def main() -> None:
@@ -35,12 +54,14 @@ def main() -> None:
     # A second launch: two windows would share one model, and closing one would unload it for the other
     lock = acquire_lock(config.ROOT / "job_finder.lock")
     if lock is None:
-        QMessageBox.information(None, "Job Finder", "Job Finder is already open.")
+        if not tell_running_instance():  # it may be hidden in the tray: its window comes up
+            QMessageBox.information(None, "Job Finder", "Job Finder is already open.")
         os._exit(0)
     db.init()
     if not first_run(config.CV_PATH):
         os._exit(0)  # the wizard was closed: nothing is saved, the next start shows it again
     window = MainWindow()
+    window.listen_for_launches(SERVER_NAME)
     window.show()
     code = app.exec()
     # Exit right away without waiting for the background thread with the current model request

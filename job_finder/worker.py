@@ -6,7 +6,7 @@ from datetime import date
 
 from PySide6.QtCore import QObject, Signal
 
-from job_finder import config, db, freshness, llm, settings, skills, sources
+from job_finder import busy, config, db, freshness, llm, settings, skills, sources
 from job_finder.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -44,9 +44,12 @@ class Worker(QObject):
     evaluated = Signal(object)   # a row like db.make_row
     finished = Signal()
 
+    pause_check = staticmethod(busy.windows_busy)  # a full-screen game: stop scoring, it needs the graphics card
+
     def __init__(self):
         super().__init__()
         self.model_loaded = False
+        self.paused = False  # the last pass stopped for a full-screen app; the window tries again later
 
     def start(self) -> None:
         # daemon: the window closes right away without waiting for the current model request
@@ -65,6 +68,7 @@ class Worker(QObject):
 
     def _refresh(self) -> str:
         """One refresh. Returns the final status line."""
+        self.paused = False
         s = settings.load()
         if s is None or settings.missing(s):
             return "Finish the setup in Settings first"
@@ -103,6 +107,8 @@ class Worker(QObject):
                 llm.release()
                 self.model_loaded = False
 
+        if self.paused:
+            return _join("Paused while a full-screen app runs; the rest will be scored later", notes)
         suitable = len(db.list_jobs(cv_hash, s.min_score))
         evaluated = db.count_evaluated(cv_hash)
         matches = "match" if suitable == 1 else "matches"
@@ -113,6 +119,9 @@ class Worker(QObject):
         failed = 0
         self.progress.emit(0, len(todo))
         for done, job in enumerate(todo, 1):
+            if self.pause_check():
+                self.paused = True
+                break
             try:
                 evaluation = llm.evaluate(cv_text, job, rules)
             except llm.ModelLost:

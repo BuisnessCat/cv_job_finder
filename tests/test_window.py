@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import time
 from datetime import date, timedelta
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -9,11 +10,12 @@ from dataclasses import replace
 import pytest
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QDialog, QLabel
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QSystemTrayIcon
 
 from helpers import use_settings
 
 from job_finder import busy, config, db, llm, settings, settings_window, style, worker
+from job_finder.__main__ import tell_running_instance
 from job_finder.sources import Job
 from job_finder.window import MainWindow, days_waiting, plural_days
 
@@ -781,30 +783,34 @@ def test_close_without_tray_quits(window):
 
 
 def test_quit_closes_for_real(tray_window, monkeypatch):
+    released = []
+    monkeypatch.setattr(llm, "release", lambda wait=True: released.append(wait))
+    tray_window.worker.model_loaded = True
     tray_window.refreshing = True
     monkeypatch.setattr(tray_window, "confirm_close", lambda: False)
     tray_window.quit_app()
     assert tray_window.exits == [] and not tray_window.quitting  # "Cancel": the app keeps running
     monkeypatch.setattr(tray_window, "confirm_close", lambda: True)
     tray_window.quit_app()
-    assert tray_window.exits == [True]
+    assert tray_window.exits == [True] and released == [False] and not tray_window.tray.isVisible()
+    assert QApplication.quitOnLastWindowClosed() is False  # with a tray only Quit ends the app
 
 
 def test_auto_refresh_skips_busy_and_running(tray_window, monkeypatch):
     assert tray_window.auto_timer.isActive() and tray_window.auto_timer.interval() == 3 * 3600 * 1000
     started = []
-    monkeypatch.setattr(tray_window, "refresh", lambda: started.append(True))
+    monkeypatch.setattr(worker.Worker, "start", lambda self: started.append(True))
     monkeypatch.setattr(busy, "windows_busy", lambda: True)  # a full-screen game shares the graphics card
     tray_window.auto_refresh()
     assert started == [] and tray_window.retry_timer.isActive()
     assert tray_window.retry_timer.interval() == 15 * 60 * 1000
     monkeypatch.setattr(busy, "windows_busy", lambda: False)
-    tray_window.refreshing = True
+    tray_window.auto_refresh()
+    assert started == [True]
     tray_window.auto_refresh()
     tray_window.refresh_now()  # "Refresh now" in the tray menu
-    assert started == []  # one refresh at a time
-    tray_window.refreshing = False
-    tray_window.auto_refresh()
+    assert started == [True]  # one refresh at a time
+    tray_window.on_finished()
     tray_window.refresh_now()
     assert started == [True, True]
 
@@ -814,11 +820,8 @@ def test_notification_for_new_good_jobs_when_window_inactive(tray_window, monkey
     messages = []
     monkeypatch.setattr(tray_window.tray, "showMessage", lambda *args: messages.append(args[1]))
 
-    def scored(url, score):  # a job that arrived during this refresh and got its score
-        db.save_jobs(f"src-{url}", [Job(url=url, source=f"src-{url}", title=f"Job {url}", company="A", city="",
-                                        published="2026-10-01", description="")])
-        db.save_evaluation(url, row(url, score)["evaluation"], "key")
-        tray_window.on_evaluated(row(url, score))
+    def scored(url, score):
+        score_new(tray_window, url, score)
 
     tray_window.refresh()
     scored("a", 8)
@@ -841,3 +844,101 @@ def test_notification_for_new_good_jobs_when_window_inactive(tray_window, monkey
     scored("f", 10)
     tray_window.on_finished()
     assert messages[-1] == "2 new jobs with a score of 7+"
+
+
+def score_new(window, url, score):
+    """A job that arrived during the current refresh and got its score."""
+    db.save_jobs(f"src-{url}", [Job(url=url, source=f"src-{url}", title=f"Job {url}", company="A", city="",
+                                    published=date.today().isoformat(), description="")])
+    db.save_evaluation(url, row(url, score)["evaluation"], worker.read_cv(settings.load())[1])
+    window.on_evaluated(row(url, score, date.today().isoformat()))
+
+
+def test_notification_ignores_jobs_seen_before_hiding(tray_window, monkeypatch):
+    use_settings(config.CV_PATH)
+    messages = []
+    monkeypatch.setattr(tray_window.tray, "showMessage", lambda *args: messages.append(args[1]))
+    tray_window.show()
+    tray_window.refresh()
+    score_new(tray_window, "a", 8)  # it appears in the list while the window is open
+    tray_window.close()  # hidden: what was in the list counts as seen
+    tray_window.on_finished()
+    assert not [m for m in messages if "with a score of" in m]  # only the "keeps running in the tray" hint
+
+
+def test_second_launch_opens_the_running_window(tray_window, monkeypatch):
+    name = f"job_finder_test_{os.getpid()}"
+    opened = []
+    monkeypatch.setattr(tray_window, "show_window", lambda: opened.append(True))
+    tray_window.listen_for_launches(name)
+    assert tell_running_instance(name)  # the second launch hands over and quits quietly
+    for _ in range(100):
+        QApplication.processEvents()
+        if opened:
+            break
+        time.sleep(0.02)
+    assert opened == [True]
+    assert not tell_running_instance(name + "_nobody")  # nothing running: the old message is shown
+
+
+def test_refresh_never_runs_twice(tray_window, monkeypatch):
+    starts = []
+    monkeypatch.setattr(worker.Worker, "start", lambda self: starts.append(True))
+    s = use_settings(config.CV_PATH)
+    tray_window.load_rows()
+    tray_window.refresh()
+    assert not tray_window.refresh_action.isEnabled()  # "Refresh now" in the tray menu
+    tray_window.refresh()  # e.g. the timer fired while the Settings window was open
+    assert starts == [True]
+
+    class FakeDialog:  # saved during the running pass: the search changed
+        def __init__(self, current, parent):
+            pass
+
+        def exec(self):
+            settings.save(replace(s, city="Brno"))
+            return QDialog.Accepted
+
+        def deleteLater(self):
+            pass
+
+    monkeypatch.setattr(settings_window, "SettingsDialog", FakeDialog)
+    tray_window.open_settings()
+    assert starts == [True]
+    tray_window.on_finished()  # one more pass with the new settings
+    assert starts == [True, True]
+    tray_window.on_finished()
+    assert starts == [True, True] and tray_window.refresh_action.isEnabled()
+
+
+def test_show_window_keeps_maximized(tray_window):
+    tray_window.showMaximized()
+    tray_window.close()
+    tray_window.show_window()
+    assert tray_window.isVisible() and tray_window.isMaximized()
+
+
+def test_tray_clicks(tray_window, monkeypatch):
+    opened = []
+    monkeypatch.setattr(tray_window, "show_window", lambda: opened.append(True))
+    tray_window.on_tray_activated(QSystemTrayIcon.Context)  # the right click opens the menu, not the window
+    tray_window.on_tray_activated(QSystemTrayIcon.Trigger)
+    assert opened == [True]
+    monkeypatch.setattr(tray_window.tray, "showMessage", lambda *args: None)
+    tray_window.show()
+    tray_window.close()  # the "keeps running in the tray" hint
+    tray_window.tray.messageClicked.emit()
+    assert opened == [True]  # clicking the hint does not bring back the window just closed
+    use_settings(config.CV_PATH)
+    tray_window.refresh()
+    score_new(tray_window, "a", 9)
+    tray_window.on_finished()  # "1 new job with a score of 7+"
+    tray_window.tray.messageClicked.emit()
+    assert opened == [True, True]
+
+
+def test_paused_refresh_is_retried(tray_window):
+    tray_window.refresh()
+    tray_window.worker.paused = True  # a full-screen game started during scoring
+    tray_window.on_finished()
+    assert tray_window.retry_timer.isActive()

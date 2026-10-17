@@ -249,6 +249,8 @@ def test_salary_text():
     assert sources.salary_text(40, None, "GBP", "hourly") == "from £40 / hour"
     assert sources.salary_text(None, None, "USD", "monthly") == ""
     assert sources.salary_text("n/a", 0, "USD", None) == ""
+    assert sources.salary_text("inf", float("inf"), "USD", "monthly") == ""  # no crash on odd numbers
+    assert sources.salary_text(3000, 2000, "USD", "monthly") == "$2,000–3,000 / month"  # given reversed
 
 
 def test_parsers_read_salary():

@@ -13,7 +13,7 @@ AUTO_REFRESH_HOURS = 3
 # A Windows notification tells about new jobs scored at least this (or the minimum score, if higher)
 NOTIFY_SCORE = 7
 
-# Jobs older than this by the site's date are not scored: the widest freshness filter hides them anyway
+# Jobs older than this by the site's date are not scored: the default 30-day freshness filter hides them anyway
 OLD_JOB_DAYS = 30
 
 # Sources that return their whole list: a job missing from them was probably taken down

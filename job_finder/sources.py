@@ -78,7 +78,7 @@ PERIODS = {"hour": "hour", "dai": "day", "day": "day", "week": "week", "month": 
 def _amount(value) -> int:
     try:
         return int(float(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # "n/a", None, infinity
         return 0
 
 
@@ -87,6 +87,8 @@ def salary_text(low, high, currency, period) -> str:
     low, high = _amount(low), _amount(high)
     if not low and not high:
         return ""
+    if low and high and low > high:
+        low, high = high, low
     code = str(currency or "").upper()
     sign = CURRENCY_SIGNS.get(code, "")
     if low and high:
