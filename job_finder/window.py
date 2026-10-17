@@ -2,7 +2,7 @@
 import time
 from datetime import date
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
@@ -428,6 +428,7 @@ class MainWindow(QMainWindow):
         self.shown_label.hide()
         card = QFrame()
         card.setObjectName("foundCard")
+        self.found_card = card
         box = QVBoxLayout(card)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(0)
@@ -439,7 +440,9 @@ class MainWindow(QMainWindow):
     def _build_undo(self) -> None:
         """The toast shown for 10 s after "Hide": "Hidden: <title>" and a green Undo, over the bottom of the list."""
         self.undo_url: str | None = None
-        self.undo_toast = QFrame(self.lists)  # a free child: placed by hand, not a page of the stack
+        self.undo_title = ""
+        # A free child of the Found card: it hides with the card on other tabs and stays above the table
+        self.undo_toast = QFrame(self.found_card)
         self.undo_toast.setObjectName("toast")
         line = QHBoxLayout(self.undo_toast)
         line.setContentsMargins(14, 6, 6, 6)
@@ -455,16 +458,30 @@ class MainWindow(QMainWindow):
         self.undo_timer.setSingleShot(True)
         self.undo_timer.setInterval(10_000)
         self.undo_timer.timeout.connect(self.undo_toast.hide)
+        self.found_card.installEventFilter(self)  # keep the toast in place when the card is resized
 
     def _show_undo(self, row: dict) -> None:
         self.undo_url = row["url"]
-        self.undo_label.setText(f"Hidden: {row['title']}")
-        self.undo_toast.adjustSize()
-        self.undo_toast.move((self.lists.width() - self.undo_toast.width()) // 2,
-                             self.lists.height() - self.undo_toast.height() - 16)
+        self.undo_title = row["title"]
+        self._place_undo()
         self.undo_toast.raise_()
         self.undo_toast.show()
         self.undo_timer.start()  # a newer hide restarts the 10 s and replaces the older undo
+
+    def _place_undo(self) -> None:
+        """Fit the toast into the card: elide a long title, centre it near the bottom."""
+        card = self.found_card
+        width = max(80, card.width() - 160)
+        title = self.undo_label.fontMetrics().elidedText(self.undo_title, Qt.ElideRight, width)
+        self.undo_label.setText(f"Hidden: {title}")
+        self.undo_toast.adjustSize()
+        self.undo_toast.move(max(0, (card.width() - self.undo_toast.width()) // 2),
+                             max(0, card.height() - self.undo_toast.height() - 16))
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.found_card and event.type() == QEvent.Resize and self.undo_toast.isVisible():
+            self._place_undo()
+        return super().eventFilter(watched, event)
 
     def undo(self) -> None:
         """Bring back the job hidden last and select it if the filters show it."""

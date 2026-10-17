@@ -598,3 +598,22 @@ def test_closed_application_marked(window):
     assert window.d_closed.text() == "No longer listed on junior.guru — probably filled"
     window.applied_table.selectRow(by_title["Dev H"])
     assert window.d_closed.isHidden()
+
+
+def test_undo_toast_stays_usable_after_tab_switch_and_resize(window):
+    add_found("a", 8, title="A very long job title that keeps going " * 4)
+    add_found("b", 7)
+    window.load_rows()
+    window.show()
+    QApplication.processEvents()
+    window.table.selectRow(0)
+    window.hide_button.click()
+    window.show_tab(1)  # a trip to another tab within the 10 s
+    window.show_tab(0)
+    QApplication.processEvents()
+    card = window.found_card
+    center = window.undo_button.mapTo(card, window.undo_button.rect().center())
+    assert card.childAt(center) is window.undo_button  # on top, so a click reaches Undo
+    window.resize(900, 600)
+    QApplication.processEvents()
+    assert card.rect().contains(window.undo_toast.geometry())  # long title elided, toast kept inside
