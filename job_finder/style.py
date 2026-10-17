@@ -77,6 +77,11 @@ QFrame#foundCard QTableWidget {{ border: none; border-top: 1px solid {border}; b
 QLineEdit#search {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; padding: 5px 10px;
                     selection-background-color: {accent_soft}; }}
 QLineEdit#search:focus {{ border-color: {accent}; }}
+QLineEdit, QComboBox, QSpinBox {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; padding: 5px 10px;
+    selection-background-color: {accent_soft}; }}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border-color: {accent}; }}
+QListWidget {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; padding: 4px; outline: none; }}
+QListWidget::item:selected {{ background: {accent_soft}; color: {text}; }}
 QTextBrowser {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 12px 16px;
                selection-background-color: {accent_soft}; }}
 QScrollArea#detailsScroll, QWidget#details, QWidget#detailsPage, QWidget#emptyPage, QScrollArea#insightsScroll,
@@ -84,6 +89,8 @@ QWidget#insightsPage {{
     background: transparent; border: none; }}
 QWidget#footer {{ background: transparent; border-top: 1px solid {border}; }}
 QLabel#title {{ font-size: 15pt; font-weight: 600; }}
+QLabel#h1 {{ font-size: 16pt; font-weight: 600; }}
+QLabel#cvError {{ color: {notice_text}; }}
 QLabel#company {{ font-size: 11pt; }}
 QLabel#metaKey, QLabel#muted, QLabel#barCount {{ color: {muted}; }}
 QLabel#section {{ color: {muted}; font-weight: 600; font-size: 9pt; }}

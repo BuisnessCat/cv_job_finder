@@ -5,13 +5,14 @@ from datetime import date
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
+    QAbstractItemView, QButtonGroup, QDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget,
     QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
-from job_finder import config, db, freshness, insights, llm, settings, sources, style
+from job_finder import db, freshness, insights, llm, settings, sources, style
+from job_finder.settings import Settings
 from job_finder.worker import Worker, read_cv
 
 COLUMNS = ["Score", "Job", "Company", "Location", "Posted"]
@@ -22,6 +23,11 @@ STATUS_TEXT = {"applied": "Waiting", "accepted": "Accepted", "rejected": "Reject
 REPOST_MARK = "↻ "  # before the title of a found job you already applied to
 NEW_MARK = "• "  # before the title of a job that appeared after the window was last closed
 BAR_WIDTH = 220  # the longest bar on the Insights tab
+
+
+def _search_changed(old: Settings, new: Settings) -> bool:
+    """What is downloaded, filtered or how it is scored changed, not only a threshold: a new search is needed."""
+    return settings.scoring_changed(old, new) or (old.keywords, old.skills) != (new.keywords, new.skills)
 
 
 def _label(name: str = "") -> QLabel:
@@ -139,6 +145,7 @@ class MainWindow(QMainWindow):
         self.refreshing = False  # a refresh (download or scoring) is running
         self.started = 0.0  # when the current scoring pass began, by clock()
         self.description_open = False  # the card's description stays open from job to job
+        self.settings: Settings | None = None  # re-read with the list; None before the first-run wizard
 
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.setObjectName("primary")
@@ -167,6 +174,8 @@ class MainWindow(QMainWindow):
         self.cv_button = QPushButton("My CV")
         self.cv_button.clicked.connect(self.show_cv)
         self.cv_window = None  # the "My CV" window is created on first click
+        self.settings_button = QPushButton("Settings")
+        self.settings_button.clicked.connect(self.open_settings)
         top = QHBoxLayout()
         top.addWidget(self.refresh_button)
         top.addSpacing(style.GAP)
@@ -175,6 +184,7 @@ class MainWindow(QMainWindow):
         top.addWidget(self.status_label, 1)
         top.addWidget(self.progress)
         top.addWidget(self.cv_button)
+        top.addWidget(self.settings_button)
 
         self.table = _make_table(COLUMNS, 0)
         # A long list of remote regions must not squeeze the title: fixed width, the rest is elided (full text in the card)
@@ -244,8 +254,6 @@ class MainWindow(QMainWindow):
         self.d_status.setWordWrap(False)
         self.d_notice = _label("notice")  # "You already applied…", reposted jobs only
         self.d_stale = _label("staleHint")  # "No reply for over N days…", under the application pill
-        self.d_stale.setText(f"No reply for over {config.STALE_DAYS} days — time to follow up"
-                             " or close it")
         self.notes = QPlainTextEdit()  # application notes, saved automatically
         self.notes.setObjectName("notes")
         self.notes.setFixedHeight(70)
@@ -595,6 +603,7 @@ class MainWindow(QMainWindow):
         selected = self.current["url"] if self.current and "status" not in self.current else None
 
         today = date.today()
+        limits = self.settings or Settings()
         days = freshness.FRESHNESS[self.freshness_buttons.checkedId()][2]
         order = freshness.ORDERS[self.order_buttons.checkedId()]
         self.visible = freshness.visible_rows(self.rows, self.search.text(), days, order, today)
@@ -614,7 +623,7 @@ class MainWindow(QMainWindow):
             items = [title_item, QTableWidgetItem(row["company"]), QTableWidgetItem(row["city"]),
                      QTableWidgetItem(posted)]
             age = freshness.age_days(day, today)
-            if age is not None and age > config.STALE_JOB_DAYS:  # old: muted, the score keeps its colour
+            if age is not None and age > limits.stale_job_days:  # old: muted, the score keeps its colour
                 for item in items:
                     item.setForeground(QColor(style.COLORS["muted"]))
             return [_score_item(row["score"]), *items]
@@ -633,6 +642,7 @@ class MainWindow(QMainWindow):
         selected = self.current["url"] if self.current and "status" in self.current else None
 
         today = date.today()
+        limits = self.settings or Settings()
 
         def values(row):
             status = QTableWidgetItem(STATUS_TEXT[row["status"]])
@@ -641,7 +651,7 @@ class MainWindow(QMainWindow):
             if row["status"] == "applied":
                 days = days_waiting(row["applied_at"], today)
                 waiting.setText(str(days))
-                if days > config.STALE_DAYS:
+                if days > limits.stale_days:
                     waiting.setForeground(QColor(style.COLORS["notice_text"]))
             title = QTableWidgetItem(("⊘ " if row["closed"] else "") + row["title"])
             if row["closed"]:  # taken down from a source that returns its whole list
@@ -658,7 +668,7 @@ class MainWindow(QMainWindow):
         self.settings = settings.load()  # they may have been saved since the list was loaded
         cv = read_cv(self.settings)
         evaluations = db.evaluations(cv[1]) if cv else []
-        message = ("No master_cv.md — nothing to analyse" if cv is None
+        message = ("Can't read your CV — check it in Settings" if cv is None
                    else "Nothing evaluated yet" if not evaluations else "")
         self.insights_message.setText(message)
         self.insights_message.setVisible(bool(message))
@@ -745,7 +755,9 @@ class MainWindow(QMainWindow):
             if row["status"] == "applied":
                 days = days_waiting(row["applied_at"], date.today())
                 text += f" · {plural_days(days)}"
-                stale = days > config.STALE_DAYS
+                limits = self.settings or Settings()
+                stale = days > limits.stale_days
+                self.d_stale.setText(f"No reply for over {limits.stale_days} days — time to follow up or close it")
                 if stale:
                     pill_background, pill_color = style.COLORS["notice_bg"], style.COLORS["notice_text"]
             self.d_status.setText(text)
@@ -783,6 +795,8 @@ class MainWindow(QMainWindow):
     def refresh(self) -> None:
         self.refreshing = True
         self.refresh_button.setEnabled(False)
+        self.settings_button.setEnabled(False)  # the pass reads the settings once, at its start
+        self.settings_button.setToolTip("Available when the refresh finishes")
         self.load_rows()  # if the CV changed, old scores leave the list
         self.worker.start()
 
@@ -796,7 +810,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Evaluated {done} of {total}" + (f" · {left}" if left else ""))
 
     def on_evaluated(self, row: dict) -> None:
-        if row["score"] < (self.settings.min_score if self.settings else config.MIN_SCORE):
+        if row["score"] < (self.settings or Settings()).min_score:
             return
         self.rows.append(row)  # render() puts it in place according to the filters and order
         self.new_urls = db.unseen_urls()  # the job may have reached the database after the list was loaded
@@ -806,6 +820,8 @@ class MainWindow(QMainWindow):
         self.refreshing = False
         self.progress.hide()
         self.refresh_button.setEnabled(True)
+        self.settings_button.setEnabled(True)
+        self.settings_button.setToolTip("")
         self.load_rows()  # drop jobs that vanished from the source or were filtered out by location
         if self.views.currentIndex() == 1:
             self.render_insights()  # the numbers changed while the tab was open
@@ -820,6 +836,17 @@ class MainWindow(QMainWindow):
         self.cv_window.show()
         self.cv_window.raise_()
         self.cv_window.activateWindow()
+
+    def open_settings(self) -> None:
+        """The Settings window; after Save the list follows the new settings and a new search starts if needed."""
+        # Imported here, not at the top: settings_window itself takes _label from this module
+        from job_finder import settings_window
+        old = self.settings
+        if settings_window.SettingsDialog(old or Settings(), self).exec() != QDialog.Accepted:
+            return
+        self.load_rows()
+        if old is None or _search_changed(old, self.settings):
+            self.refresh()
 
     def open_job(self) -> None:
         QDesktopServices.openUrl(QUrl(self.current["url"]))

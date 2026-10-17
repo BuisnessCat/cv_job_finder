@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 import pytest
-from PySide6.QtGui import QPainter, QPdfWriter
+from helpers import write_pdf
 from PySide6.QtWidgets import QApplication
 
 from job_finder import config, db, settings
@@ -17,13 +17,6 @@ def tmp_db(tmp_path, monkeypatch):
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
-
-
-def write_pdf(path, text):
-    writer = QPdfWriter(str(path))
-    painter = QPainter(writer)
-    painter.drawText(100, 100, text)
-    painter.end()
 
 
 def filled(**overrides):

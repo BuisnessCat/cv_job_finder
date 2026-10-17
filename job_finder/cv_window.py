@@ -1,18 +1,19 @@
-"""The "My CV" window: the current master_cv.md rendered, file path, modification date and filter skills."""
+"""The "My CV" window: the CV from the settings (Markdown rendered, other files as text), its path, date and skills."""
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QDialog, QFrame, QGridLayout, QHBoxLayout, QPushButton, QTextBrowser, QVBoxLayout
 
-from job_finder import config, skills, style
+from job_finder import settings, style
 from job_finder.window import _label
 
 
 class CvWindow(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("My CV — master_cv.md")
+        self.path = ""  # the CV file shown, from the settings
         self.resize(760, 820)
 
         info = QFrame()
@@ -34,7 +35,7 @@ class CvWindow(QDialog):
         self.body.setOpenExternalLinks(True)
 
         self.open_button = QPushButton("Open in editor")
-        self.open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(config.CV_PATH))))
+        self.open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.path)))
         close_button = QPushButton("Close")
         close_button.clicked.connect(self.close)
         buttons = QHBoxLayout()
@@ -52,16 +53,22 @@ class CvWindow(QDialog):
 
     def reload(self) -> None:
         """Re-read the file: the window always shows the current version of the CV."""
-        self.path_label.setText(str(config.CV_PATH))
-        if not config.CV_PATH.exists():
+        s = settings.load()
+        self.path = s.cv_path if s else ""
+        self.setWindowTitle(f"My CV — {Path(self.path).name}" if self.path else "My CV")
+        self.path_label.setText(self.path or "—")
+        self.skills_label.setText(", ".join(s.skills) if s and s.skills else "—")
+        try:
+            text = settings.read_cv_text(self.path)
+        except settings.CvError as error:
             self.modified_label.setText("—")
-            self.skills_label.setText("—")
-            self.body.setPlainText("master_cv.md not found. Put it in the project folder and open this window again.")
+            self.body.setPlainText(f"Can't read your CV: {error}. Pick the file in Settings.")
             self.open_button.setEnabled(False)
             return
-        text = config.CV_PATH.read_text(encoding="utf-8", errors="replace")
-        modified = datetime.fromtimestamp(config.CV_PATH.stat().st_mtime)
+        modified = datetime.fromtimestamp(Path(self.path).stat().st_mtime)
         self.modified_label.setText(modified.strftime("%Y-%m-%d %H:%M"))
-        self.skills_label.setText(", ".join(skills.load_skills(text)) or "no Skills section found")
-        self.body.setMarkdown(text)
+        if Path(self.path).suffix.lower() == ".md":
+            self.body.setMarkdown(text)
+        else:
+            self.body.setPlainText(text)
         self.open_button.setEnabled(True)

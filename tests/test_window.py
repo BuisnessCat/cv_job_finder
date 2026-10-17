@@ -4,14 +4,16 @@ from datetime import date, timedelta
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from dataclasses import replace
+
 import pytest
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QDialog, QLabel
 
 from helpers import use_settings
 
-from job_finder import config, db, settings, style, worker
+from job_finder import config, db, settings, settings_window, style, worker
 from job_finder.sources import Job
 from job_finder.window import MainWindow, days_waiting, plural_days
 
@@ -139,6 +141,55 @@ def test_cv_button_opens_one_cv_window(window):
     window.cv_button.click()
     assert window.cv_window is first  # a second click does not open another window
     first.close()
+
+
+def test_settings_button_reloads_and_refreshes_on_city_change(window, monkeypatch):
+    s = use_settings(config.CV_PATH)  # temporary CV from the fixture
+    window.load_rows()
+    refreshed = []
+    monkeypatch.setattr(window, "refresh", lambda: refreshed.append(True))
+    new = replace(s, min_score=8)
+
+    class FakeDialog:  # "Save" in the Settings window writes the settings and closes it
+        def __init__(self, current, parent):
+            assert current == window.settings
+
+        def exec(self):
+            settings.save(new)
+            return QDialog.Accepted
+
+    monkeypatch.setattr(settings_window, "SettingsDialog", FakeDialog)
+    window.settings_button.click()
+    assert window.settings.min_score == 8 and refreshed == []  # a threshold: only the list is re-read
+    new = replace(new, city="Brno")
+    window.settings_button.click()
+    assert window.settings.city == "Brno" and refreshed == [True]  # where to search changed: a new search
+
+
+def test_settings_unavailable_while_refreshing(window):
+    assert window.settings_button.text() == "Settings" and window.settings_button.isEnabled()
+    window.refresh()
+    assert not window.settings_button.isEnabled()  # the running pass uses the old settings
+    window.on_finished()
+    assert window.settings_button.isEnabled()
+
+
+def test_thresholds_come_from_settings(window):
+    use_settings(config.CV_PATH, min_score=8, stale_days=5, stale_job_days=10)
+    window.load_rows()
+    for r in [row("a", 7), row("b", 8, days_ago(11)), row("c", 9, days_ago(9))]:
+        window.on_evaluated(r)
+    assert titles(window) == ["Job c", "Job b"]
+    assert window.table.item(1, 1).foreground().color().name() == style.COLORS["muted"]  # older than 10 days
+    assert window.table.item(0, 1).foreground().color().name() != style.COLORS["muted"]
+    add_found("x", 8)
+    db.apply("x")
+    set_applied_at("x", 6)
+    window.load_rows()
+    window.show_tab(1)
+    window.applied_table.selectRow(0)
+    assert window.d_stale.text() == "No reply for over 5 days — time to follow up or close it"
+    assert not window.d_stale.isHidden()
 
 
 def add_found(url, score, title=None, company="ACME", new=False, evaluation=None):
@@ -296,7 +347,7 @@ def test_waiting_days_and_stale_highlight(window):
     old_row = [r["url"] for r in window.applied].index("old")
     window.applied_table.selectRow(old_row)
     assert "20 days" in window.d_status.text() and not window.d_stale.isHidden()
-    assert window.d_stale.text() == f"No reply for over {config.STALE_DAYS} days — time to follow up or close it"
+    assert window.d_stale.text() == "No reply for over 14 days — time to follow up or close it"  # the default
     window.reject_button.click()  # the outcome arrived: the hint is no longer needed
     assert window.d_stale.isHidden() and "days" not in window.d_status.text()
 
@@ -396,7 +447,7 @@ def test_insights_tab_counts_requirements(window):
 
 def test_insights_messages_without_cv_or_evaluations(window):
     window.insights_tab.click()
-    assert window.insights_message.text() == "No master_cv.md — nothing to analyse"
+    assert window.insights_message.text() == "Can't read your CV — check it in Settings"
     assert window.insights_cards.isHidden()
     use_settings(config.CV_PATH)  # temporary CV from the fixture
     window.render_insights()

@@ -1,6 +1,8 @@
-"""Shared test helpers: filled-in settings saved to the temporary test database."""
+"""Shared test helpers: filled-in settings saved to the temporary test database, a PDF CV."""
 from dataclasses import replace
 from pathlib import Path
+
+from PySide6.QtGui import QPainter, QPdfWriter
 
 from job_finder import settings
 from job_finder.settings import Settings
@@ -14,3 +16,11 @@ def use_settings(cv: Path, text: str = "Python developer", **overrides) -> Setti
                          needs_permit=False), **overrides)
     settings.save(s)
     return s
+
+
+def write_pdf(path: Path, text: str) -> None:
+    """A one-page PDF with the text (needs a QApplication)."""
+    writer = QPdfWriter(str(path))
+    painter = QPainter(writer)
+    painter.drawText(100, 100, text)
+    painter.end()
