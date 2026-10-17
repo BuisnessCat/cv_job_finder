@@ -651,7 +651,9 @@ def test_closed_mark_only_for_jobs_still_searched(window):
         return sorted(window.applied_table.item(i, 1).text() for i in range(window.applied_table.rowCount()))
 
     assert marks() == ["⊘ Dev jg", "⊘ Dev jy"]
-    settings.save(replace(s, city="Brno", remote=False))  # such jobs are not searched for any more
+    settings.save(replace(s, city="Brno"))  # Prague jobs are not searched for any more; remote ones still are
+    assert marks() == ["Dev jg", "⊘ Dev jy"]
+    settings.save(replace(s, city="Brno", remote=False))
     assert marks() == ["Dev jg", "Dev jy"]
 
 
@@ -678,6 +680,10 @@ def test_settings_save_reloads_open_cv_window(window, monkeypatch, tmp_path):
     window.settings_button.click()
     assert "Second CV" in window.cv_window.body.toPlainText()
     window.cv_window.close()
+    reloads = []  # an error raised inside a Qt slot would not reach pytest, so calls are recorded
+    monkeypatch.setattr(window.cv_window, "reload", lambda: reloads.append(True))
+    window.settings_button.click()
+    assert reloads == []  # a closed window is read again when it is opened
 
 
 def test_closed_application_marked(window):

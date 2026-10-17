@@ -78,6 +78,10 @@ def test_detect_skills_ignores_everyday_words():
     assert settings.detect_skills("Go, C, C++, R, Spring Boot, mobile apps, REST APIs") == [
         "C/C++", "Go", "R", "Spring", "Mobile", "REST API"]
     assert settings.guess_main_skill(["Go", "Python"], "go go go. Python") == "Python"
+    assert settings.detect_skills("Mobile phone: +420 777. Mobile number: 1. Mobile +420 2. Spring semester 2024. "
+                                  "During spring I worked.") == []
+    assert settings.detect_skills("Languages: Python, Java, C" + chr(10) + "Tools: Docker | R | Git") == [
+        "Python", "Java", "C/C++", "R", "Docker", "Git"]
 
 
 def test_canonical_skill_and_language_names():

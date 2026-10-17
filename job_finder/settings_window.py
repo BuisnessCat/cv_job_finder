@@ -212,10 +212,10 @@ class SettingsForm(QObject):
             languages[settings.language_name(row.name_box.currentText())] = row.level_box.currentText()
         return replace(self.saved, cv_path=self.cv_path, skills=self.skill_chips(),
                        main_skill=self.main_skill_box.currentText(),
-                        city=self.city_box.currentText(), remote=self.remote_check.isChecked(),
-                        levels=[level for index, level in enumerate(settings.LEVELS)
-                                if self.level_buttons.button(index).isChecked()],
-                        languages=languages)
+                       city=self.city_box.currentText(), remote=self.remote_check.isChecked(),
+                       levels=[level for index, level in enumerate(settings.LEVELS)
+                               if self.level_buttons.button(index).isChecked()],
+                       languages=languages)
 
     def missing(self) -> list[str]:
         """Required fields still empty; a CV file that can't be read counts as not chosen."""
@@ -234,13 +234,13 @@ class SettingsForm(QObject):
             self.set_cv(path)
 
     def set_cv(self, path: str) -> None:
-        """A newly chosen CV: read it and replace the skills with the ones found in it."""
+        """A newly chosen CV: read it and offer the skills found in it (asks first if there are skills already)."""
         self.cv_path = path
         self.cv_input.setText(path)
         if self._read_cv():
             found = settings.detect_skills(self.cv_text)
             # Edited skills are not thrown away silently, e.g. when a moved CV is picked again
-            if found and (not self._skills or set(found) == set(self._skills) or self.confirm_replace_skills()):
+            if found and set(found) != set(self._skills) and (not self._skills or self.confirm_replace_skills()):
                 self._set_skills(found, self.main_skill_box.currentText())
         self.changed.emit()
 

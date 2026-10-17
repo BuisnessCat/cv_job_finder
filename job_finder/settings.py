@@ -23,14 +23,17 @@ SCORING_FIELDS = ("cv_path", "city", "remote", "levels", "languages")
 NOT_SKILLS = {"Experience 2+ years", "Czech", "German", "Other languages", "English C1+", "Degree",
               "Domain knowledge", "Soft skills", "Project management"}
 # Names the job dictionary matches loosely that are everyday words in a CV: here they count only when written like
-# the skill ("Go", not "go deeper"; "C," in a list, not "grade C."; not "Spring 2024", "Mobile: +420", "the rest")
+# the skill ("Go", not "go deeper"; "C" in a list, not "grade C."; not "Spring 2024", "spring semester",
+# "Mobile phone: +420" or "the rest")
 _WORD = r"(?<![\w#+.])(?:{})(?![\w#+])"
 CV_PATTERNS = {
-    "C/C++": re.compile(_WORD.format(r"C(?=\s*[,/)])|C\+\+|c\+\+")),
+    # A letter counts in a list: before , / ) | ; • or at the end of a line
+    "C/C++": re.compile(_WORD.format(r"C(?=\s*(?:[,/)|;•]|$))|C\+\+|c\+\+"), re.MULTILINE),
     "Go": re.compile(_WORD.format(r"Go(?!-)|Golang|golang")),
-    "R": re.compile(_WORD.format(r"R(?=\s*[,/)])|R programming|RStudio")),
-    "Spring": re.compile(_WORD.format(r"spring(?!\s+(?:19|20)\d\d)"), re.IGNORECASE),
-    "Mobile": re.compile(_WORD.format(r"android|ios|mobile(?!\s*:)|flutter|react native"), re.IGNORECASE),
+    "R": re.compile(_WORD.format(r"R(?=\s*(?:[,/)|;•]|$))|R programming|RStudio"), re.MULTILINE),
+    "Spring": re.compile(_WORD.format(r"Spring(?!\s+(?:(?:19|20)\d\d|semester|term|break))|spring boot")),
+    "Mobile": re.compile(_WORD.format(r"android|ios|mobile(?!\s*(?:phone|number|no\.?)?\s*[:+(\d])|flutter"
+                                      r"|react native"), re.IGNORECASE),
     "REST API": re.compile(_WORD.format(r"REST(?:ful)?|(?i:rest\s+apis?|restful|apis?|web\s+services?)")),
 }
 

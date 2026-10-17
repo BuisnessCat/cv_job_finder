@@ -851,8 +851,8 @@ class MainWindow(QMainWindow):
         if not accepted:
             return
         self.load_rows()
-        if self.cv_window is not None:
-            self.cv_window.reload()  # the CV file may have changed
+        if self.cv_window is not None and self.cv_window.isVisible():
+            self.cv_window.reload()  # the CV file may have changed; a closed window is read when it opens
         if old is None or _search_changed(old, self.settings):
             self.refresh()
 

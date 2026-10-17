@@ -233,8 +233,10 @@ def test_picking_a_cv_again_asks_before_replacing_skills(app, cv, tmp_path, monk
     assert dialog.form.skill_chips() == ["Python", "Docker"]
     assert dialog.form.main_skill_box.currentText() == "Python"  # SQL is gone: a new guess
     asked.clear()
-    dialog.form.set_cv(str(cv))  # the found skills are the same as the chips: nothing to ask
-    assert asked == [] and dialog.form.skill_chips() == ["Python", "Docker"]
+    dialog.form.remove_skill("Python")
+    add_skill(dialog.form, "Python")  # the chips in the user's own order
+    dialog.form.set_cv(str(cv))  # the found skills are the same as the chips: nothing to ask, nothing changes
+    assert asked == [] and dialog.form.skill_chips() == ["Docker", "Python"]
 
 
 def test_typed_names_match_known_ones(app, cv):
