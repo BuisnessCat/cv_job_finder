@@ -104,9 +104,9 @@ def render_rules(s: Settings) -> str:
         not_problems.append(f"{name} (native speaker)" if level == "Native"
                             else f"{name} {level} (unless a higher level is required)")
     levels = [level for level in LEVELS if level in s.levels]  # complete settings have at least one
-    lowest, highest = LEVEL_WORDS[levels[0]], LEVEL_WORDS[levels[-1]]
+    highest = LEVEL_WORDS[levels[-1]]
     names = " or ".join(LEVEL_WORDS[level]["name"] for level in levels)
-    below_band = "" if levels[0] in ("intern", "junior") else f", a role clearly below {lowest['name']} level"
+    below_band = "" if levels[0] in ("intern", "junior") else f", a role clearly below {levels[0]} level"
     return RULES_TEMPLATE.format(
         level_text=f"The candidate is looking for {names} roles.",
         languages=", ".join(_language(name, level) for name, level in s.languages.items()),

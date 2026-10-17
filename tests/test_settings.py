@@ -66,6 +66,12 @@ def test_scoring_changed_only_for_scoring_fields():
     assert settings.scoring_changed(base, replace(base, languages={"English": "C1"}))
 
 
+def test_scoring_changed_sees_language_order_but_not_path_spelling():
+    base = filled(languages={"English": "B2", "Czech": "B1"})
+    assert settings.scoring_changed(base, replace(base, languages={"Czech": "B1", "English": "B2"}))  # rules list them in order
+    assert not settings.scoring_changed(base, replace(base, cv_path="./cv.md"))  # the same file
+
+
 def test_read_cv_text_from_markdown_and_pdf(tmp_path, app):
     md = tmp_path / "cv.md"
     md.write_text("# CV\nPython, Docker", encoding="utf-8")

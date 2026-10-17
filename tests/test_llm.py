@@ -91,6 +91,8 @@ def test_rules_follow_settings():
     assert "student" not in rules.lower() and "(Java, C#" not in rules  # nothing assumes a Python student
     senior = llm.render_rules(replace(s, levels=["senior"]))
     assert "10+ years" in senior and "clearly below senior level" in senior
+    mid = llm.render_rules(replace(s, levels=["mid", "senior"]))
+    assert "clearly below mid level" in mid and "level level" not in mid
     assert "Write all texts in English" in rules and rules.endswith("Candidate's CV:" + chr(10))
 
 

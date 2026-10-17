@@ -1,5 +1,6 @@
 """Everything personal about the user: CV, skills, where and what to search, level, languages, thresholds
 (spec section 15). Stored as one JSON row in the database; filled by the first-run wizard."""
+import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
@@ -68,7 +69,17 @@ def missing(s: Settings) -> list[str]:
 
 
 def scoring_changed(old: Settings, new: Settings) -> bool:
-    return any(getattr(old, name) != getattr(new, name) for name in SCORING_FIELDS)
+    """Whether the scoring rules or the CV change. Languages count in order (the rules list them so); the CV by the
+    file it points to, not by how its path is spelled."""
+    for name in SCORING_FIELDS:
+        before, after = getattr(old, name), getattr(new, name)
+        if name == "languages":
+            before, after = list(before.items()), list(after.items())
+        elif name == "cv_path":
+            before, after = (os.path.normcase(os.path.abspath(path)) for path in (before, after))
+        if before != after:
+            return True
+    return False
 
 
 def read_cv_text(path: str) -> str:

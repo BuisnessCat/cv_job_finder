@@ -11,7 +11,6 @@ def matches(job: Job, skills: list[str]) -> bool:
     A skill from the Insights dictionary is found by its spellings ("k8s" counts as Kubernetes); any other
     skill as a whole word, case-insensitive."""
     text = f"{job.title}\n{job.description}"
-    found = insights.find(text)
-    return any(skill in found if skill in insights.REQUIREMENTS
+    return any(insights.has(skill, text) if skill in insights.REQUIREMENTS
                else re.search(rf"(?<!\w){re.escape(skill)}(?!\w)", text, re.IGNORECASE)
                for skill in skills)

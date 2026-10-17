@@ -114,13 +114,20 @@ def fetch_juniorguru(city: str, remote: bool) -> list[Job]:
     return parse_juniorguru(_get(config.JUNIORGURU_URL).content.decode("utf-8-sig"), city, remote)
 
 
+def himalayas_query(skill: str) -> str:
+    """A search word for a skill: dictionary names like "HTML/CSS" or "Cloud (any)" become "HTML" and "Cloud"."""
+    if skill in config.HIMALAYAS_QUERY:
+        return config.HIMALAYAS_QUERY[skill]
+    return skill.removesuffix(" (any)").split("/")[0].strip() or skill
+
+
 def fetch_himalayas(main_skill: str, levels: list[str]) -> list[Job]:
     """One search by the main skill, up to HIMALAYAS_MAX_PAGES pages; the seniority of all chosen levels."""
     seniority = []
     for level, values in config.HIMALAYAS_SENIORITY.items():
         if level in levels:
             seniority += [value for value in values if value not in seniority]
-    params = {**config.HIMALAYAS_PARAMS, "q": config.HIMALAYAS_QUERY.get(main_skill, main_skill),
+    params = {**config.HIMALAYAS_PARAMS, "q": himalayas_query(main_skill),
               "seniority": ",".join(seniority)}
     jobs = []
     for page in range(1, config.HIMALAYAS_MAX_PAGES + 1):

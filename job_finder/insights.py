@@ -117,6 +117,11 @@ def find(text: str) -> set[str]:
     return {name for name, pattern in _PATTERNS.items() if pattern.search(text)}
 
 
+def has(name: str, text: str) -> bool:
+    """Whether a requirement from the dictionary is mentioned in a text."""
+    return _PATTERNS[name].search(text) is not None
+
+
 def mentions(name: str, text: str) -> int:
     """How many times a requirement from the dictionary is written in a text."""
     return len(_PATTERNS[name].findall(text))

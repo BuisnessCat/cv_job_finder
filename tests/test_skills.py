@@ -1,4 +1,6 @@
-from job_finder import skills
+import pytest
+
+from job_finder import insights, skills
 from job_finder.sources import Job
 
 
@@ -23,3 +25,10 @@ def test_dictionary_and_custom_skills_match():
               description="REST API on Node.js with 1C integration")
     assert skills.matches(job, ["Node.js"]) and skills.matches(job, ["REST API"]) and skills.matches(job, ["1C"])
     assert not skills.matches(job, ["Go"])
+
+
+def test_matches_checks_only_the_users_skills(monkeypatch):
+    # Running the whole dictionary over every description froze Save and slowed every refresh
+    monkeypatch.setattr(insights, "find", lambda text: pytest.fail("the whole dictionary was run"))
+    assert skills.matches(job("Backend", "We use k8s and Python"), ["Kubernetes"])
+    assert not skills.matches(job("Backend", "Java only"), ["Python", "1C"])

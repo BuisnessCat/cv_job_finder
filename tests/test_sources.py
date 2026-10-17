@@ -213,6 +213,13 @@ def test_himalayas_searches_main_skill_with_level_seniority(monkeypatch):
     assert {(c["q"], c["seniority"]) for c in calls} == {("Kotlin Multiplatform", "Senior,Manager")}
 
 
+def test_himalayas_query_for_dictionary_names():
+    pairs = [("C#/.NET", "C#"), ("C/C++", "C++"), ("CI/CD", "CI/CD"), ("HTML/CSS", "HTML"),
+             ("Frontend (any)", "Frontend"), ("Cloud (any)", "Cloud"), ("Python", "Python"),
+             ("Kotlin Multiplatform", "Kotlin Multiplatform")]
+    assert [(skill, sources.himalayas_query(skill)) for skill, _ in pairs] == pairs
+
+
 def test_no_remote_skips_remote_sources(monkeypatch):
     def must_not_run(*args):
         raise AssertionError("a remote-only source was fetched")

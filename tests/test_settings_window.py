@@ -196,6 +196,19 @@ def test_rescore_question_only_for_scoring_fields(app, cv, monkeypatch):
     assert settings.load().city == "Brno"
 
 
+def test_rescore_question_when_a_language_is_added_again(app, cv, monkeypatch):
+    use_settings(cv, languages={"English": "B2", "Czech": "B1"})
+    asked = []
+    dialog = SettingsDialog(settings.load())
+    monkeypatch.setattr(dialog, "confirm_rescore", lambda jobs: asked.append(jobs) or True)
+    dialog.form.language_rows[0].remove_button.click()
+    dialog.form.add_language_button.click()
+    dialog.form.language_rows[-1].name_box.setCurrentText("English")
+    dialog.form.language_rows[-1].level_box.setCurrentText("B2")
+    dialog.save_button.click()  # same languages, another order: the rules text and the key change
+    assert len(asked) == 1 and list(settings.load().languages) == ["Czech", "English"]
+
+
 def test_settings_flag_a_moved_cv(app, cv):
     s = use_settings(cv, skills=["Python", "SQL"])  # saved skills are kept, not found again
     assert SettingsDialog(s).form.skill_chips() == ["Python", "SQL"]

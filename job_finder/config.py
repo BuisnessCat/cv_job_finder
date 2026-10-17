@@ -27,8 +27,8 @@ HIMALAYAS_URL = "https://himalayas.app/jobs/api/search"
 HIMALAYAS_PARAMS = {"country": "CZ", "sort": "recent"}
 HIMALAYAS_SENIORITY = {"intern": ["Entry-level"], "junior": ["Entry-level", "Mid-level"],
                        "mid": ["Mid-level", "Senior"], "senior": ["Senior"], "lead": ["Senior", "Manager"]}
-# Skills whose dictionary name is not a good search word
-HIMALAYAS_QUERY = {"C#/.NET": "C#", "C/C++": "C++"}
+# Dictionary names that the general rule (the part before "/", without " (any)") would turn into a poor search word
+HIMALAYAS_QUERY = {"C#/.NET": "C#", "C/C++": "C++", "CI/CD": "CI/CD"}
 HIMALAYAS_MAX_PAGES = 10  # 20 jobs per page
 JOBICY_URL = "https://jobicy.com/api/v2/remote-jobs"
 JOBICY_PARAMS = {"count": 50, "geo": "czechia", "industry": "dev"}
