@@ -1,9 +1,11 @@
 import json
 import subprocess
+from dataclasses import replace
 
 import pytest
 
 from job_finder import config, llm
+from job_finder.settings import Settings
 from job_finder.sources import Job
 
 
@@ -30,19 +32,18 @@ def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
     job = Job(url="u", source="Jobicy", title="Python Dev", company="ACME", city="Prague",
               published="2026-10-01", description="x" * 20000)
 
-    result = llm.evaluate("MY CV", job)
+    result = llm.evaluate("MY CV", job, "RULES-TEXT")
 
     assert result == {**answer, "score": 7}
     assert sent["url"] == f"{config.LM_URL}/chat/completions"
     body = sent["json"]
     assert body["model"] == config.MODEL_ID
     assert body["response_format"]["type"] == "json_schema"
-    assert body["messages"][0]["content"].endswith("MY CV")
+    assert body["messages"][0]["content"] == "RULES-TEXT" + "MY CV"
     user = body["messages"][1]["content"]
     assert "Python Dev" in user and "ACME" in user and "Prague" in user
     assert user.count("x") == config.MAX_DESCRIPTION_CHARS
     assert user.startswith("Title: Python Dev\nCompany: ACME\nLocation: Prague\nSource: Jobicy\n\n")
-    assert "Write all texts in English" in body["messages"][0]["content"]
 
 
 def test_evaluate_rejects_answer_from_another_model(monkeypatch):
@@ -53,7 +54,7 @@ def test_evaluate_rejects_answer_from_another_model(monkeypatch):
     job = Job(url="u", source="Jobicy", title="Python Dev", company="ACME", city="", published="2026-10-01",
               description="")
     with pytest.raises(llm.ModelLost, match="qwen/qwen3.8-27b"):
-        llm.evaluate("CV", job)
+        llm.evaluate("CV", job, "RULES")
 
 
 def test_prepare_starts_server_without_capturing_output(tmp_path, monkeypatch):
@@ -77,3 +78,20 @@ def test_prepare_starts_server_without_capturing_output(tmp_path, monkeypatch):
     assert start_kwargs.get("stdout") is subprocess.DEVNULL
     assert start_kwargs.get("stderr") is subprocess.DEVNULL
     assert ps_args == ["ps", "--json"]
+
+
+def test_rules_follow_settings():
+    s = Settings(cv_path="a", skills=["Java"], city="Brno", remote=False, keywords=["java"], level="mid",
+                 english="C1", czech="B2", needs_permit=True)
+    rules = llm.render_rules(s)
+    assert "Brno" in rules and "remote-only jobs are not a fit" in rules
+    assert "5+ years" in rules and "English: C1" in rules and "Czech: B2" in rules
+    assert "needs a work permit" in rules
+    assert "student" not in rules.lower() and "(Java, C#" not in rules  # nothing assumes a Python student
+    assert "Write all texts in English" in rules and rules.endswith("Candidate's CV:" + chr(10))
+
+
+def test_fingerprint_ignores_keywords_and_skills():
+    s = Settings(cv_path="a", skills=["Python"], keywords=["python"], english="B2", czech="none", needs_permit=False)
+    assert llm.fingerprint(s) == llm.fingerprint(replace(s, keywords=["java"], skills=["Go"], min_score=7))
+    assert llm.fingerprint(s) != llm.fingerprint(replace(s, level="mid"))

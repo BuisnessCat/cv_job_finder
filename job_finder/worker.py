@@ -5,20 +5,26 @@ import threading
 
 from PySide6.QtCore import QObject, Signal
 
-from job_finder import config, db, llm, skills, sources
+from job_finder import db, llm, settings, skills, sources
+from job_finder.settings import Settings
 
 log = logging.getLogger(__name__)
 
 
-def read_cv() -> tuple[str, str] | None:
-    """master_cv.md text and the evaluation key, or None if the file is missing.
+def cv_key(text: str, s: Settings) -> str:
+    """SHA-256 of the CV with the rules and the model: if any of them changes, earlier scores are outdated."""
+    return hashlib.sha256(f"{text}\n{llm.fingerprint(s)}".encode("utf-8")).hexdigest()
 
-    The key is SHA-256 of the CV together with the rules and the model: if any of them changed,
-    earlier scores are outdated and jobs are evaluated again."""
-    if not config.CV_PATH.exists():
+
+def read_cv(s: Settings | None) -> tuple[str, str] | None:
+    """CV text and the evaluation key, or None without settings or when the CV can't be read."""
+    if s is None:
         return None
-    text = config.CV_PATH.read_text(encoding="utf-8")
-    return text, hashlib.sha256(f"{text}\n{llm.fingerprint()}".encode("utf-8")).hexdigest()
+    try:
+        text = settings.read_cv_text(s.cv_path)
+    except settings.CvError:
+        return None
+    return text, cv_key(text, s)
 
 
 def _join(summary: str, notes: list[str]) -> str:
@@ -52,6 +58,9 @@ class Worker(QObject):
 
     def _refresh(self) -> str:
         """One refresh. Returns the final status line."""
+        s = settings.load()
+        if s is None:
+            return "Finish the setup in Settings first"
         self.status.emit("Loading jobs…")
         fetched, errors = sources.fetch_all()
         for name, jobs in fetched.items():
@@ -59,13 +68,14 @@ class Worker(QObject):
         log.info("Loaded: %s", {name: len(jobs) for name, jobs in fetched.items()})
         notes = [f"{name}: error ({error})" for name, error in errors.items()]
 
-        cv = read_cv()
-        if cv is None:
-            return _join("No master_cv.md, evaluation skipped", notes)
-        cv_text, cv_hash = cv
-        skill_list = skills.load_skills(cv_text)
+        try:
+            cv_text = settings.read_cv_text(s.cv_path)
+        except settings.CvError as error:
+            return _join(f"Can't read your CV: {error}. Check it in Settings", notes)
+        cv_hash = cv_key(cv_text, s)
+        skill_list = s.skills
         if not skill_list:
-            return _join("No Skills section in master_cv.md, evaluation skipped", notes)
+            return _join("No skills in Settings, evaluation skipped", notes)
         todo = [job for job in db.pending_jobs(cv_hash) if skills.matches(job, skill_list)]
         log.info("To evaluate: %d", len(todo))
 
@@ -74,7 +84,7 @@ class Worker(QObject):
             self.model_loaded = True
             try:
                 llm.prepare()
-                failed = self._evaluate(todo, cv_text, cv_hash)
+                failed = self._evaluate(todo, cv_text, cv_hash, llm.render_rules(s))
                 if failed:
                     notes.append(f"failed to evaluate: {failed}")
             except Exception as error:
@@ -84,18 +94,18 @@ class Worker(QObject):
                 llm.release()
                 self.model_loaded = False
 
-        suitable = len(db.list_jobs(cv_hash, config.MIN_SCORE))
+        suitable = len(db.list_jobs(cv_hash, s.min_score))
         evaluated = db.count_evaluated(cv_hash)
         matches = "match" if suitable == 1 else "matches"
         return _join(f"Done: {suitable} {matches} out of {evaluated} evaluated", notes)
 
-    def _evaluate(self, todo: list[sources.Job], cv_text: str, cv_hash: str) -> int:
+    def _evaluate(self, todo: list[sources.Job], cv_text: str, cv_hash: str, rules: str) -> int:
         """Evaluate jobs one by one; returns the number of failed evaluations."""
         failed = 0
         self.progress.emit(0, len(todo))
         for done, job in enumerate(todo, 1):
             try:
-                evaluation = llm.evaluate(cv_text, job)
+                evaluation = llm.evaluate(cv_text, job, rules)
             except llm.ModelLost:
                 raise  # nothing left to evaluate with: stop the whole pass
             except Exception:

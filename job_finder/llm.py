@@ -8,6 +8,7 @@ import time
 import requests
 
 from job_finder import config
+from job_finder.settings import Settings
 from job_finder.sources import Job
 
 log = logging.getLogger(__name__)
@@ -25,33 +26,31 @@ SCHEMA = {
     "additionalProperties": False,
 }
 
-RULES = """You help a student decide whether to apply for a job. Their CV is below.
+RULES_TEMPLATE = """You help a candidate decide whether to apply for a job. Their CV is below.
 Rate from 1 to 10 how realistically the candidate can get through the hiring process and do the job.
+
+About the candidate: {level_text} English: {english}; Czech: {czech}. {permit_text}
 
 How to rate:
 1. Identify the core of the role: what the person will do and the 2–4 truly required skills.
    Job ads often list every technology the company uses — those are wishes, not requirements.
    Do not lower the score for missing secondary tools (JIRA, a specific BI system, cloud,
    CI, monitoring, etc.) or "nice to have" items.
-2. Count adjacent skills: Django or Flask instead of FastAPI, MySQL or MSSQL instead of PostgreSQL,
-   any REST/HTTP API, any Git hosting.
-3. Junior positions and internships teach a lot on the job: if the basics (language, SQL, web/API)
-   match, missing technologies are a reason to learn, not a reason to reject.
-4. Lower the score sharply only for real blockers: 2+ years of commercial experience or a mid/senior
-   level is required; the main language is different (Java, C#, PHP, C/C++, etc.) or the field is
-   entirely different (embedded, mobile development, design, sales); fluent Czech or English C1+ is
-   mandatory; an office outside Prague with no remote option; citizenship or residency of another
-   country is required.
-   These are NOT problems: an office or hybrid in Prague, remote work from Czechia or the EU, a work
-   permit for Czechia (the candidate does not need one), English B2 (unless C1 or native is required),
-   Czech B1.
+2. Count adjacent skills: a similar framework or database counts (e.g. Django or Flask instead of FastAPI,
+   MySQL instead of PostgreSQL, React instead of Vue, Spring instead of Jakarta EE), any REST/HTTP API,
+   any Git hosting.
+3. {learn_text}
+4. Lower the score sharply only for real blockers: {experience_blocker}; the job's main programming
+   language or field differs from the candidate's main one in the CV; a required language level above the
+   candidate's; {location_blocker}; {permit_blocker}citizenship or residency of another country is required.
+   These are NOT problems: {not_problems}.
 
 Scale:
-9–10 — junior or internship, the core stack matches, no blockers;
-7–8 — junior or internship, the core matches, some technologies are missing but can be learned;
+9–10 — {top_band}, the core stack matches, no blockers;
+7–8 — {top_band}, the core matches, some technologies are missing but can be learned;
 5–6 — adjacent role or a different framework, but worth a try;
-3–4 — serious gap: above junior level or a noticeably different main stack;
-1–2 — not a fit: senior, a different main language or field, or a hard blocker.
+3–4 — serious gap: {gap_band} or a noticeably different main stack;
+1–2 — not a fit: {misfit_band}, a different main language or field, or a hard blocker.
 
 Answer with a JSON object:
 - score — a score from 1 to 10;
@@ -65,10 +64,49 @@ Write all texts in English, as plain text without Markdown. Rely only on facts f
 Candidate's CV:
 """
 
+LEVEL_TEXT = {
+    "junior": dict(
+        level_text="The candidate is looking for junior roles or internships.",
+        learn_text="Junior positions and internships teach a lot on the job: if the basics of the candidate's "
+                   "stack match, missing technologies are a reason to learn, not a reason to reject.",
+        experience_blocker="2+ years of commercial experience or a mid/senior level is required",
+        top_band="junior or internship", gap_band="above junior level", misfit_band="senior"),
+    "mid": dict(
+        level_text="The candidate has commercial experience and is looking for mid-level roles.",
+        learn_text="On mid-level roles a missing secondary technology can be learned on the job; a missing core "
+                   "technology of the role is a real gap.",
+        experience_blocker="5+ years of experience or a senior/lead level is required",
+        top_band="mid-level role", gap_band="senior level", misfit_band="lead/principal or 8+ years"),
+}
 
-def fingerprint() -> str:
+
+def render_rules(s: Settings) -> str:
+    """The scoring rules for this candidate: level, languages, work permit and location come from the settings."""
+    if s.remote:
+        location_blocker = f"an office outside {s.city} with no remote option"
+        not_problems = [f"an office or hybrid in {s.city}", "remote work from Czechia or the EU"]
+    else:
+        location_blocker = (f"an office outside {s.city}, or a remote-only job (the candidate wants office or "
+                            f"hybrid work in {s.city}; remote-only jobs are not a fit)")
+        not_problems = [f"an office or hybrid in {s.city}"]
+    if s.needs_permit:
+        permit_text = "The candidate needs a work permit for Czechia; a job that cannot sponsor one is a blocker."
+        permit_blocker = "the employer cannot sponsor a Czech work permit; "
+    else:
+        permit_text = "The candidate does not need a work permit for Czechia (not a problem)."
+        permit_blocker = ""
+        not_problems.append("a work permit for Czechia (the candidate does not need one)")
+    for language, level in (("English", s.english), ("Czech", s.czech)):
+        if level and level != "none":
+            not_problems.append(f"{language} {level} (unless a higher level is required)")
+    return RULES_TEMPLATE.format(english=s.english or "none", czech=s.czech or "none", permit_text=permit_text,
+                                 location_blocker=location_blocker, permit_blocker=permit_blocker,
+                                 not_problems=", ".join(not_problems), **LEVEL_TEXT[s.level])
+
+
+def fingerprint(s: Settings) -> str:
     """What determines a score besides the CV: if it changes, earlier scores are outdated."""
-    return f"{config.MODEL}\n{RULES}"
+    return f"{config.MODEL}\n{render_rules(s)}"
 
 
 class ModelLost(RuntimeError):
@@ -119,7 +157,7 @@ def prepare() -> None:
             raise RuntimeError(f"model failed to load: {(result.stderr or result.stdout).strip()[-300:]}")
 
 
-def evaluate(cv_text: str, job: Job) -> dict:
+def evaluate(cv_text: str, job: Job, rules: str) -> dict:
     """Evaluate one job: score, summary, have, missing, risks."""
     vacancy = (
         f"Title: {job.title}\nCompany: {job.company}\nLocation: {job.city}\nSource: {job.source}\n\n"
@@ -130,7 +168,7 @@ def evaluate(cv_text: str, job: Job) -> dict:
         json={
             "model": config.MODEL_ID,
             "messages": [
-                {"role": "system", "content": RULES + cv_text},
+                {"role": "system", "content": rules + cv_text},
                 {"role": "user", "content": vacancy},
             ],
             "temperature": 0,

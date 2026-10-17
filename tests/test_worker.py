@@ -1,6 +1,10 @@
-import pytest
+from pathlib import Path
+from dataclasses import replace
 
-from job_finder import config, db, llm, sources, worker
+import pytest
+from helpers import use_settings
+
+from job_finder import config, db, llm, settings, sources, worker
 from job_finder.sources import Job
 
 
@@ -8,9 +12,8 @@ from job_finder.sources import Job
 def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "jobs.db")
     cv = tmp_path / "master_cv.md"
-    cv.write_text("## Skills\n- Python — main language\n", encoding="utf-8")
-    monkeypatch.setattr(config, "CV_PATH", cv)
     db.init()
+    use_settings(cv)
     jobs = [Job(url=f"u{i}", source="Jobicy", title=f"Python dev {i}", company="A", city="",
                 published=f"2026-10-0{i}", description="") for i in (1, 2, 3)]
     monkeypatch.setattr(sources, "fetch_all", lambda: ({"Jobicy": jobs}, {}))
@@ -23,7 +26,7 @@ def setup(tmp_path, monkeypatch):
 def test_model_lost_stops_evaluation(setup, monkeypatch):
     calls = []
 
-    def lost(cv_text, job):
+    def lost(cv_text, job, rules):
         calls.append(job.url)
         raise llm.ModelLost("got an answer from qwen/qwen3.8-27b")
 
@@ -34,44 +37,44 @@ def test_model_lost_stops_evaluation(setup, monkeypatch):
     assert calls == ["u3"]  # stopped after the very first job
     assert "qwen/qwen3.8-27b" in message
     assert setup == [True]
-    assert len(db.pending_jobs(worker.read_cv()[1])) == 3  # other models' scores are not saved
+    assert len(db.pending_jobs(worker.read_cv(settings.load())[1])) == 3  # other models' scores are not saved
 
 
 def test_summary_counts_suitable_and_evaluated(setup, monkeypatch):
     scores = {"u1": 7, "u2": 3, "u3": 6}
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job: {
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules: {
         "score": scores[job.url], "summary": "", "have": [], "missing": [], "risks": []})
 
     assert worker.Worker()._refresh() == "Done: 2 matches out of 3 evaluated"
 
 
-def test_missing_cv_skips_evaluation(setup, monkeypatch):
-    config.CV_PATH.unlink()
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job: pytest.fail("must not evaluate"))
-    assert worker.Worker()._refresh() == "No master_cv.md, evaluation skipped"
+def test_unreadable_cv_stops_before_evaluation(setup, monkeypatch):
+    s = settings.load()
+    settings.save(replace(s, cv_path=s.cv_path + ".missing"))
+    monkeypatch.setattr(llm, "evaluate", lambda *a: pytest.fail("must not evaluate"))
+    assert worker.Worker()._refresh().startswith("Can't read your CV")
 
 
-def test_key_changes_with_cv_and_rules(setup, monkeypatch):
-    key = worker.read_cv()[1]
-    rules = llm.RULES
-    monkeypatch.setattr(llm, "RULES", rules + " other rules")
-    assert worker.read_cv()[1] != key
-    monkeypatch.setattr(llm, "RULES", rules)
-    assert worker.read_cv()[1] == key
-    config.CV_PATH.write_text("## Skills\n- SQL — x\n", encoding="utf-8")  # temporary CV from the fixture
-    assert worker.read_cv()[1] != key
+def test_key_changes_with_cv_and_scoring_settings(setup):
+    s = settings.load()
+    key = worker.read_cv(s)[1]
+    assert worker.read_cv(replace(s, city="Brno"))[1] != key
+    assert worker.read_cv(replace(s, keywords=["java"], skills=["Go"]))[1] == key
+    Path(s.cv_path).write_text("Senior SQL developer", encoding="utf-8")  # temporary CV from the fixture
+    assert worker.read_cv(s)[1] != key
+    assert worker.read_cv(None) is None
 
 
 def test_summary_uses_singular_for_one_match(setup, monkeypatch):
     scores = {"u1": 7, "u2": 3, "u3": 2}
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job: {
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules: {
         "score": scores[job.url], "summary": "", "have": [], "missing": [], "risks": []})
 
     assert worker.Worker()._refresh() == "Done: 1 match out of 3 evaluated"
 
 
 def test_evaluated_rows_carry_first_seen(setup, monkeypatch):
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job: {
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules: {
         "score": 7, "summary": "", "have": [], "missing": [], "risks": []})
     w = worker.Worker()
     rows = []

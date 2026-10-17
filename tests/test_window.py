@@ -9,7 +9,9 @@ from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QLabel
 
-from job_finder import config, db, style, worker
+from helpers import use_settings
+
+from job_finder import config, db, settings, style, worker
 from job_finder.sources import Job
 from job_finder.window import MainWindow, days_waiting, plural_days
 
@@ -119,8 +121,8 @@ def test_icon_file_has_small_and_large_sizes(app):
 
 
 def test_finished_reloads_rows_from_db(window):
-    config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # temporary CV from the fixture
-    key = worker.read_cv()[1]
+    use_settings(config.CV_PATH)  # temporary CV from the fixture
+    key = worker.read_cv(settings.load())[1]
     db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Job a", company="ACME", city="Praha",
                                 published="2026-10-01", description="")])
     db.save_evaluation("a", row("a", 8)["evaluation"], key)
@@ -141,13 +143,13 @@ def test_cv_button_opens_one_cv_window(window):
 
 def add_found(url, score, title=None, company="ACME", new=False, evaluation=None):
     """A found job in the database, scored under the fixture's temporary CV; new=False: already seen."""
-    if not config.CV_PATH.exists():
-        config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # temporary CV
+    if settings.load() is None:
+        use_settings(config.CV_PATH)  # temporary CV and settings
     # Each job gets its own source: save_jobs deactivates a source's jobs missing from the batch
     job = Job(url=url, source=f"src-{url}", title=title or f"Job {url}", company=company, city="Prague",
               published="2026-10-01", description="")
     db.save_jobs(job.source, [job])
-    db.save_evaluation(url, evaluation or row(url, score)["evaluation"], worker.read_cv()[1])
+    db.save_evaluation(url, evaluation or row(url, score)["evaluation"], worker.read_cv(settings.load())[1])
     if not new:
         with sqlite3.connect(config.DB_PATH) as conn:
             conn.execute("UPDATE jobs SET seen = 1 WHERE url = ?", (url,))
@@ -396,7 +398,7 @@ def test_insights_messages_without_cv_or_evaluations(window):
     window.insights_tab.click()
     assert window.insights_message.text() == "No master_cv.md — nothing to analyse"
     assert window.insights_cards.isHidden()
-    config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # temporary CV from the fixture
+    use_settings(config.CV_PATH)  # temporary CV from the fixture
     window.render_insights()
     assert window.insights_message.text() == "Nothing evaluated yet"
 
@@ -581,8 +583,8 @@ def test_undo_for_filtered_job_does_not_crash(window):
 
 
 def test_closed_application_marked(window):
-    config.CV_PATH.write_text("## Skills\n- Python — x\n", encoding="utf-8")  # temporary CV from the fixture
-    key = worker.read_cv()[1]
+    use_settings(config.CV_PATH)  # temporary CV from the fixture
+    key = worker.read_cv(settings.load())[1]
     for url, source, title in [("jg", "junior.guru", "Dev JG"), ("him", "Himalayas", "Dev H")]:
         db.save_jobs(source, [Job(url=url, source=source, title=title, company=url, city="Prague",
                                   published="2026-10-01", description="")])

@@ -53,3 +53,10 @@ def test_matches_nothing_without_skills():
 def test_skill_lines_skip_concepts_and_in_progress():
     cv = "## Skills\n- Python — main\n- Concepts — OOP\n- In progress: pytest\n- SQL, Git — daily\n\n## Projects\n- x\n"
     assert skills.skill_lines(cv) == ["Python — main", "SQL, Git — daily"]
+
+
+def test_dictionary_and_custom_skills_match():
+    job = Job(url="u", source="s", title="Backend", company="c", city="", published="",
+              description="REST API on Node.js with 1C integration")
+    assert skills.matches(job, ["Node.js"]) and skills.matches(job, ["REST API"]) and skills.matches(job, ["1C"])
+    assert not skills.matches(job, ["Go"])

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from job_finder import config, db, freshness, insights, llm, skills, sources, style
+from job_finder import config, db, freshness, insights, llm, settings, sources, style
 from job_finder.worker import Worker, read_cv
 
 COLUMNS = ["Score", "Job", "Company", "Location", "Posted"]
@@ -580,8 +580,9 @@ class MainWindow(QMainWindow):
 
     def load_rows(self) -> None:
         """Re-read found jobs (scored under the current CV) and applications from the database."""
-        cv = read_cv()
-        self.rows = db.list_jobs(cv[1], config.MIN_SCORE) if cv else []
+        self.settings = settings.load()
+        cv = read_cv(self.settings)
+        self.rows = db.list_jobs(cv[1], self.settings.min_score) if cv else []
         self.applied = db.list_applied()
         # reversed: with several applications under one key, the newest stays
         self.applied_by_key = {sources.same_job_key(r["company"], r["title"]): r for r in reversed(self.applied)}
@@ -654,7 +655,8 @@ class MainWindow(QMainWindow):
 
     def render_insights(self) -> None:
         """Recount the Insights tab from the analyses of all evaluated jobs (spec section 13)."""
-        cv = read_cv()
+        self.settings = settings.load()  # they may have been saved since the list was loaded
+        cv = read_cv(self.settings)
         evaluations = db.evaluations(cv[1]) if cv else []
         message = ("No master_cv.md — nothing to analyse" if cv is None
                    else "Nothing evaluated yet" if not evaluations else "")
@@ -664,7 +666,7 @@ class MainWindow(QMainWindow):
         self.insights_note.setVisible(not message)
         if message:
             return
-        result = insights.analyze(evaluations, skills.skill_lines(cv[0]))
+        result = insights.analyze(evaluations, self.settings.skills)
         lists = [(self.missing_rows, [(name, count, 0) for name, count in result.missing], set()),
                  (self.required_rows, result.required, result.in_cv)]
         for rows, items, mine in lists:
@@ -794,7 +796,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Evaluated {done} of {total}" + (f" · {left}" if left else ""))
 
     def on_evaluated(self, row: dict) -> None:
-        if row["score"] < config.MIN_SCORE:
+        if row["score"] < (self.settings.min_score if self.settings else config.MIN_SCORE):
             return
         self.rows.append(row)  # render() puts it in place according to the filters and order
         self.new_urls = db.unseen_urls()  # the job may have reached the database after the list was loaded
