@@ -50,7 +50,7 @@
 
 ---
 
-### Задача 1: Модель настроек, правила и поиск
+### Task 1: Модель настроек, правила и поиск
 
 **Files:**
 - Modify: `job_finder/settings.py`, `job_finder/llm.py`, `job_finder/sources.py`, `job_finder/config.py`,
@@ -100,7 +100,7 @@
   переписывается в задаче 2, до неё не запускается).
 - [ ] **Step 5: Commit** — `git commit -m "Settings: main skill, several levels, a list of languages"`
 
-### Задача 2: Окна — плашки, уровни, языки, меню слева; падение при выходе
+### Task 2: Окна — плашки, уровни, языки, меню слева; падение при выходе
 
 **Files:**
 - Modify: `job_finder/settings_window.py`, `job_finder/cv_window.py`, `job_finder/style.py`
@@ -149,13 +149,13 @@
   автору.
 - [ ] **Step 6: Commit** — `git commit -m "Settings window with a side menu, skill chips, levels and languages"`
 
-### Задача 3: Проверка правил на 40 вакансиях
+### Task 3: Проверка правил на 40 вакансиях
 
 Только когда видеокарта свободна (нет игры, `nvidia-smi`). Скрипт `compare_neutral_rules.py` из
 scratchpad с новыми настройками автора (`levels=["junior"]`, `languages={"English": "B2", "Czech": "B1"}`)
 на копии базы. Критерии из 15.5. Не прошло — правится формулировка, повтор. Без коммита; итог — в журнал.
 
-### Задача 4: Документация и уборка
+### Task 4: Документация и уборка
 
 **Files:**
 - Modify: `README.md`, `docs/how-it-works.ru.md`, `job_finder/config.py`, `job_finder/skills.py`,
@@ -170,7 +170,7 @@ scratchpad с новыми настройками автора (`levels=["junior
   `grep -rn "keywords\|needs_permit\|MIN_SCORE" job_finder tests` пуст.
 - [ ] **Step 4: Commit** — `git commit -m "Docs for the settings; remove unused config"`
 
-### Задача 5: Переход автора
+### Task 5: Переход автора
 
 С автором и при свободной видеокарте: запуск → мастер открывается со старыми резюме, навыками, городом →
 автор выбирает главный навык, уровни, языки → «Start search» → полная переоценка. Проверить: Himalayas
