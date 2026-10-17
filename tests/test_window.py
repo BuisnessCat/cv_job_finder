@@ -26,13 +26,14 @@ def window(app, tmp_path, monkeypatch):
     monkeypatch.setattr(worker.Worker, "start", lambda self: None)
     db.init()
     w = MainWindow()
+    w.freshness_buttons.button(3).click()  # "All": older tests use fixed dates; freshness tests pick a filter
     yield w
     w.deleteLater()
 
 
 def row(url, score, published="2026-10-01"):
     return {"url": url, "source": "Jobicy", "title": f"Job {url}", "company": "ACME", "city": "Prague",
-            "published": published, "score": score,
+            "published": published, "first_seen": published, "score": score,
             "evaluation": {"score": score, "summary": "ok", "have": ["Python"], "missing": [], "risks": []}}
 
 
@@ -334,7 +335,7 @@ def test_english_window_texts(window):
     assert window.windowTitle() == "Job Finder"
     assert window.refresh_button.text() == "Refresh" and window.cv_button.text() == "My CV"
     headers = lambda table: [table.horizontalHeaderItem(i).text() for i in range(table.columnCount())]
-    assert headers(window.table) == ["Score", "Job", "Company", "Location", "Date"]
+    assert headers(window.table) == ["Score", "Job", "Company", "Location", "Posted"]
     assert headers(window.applied_table) == ["Applied", "Job", "Company", "Status", "Days waiting", "Score"]
     assert [b.text() for b in (window.open_button, window.apply_button, window.hide_button,
                                window.unapply_button)] == ["Open job", "I applied", "Hide", "Back to found"]
@@ -428,3 +429,69 @@ def test_insights_page_does_not_raise_window_minimum(window):
     QApplication.processEvents()
     after = window.minimumSizeHint()
     assert after.width() <= max(before.width(), 700) and after.height() <= max(before.height(), 450)
+
+
+def days_ago(n):
+    return (date.today() - timedelta(days=n)).isoformat()
+
+
+def test_posted_column_shows_age_and_reposted(window):
+    bumped = row("b", 7, days_ago(0))
+    bumped["first_seen"] = days_ago(30)
+    for r in (row("a", 8, days_ago(0)), bumped, row("c", 6, days_ago(25))):
+        window.on_evaluated(r)
+    assert window.table.horizontalHeaderItem(4).text() == "Posted"
+    posted = {window.table.item(i, 1).text(): window.table.item(i, 4).text() for i in range(window.table.rowCount())}
+    assert posted == {"Job a": "today", "Job b": "30 days ago · reposted", "Job c": "25 days ago"}
+    stale = next(i for i in range(window.table.rowCount()) if window.table.item(i, 1).text() == "Job c")
+    assert window.table.item(stale, 1).foreground().color().name() == style.COLORS["muted"]
+
+
+def test_filters_and_order_change_visible_rows(window):
+    other = row("b", 6, days_ago(1))
+    other["company"] = "Globex"
+    for r in (row("a", 9, days_ago(20)), other, row("c", 7, days_ago(3))):
+        window.on_evaluated(r)
+    assert window.shown_label.isHidden()
+    window.search.setText("globex")
+    assert titles(window) == ["Job b"]
+    assert window.shown_label.text() == "1 of 3 shown" and not window.shown_label.isHidden()
+    window.search.setText("")
+    window.freshness_buttons.button(0).click()  # 7d
+    assert titles(window) == ["Job c", "Job b"]
+    window.order_buttons.button(1).click()  # Newest
+    assert titles(window) == ["Job b", "Job c"]
+    window.search.setText("nothing like this")
+    assert window.no_match.text() == "No jobs match the filters"
+    assert not window.no_match.isHidden() and window.table.isHidden()
+
+
+def test_selection_maps_to_visible_row(window):
+    for url in ("a", "b", "c"):
+        r = row(url, 7, days_ago(1))
+        r["company"] = "Globex" if url == "b" else "ACME"
+        window.on_evaluated(r)
+    window.search.setText("globex")
+    window.table.selectRow(0)
+    assert window.current["url"] == "b"
+
+
+def test_selection_cleared_when_filtered_out(window):
+    window.on_evaluated(row("a", 7, days_ago(1)))
+    window.table.selectRow(0)
+    window.search.setText("zzz")
+    assert window.current is None
+
+
+def test_new_evaluation_respects_filters(window):
+    window.freshness_buttons.button(0).click()  # 7d
+    window.on_evaluated(row("old", 8, days_ago(20)))
+    assert titles(window) == [] and [r["url"] for r in window.rows] == ["old"]
+
+
+def test_card_published_shows_site_date_and_first_seen(window):
+    r = row("a", 8, days_ago(0))
+    r["first_seen"] = days_ago(30)
+    window.on_evaluated(r)
+    window.table.selectRow(0)
+    assert window.facts["published"].text() == f"{days_ago(0)} (today) · first seen 30 days ago"

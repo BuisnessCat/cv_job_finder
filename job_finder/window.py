@@ -4,15 +4,15 @@ from datetime import date
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMainWindow,
+    QAbstractItemView, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
     QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
-from job_finder import config, db, insights, llm, skills, sources, style
+from job_finder import config, db, freshness, insights, llm, skills, sources, style
 from job_finder.worker import Worker, read_cv
 
-COLUMNS = ["Score", "Job", "Company", "Location", "Date"]
+COLUMNS = ["Score", "Job", "Company", "Location", "Posted"]
 APPLIED_COLUMNS = ["Applied", "Job", "Company", "Status", "Days waiting", "Score"]
 LISTS = [("have", "YOU HAVE", "✓"), ("missing", "MISSING", "✕"), ("risks", "RISKS", "!")]
 EMPTY_LIST = {"have": "—", "missing": "Nothing major"}
@@ -126,7 +126,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Job Finder")
         self.resize(1200, 750)
-        self.rows: list[dict] = []        # found jobs in display order
+        self.rows: list[dict] = []        # found jobs scored above the threshold
+        self.visible: list[dict] = []     # found jobs that pass the filters, in table order
         self.applied: list[dict] = []     # applications, newest first
         self.applied_by_key: dict[tuple[str, str], dict] = {}  # latest application by "company + title"
         self.new_urls: set[str] = set()  # unseen: appeared after the window was last closed
@@ -176,7 +177,7 @@ class MainWindow(QMainWindow):
         self.applied_table = _make_table(APPLIED_COLUMNS, 5)
         self.applied_table.itemSelectionChanged.connect(self.on_select_applied)
         self.lists = QStackedWidget()  # 0: found, 1: applications
-        self.lists.addWidget(self.table)
+        self.lists.addWidget(self._build_found())
         self.lists.addWidget(self.applied_table)
 
         splitter = QSplitter()
@@ -364,6 +365,53 @@ class MainWindow(QMainWindow):
         self.show_details(None)
         return card
 
+    def _build_found(self) -> QFrame:
+        """Found list in its own card: filter header, the table (or "No jobs match the filters"), the shown count."""
+        self.search = QLineEdit()
+        self.search.setObjectName("search")
+        self.search.setPlaceholderText("Search title, company or location")
+        self.search.textChanged.connect(self.render)
+        self.freshness_buttons = QButtonGroup(self)
+        self.order_buttons = QButtonGroup(self)
+        header = QWidget()
+        head = QHBoxLayout(header)
+        head.setContentsMargins(12, 10, 12, 10)
+        head.setSpacing(10)
+        head.addWidget(self.search, 1)
+        for group, labels, default in [
+                (self.freshness_buttons, [(label, tip) for label, tip, _ in freshness.FRESHNESS], 2),
+                (self.order_buttons, [(label, "") for label in freshness.ORDERS], 0)]:
+            segment = QHBoxLayout()
+            segment.setSpacing(0)
+            for index, (label, tip) in enumerate(labels):
+                button = QPushButton(label)
+                button.setCheckable(True)
+                button.setToolTip(tip)
+                last = len(labels) - 1
+                button.setObjectName("segmentLeft" if index == 0 else "segmentRight" if index == last else "segmentMiddle")
+                group.addButton(button, index)
+                segment.addWidget(button)
+            group.button(default).setChecked(True)
+            group.idClicked.connect(self.render)
+            head.addLayout(segment)
+        self.no_match = QLabel("No jobs match the filters", alignment=Qt.AlignCenter)
+        self.no_match.setObjectName("empty")
+        self.found_pages = QStackedWidget()  # 0: the table, 1: nothing passes the filters
+        self.found_pages.addWidget(self.table)
+        self.found_pages.addWidget(self.no_match)
+        self.shown_label = _label("muted")
+        self.shown_label.setContentsMargins(14, 6, 14, 8)
+        self.shown_label.hide()
+        card = QFrame()
+        card.setObjectName("foundCard")
+        box = QVBoxLayout(card)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(0)
+        box.addWidget(header)
+        box.addWidget(self.found_pages, 1)
+        box.addWidget(self.shown_label)
+        return card
+
     def _build_insights(self) -> QWidget:
         """Insights tab: two cards of requirement bars and a note below (spec section 13)."""
         page = QWidget()
@@ -451,6 +499,11 @@ class MainWindow(QMainWindow):
         """Redraw found jobs keeping the selection; leave an application in the card alone."""
         selected = self.current["url"] if self.current and "status" not in self.current else None
 
+        today = date.today()
+        days = freshness.FRESHNESS[self.freshness_buttons.checkedId()][2]
+        order = freshness.ORDERS[self.order_buttons.checkedId()]
+        self.visible = freshness.visible_rows(self.rows, self.search.text(), days, order, today)
+
         def values(row):
             title = (REPOST_MARK if self._previous_application(row) else "") + row["title"]
             title_item = QTableWidgetItem(title)
@@ -459,12 +512,25 @@ class MainWindow(QMainWindow):
                 font = title_item.font()
                 font.setBold(True)
                 title_item.setFont(font)
-            return [_score_item(row["score"]), title_item, row["company"], row["city"], row["published"]]
+            day = freshness.job_date(row["published"], row.get("first_seen", ""))
+            posted = freshness.age_text(day, today)
+            if freshness.is_reposted(row["published"], row.get("first_seen", "")):
+                posted += " · reposted"
+            items = [title_item, QTableWidgetItem(row["company"]), QTableWidgetItem(row["city"]),
+                     QTableWidgetItem(posted)]
+            age = freshness.age_days(day, today)
+            if age is not None and age > config.STALE_JOB_DAYS:  # old: muted, the score keeps its colour
+                for item in items:
+                    item.setForeground(QColor(style.COLORS["muted"]))
+            return [_score_item(row["score"]), *items]
 
-        _fill_table(self.table, self.rows, values, selected)
-        new = sum(1 for row in self.rows if row["url"] in self.new_urls)
-        self.found_tab.setText(f"Found · {len(self.rows)}" + (f" (+{new})" if new else ""))
-        if selected and selected not in (row["url"] for row in self.rows):
+        _fill_table(self.table, self.visible, values, selected)
+        new = sum(1 for row in self.visible if row["url"] in self.new_urls)
+        self.found_tab.setText(f"Found · {len(self.visible)}" + (f" (+{new})" if new else ""))
+        self.shown_label.setText(f"{len(self.visible)} of {len(self.rows)} shown")
+        self.shown_label.setVisible(len(self.visible) < len(self.rows))
+        self.found_pages.setCurrentIndex(1 if self.rows and not self.visible else 0)
+        if selected and selected not in (row["url"] for row in self.visible):
             self.show_details(None)
 
     def render_applied(self) -> None:
@@ -534,7 +600,7 @@ class MainWindow(QMainWindow):
 
     def on_select(self) -> None:
         indexes = self.table.selectionModel().selectedRows()
-        self.show_details(self.rows[indexes[0].row()] if indexes else None)
+        self.show_details(self.visible[indexes[0].row()] if indexes else None)
 
     def on_select_applied(self) -> None:
         indexes = self.applied_table.selectionModel().selectedRows()
@@ -553,6 +619,12 @@ class MainWindow(QMainWindow):
         self.d_company.setText(row["company"])
         for key, label in self.facts.items():
             label.setText(row[key])
+        if row["published"]:  # the site's date and its age; a reposted job also shows when it was first seen
+            today = date.today()
+            published = f"{row['published']} ({freshness.age_text(row['published'], today)})"
+            if freshness.is_reposted(row["published"], row.get("first_seen", "")):
+                published += f" · first seen {freshness.age_text(row['first_seen'], today)}"
+            self.facts["published"].setText(published)
         self.badge.setStyleSheet(f"QFrame#badge {{ background: {background}; border-radius: 10px; }}")
         self.badge_number.setText(str(row["score"]))
         self.badge_number.setStyleSheet(f"background: transparent; color: {color}; font-size: 20pt;"
@@ -612,8 +684,7 @@ class MainWindow(QMainWindow):
     def on_evaluated(self, row: dict) -> None:
         if row["score"] < config.MIN_SCORE:
             return
-        self.rows.append(row)
-        self.rows.sort(key=lambda r: (r["score"], r["published"]), reverse=True)
+        self.rows.append(row)  # render() puts it in place according to the filters and order
         self.new_urls = db.unseen_urls()  # the job may have reached the database after the list was loaded
         self.render()
 

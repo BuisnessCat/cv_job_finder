@@ -71,7 +71,11 @@ QTableWidget::item {{ padding: 4px 8px; border: none; }}
 QTableWidget::item:selected {{ background: {accent_soft}; color: {text}; }}
 QHeaderView::section {{ background: {panel}; color: {muted}; font-weight: 600; border: none;
                        border-bottom: 1px solid {border}; padding: 8px; }}
-QFrame#card {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
+QFrame#card, QFrame#foundCard {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
+QFrame#foundCard QTableWidget {{ border: none; border-top: 1px solid {border}; border-radius: 0; }}
+QLineEdit#search {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; padding: 5px 10px;
+                    selection-background-color: {accent_soft}; }}
+QLineEdit#search:focus {{ border-color: {accent}; }}
 QTextBrowser {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 12px 16px;
                selection-background-color: {accent_soft}; }}
 QScrollArea#detailsScroll, QWidget#details, QWidget#detailsPage, QWidget#emptyPage, QScrollArea#insightsScroll,
