@@ -2,10 +2,11 @@
 import hashlib
 import logging
 import threading
+from datetime import date
 
 from PySide6.QtCore import QObject, Signal
 
-from job_finder import db, llm, settings, skills, sources
+from job_finder import config, db, freshness, llm, settings, skills, sources
 from job_finder.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -25,6 +26,12 @@ def read_cv(s: Settings | None) -> tuple[str, str] | None:
     except settings.CvError:
         return None
     return text, cv_key(text, s)
+
+
+def too_old(job: sources.Job, today: date) -> bool:
+    """Older than OLD_JOB_DAYS by the site's date: not worth the model's time. A job without a date is scored."""
+    age = freshness.age_days(job.published, today)
+    return age is not None and age > config.OLD_JOB_DAYS
 
 
 def _join(summary: str, notes: list[str]) -> str:
@@ -76,7 +83,9 @@ class Worker(QObject):
         skill_list = s.skills
         if not skill_list:
             return _join("No skills in Settings, evaluation skipped", notes)
-        todo = [job for job in db.pending_jobs(cv_hash) if skills.matches(job, skill_list)]
+        today = date.today()
+        todo = [job for job in db.pending_jobs(cv_hash)
+                if skills.matches(job, skill_list) and not too_old(job, today)]
         log.info("To evaluate: %d", len(todo))
 
         if todo:

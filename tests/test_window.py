@@ -143,6 +143,15 @@ def test_cv_button_opens_one_cv_window(window):
     first.close()
 
 
+def test_card_shows_salary_only_when_known(window):
+    window.on_evaluated(row("a", 8) | {"salary": "$2,000–3,000 / month"})
+    window.on_evaluated(row("b", 7))
+    window.table.selectRow(0)
+    assert window.facts["salary"].text() == "$2,000–3,000 / month" and not window.facts["salary"].isHidden()
+    window.table.selectRow(1)
+    assert window.facts["salary"].isHidden() and window.fact_names["salary"].isHidden()
+
+
 def test_settings_button_reloads_and_refreshes_on_city_change(window, monkeypatch):
     s = use_settings(config.CV_PATH)  # temporary CV from the fixture
     window.load_rows()

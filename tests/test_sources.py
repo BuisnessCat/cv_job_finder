@@ -240,3 +240,21 @@ def test_no_remote_skips_remote_sources(monkeypatch):
     assert {name: [j.url for j in jobs] for name, jobs in fetched.items()} == {
         "junior.guru": ["u1"], "Himalayas": [], "Jobicy": [], "Working Nomads": []}
     assert errors == {}
+
+
+def test_salary_text():
+    assert sources.salary_text(2000, 3000, "USD", "monthly") == "$2,000–3,000 / month"
+    assert sources.salary_text("150000", 250000.0, "EUR", "yearly") == "€150,000–250,000 / year"
+    assert sources.salary_text(None, 60000, "CZK", "annual") == "up to 60,000 CZK / year"
+    assert sources.salary_text(40, None, "GBP", "hourly") == "from £40 / hour"
+    assert sources.salary_text(None, None, "USD", "monthly") == ""
+    assert sources.salary_text("n/a", 0, "USD", None) == ""
+
+
+def test_parsers_read_salary():
+    him = sources.parse_himalayas({"jobs": [HIMALAYAS["jobs"][0] | {
+        "minSalary": 50000, "maxSalary": 70000, "currency": "USD", "salaryPeriod": "year"}]})
+    jobicy = sources.parse_jobicy({"jobs": [JOBICY["jobs"][0] | {
+        "salaryMin": 2000, "salaryMax": 3000, "salaryCurrency": "USD", "salaryPeriod": "monthly"}]})
+    assert him[0].salary == "$50,000–70,000 / year" and jobicy[0].salary == "$2,000–3,000 / month"
+    assert sources.parse_jobicy(JOBICY)[0].salary == ""  # no salary from the site: nothing shown

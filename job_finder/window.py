@@ -275,10 +275,10 @@ class MainWindow(QMainWindow):
         facts.setHorizontalSpacing(16)
         facts.setVerticalSpacing(6)
         facts.setColumnStretch(1, 1)
-        self.facts = {}
+        self.facts, self.fact_names = {}, {}
         for i, (key, caption) in enumerate([("city", "Location"), ("published", "Published"),
-                                            ("source", "Source")]):
-            name = _label("metaKey")
+                                            ("source", "Source"), ("salary", "Salary")]):
+            name = self.fact_names[key] = _label("metaKey")
             name.setText(caption)
             self.facts[key] = _label()
             facts.addWidget(name, i, 0)
@@ -730,7 +730,10 @@ class MainWindow(QMainWindow):
         self.d_title.setText(row["title"])
         self.d_company.setText(row["company"])
         for key, label in self.facts.items():
-            label.setText(row[key])
+            label.setText(row.get(key) or "")
+        has_salary = bool(row.get("salary"))  # only some sites give one
+        self.facts["salary"].setVisible(has_salary)
+        self.fact_names["salary"].setVisible(has_salary)
         if row["published"]:  # the site's date and its age; a reposted job also shows when it was first seen
             today = date.today()
             published = f"{row['published']} ({freshness.age_text(row['published'], today)})"

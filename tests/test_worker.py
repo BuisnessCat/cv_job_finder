@@ -1,11 +1,16 @@
 from pathlib import Path
 from dataclasses import replace
+from datetime import date, timedelta
 
 import pytest
 from helpers import use_settings
 
 from job_finder import config, db, llm, settings, sources, worker
 from job_finder.sources import Job
+
+
+def days_ago(n):
+    return (date.today() - timedelta(days=n)).isoformat()
 
 
 @pytest.fixture
@@ -15,7 +20,7 @@ def setup(tmp_path, monkeypatch):
     db.init()
     use_settings(cv)
     jobs = [Job(url=f"u{i}", source="Jobicy", title=f"Python dev {i}", company="A", city="",
-                published=f"2026-10-0{i}", description="") for i in (1, 2, 3)]
+                published=days_ago(4 - i), description="") for i in (1, 2, 3)]  # u3 is the newest
     monkeypatch.setattr(sources, "fetch_all", lambda s: ({"Jobicy": jobs}, {}))
     monkeypatch.setattr(llm, "prepare", lambda: None)
     released = []
@@ -87,3 +92,16 @@ def test_evaluated_rows_carry_first_seen(setup, monkeypatch):
     w.evaluated.connect(rows.append)
     w._refresh()
     assert len(rows) == 3 and all(r["first_seen"] for r in rows)
+
+
+def test_old_jobs_are_not_scored(setup, monkeypatch):
+    # Older than the widest freshness filter (30 days): the model's time is not spent on them
+    jobs = [Job(url=url, source="Jobicy", title=f"Python dev {url}", company="A", city="", published=published,
+                description="") for url, published in [("old", days_ago(31)), ("month", days_ago(30)),
+                                                       ("undated", "")]]
+    monkeypatch.setattr(sources, "fetch_all", lambda s: ({"Jobicy": jobs}, {}))
+    scored = []
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules: scored.append(job.url) or {
+        "score": 6, "summary": "", "have": [], "missing": [], "risks": []})
+    worker.Worker()._refresh()
+    assert sorted(scored) == ["month", "undated"]

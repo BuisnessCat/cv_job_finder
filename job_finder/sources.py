@@ -32,6 +32,7 @@ class Job:
     city: str
     published: str  # YYYY-MM-DD
     description: str  # plain text
+    salary: str = ""  # "$2,000–3,000 / month" when the site gives one
 
     def __post_init__(self):
         # API answers contain nulls: one such record must not break deduplication and saving to the database
@@ -69,6 +70,35 @@ def parse_juniorguru(text: str, city: str, remote: bool) -> list[Job]:
     return jobs
 
 
+CURRENCY_SIGNS = {"USD": "$", "EUR": "€", "GBP": "£"}
+PERIODS = {"hour": "hour", "dai": "day", "day": "day", "week": "week", "month": "month", "year": "year",
+           "annual": "year"}  # the start of a site's period word -> the word shown
+
+
+def _amount(value) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def salary_text(low, high, currency, period) -> str:
+    """A site's salary fields as one line: "$2,000–3,000 / month", "up to 60,000 CZK / year"; "" without amounts."""
+    low, high = _amount(low), _amount(high)
+    if not low and not high:
+        return ""
+    code = str(currency or "").upper()
+    sign = CURRENCY_SIGNS.get(code, "")
+    if low and high:
+        text = f"{sign}{low:,}–{high:,}" if low != high else f"{sign}{low:,}"
+    else:
+        text = f"from {sign}{low:,}" if low else f"up to {sign}{high:,}"
+    if code and not sign:
+        text += f" {code}"
+    unit = next((word for start, word in PERIODS.items() if str(period or "").lower().startswith(start)), "")
+    return f"{text} / {unit}" if unit else text
+
+
 def parse_himalayas(data: dict) -> list[Job]:
     jobs = []
     for item in data.get("jobs") or []:
@@ -81,6 +111,8 @@ def parse_himalayas(data: dict) -> list[Job]:
         jobs.append(Job(
             url=item["guid"], source="Himalayas", title=item["title"], company=item["companyName"],
             city=city, published=published, description=html_to_text(item.get("description")),
+            salary=salary_text(item.get("minSalary"), item.get("maxSalary"), item.get("currency"),
+                               item.get("salaryPeriod")),
         ))
     return jobs
 
@@ -91,6 +123,8 @@ def parse_jobicy(data: dict) -> list[Job]:
             url=item["url"], source="Jobicy", title=item["jobTitle"], company=item["companyName"],
             city=f"Remote: {item['jobGeo']}" if item.get("jobGeo") else "Remote",
             published=(item.get("pubDate") or "")[:10], description=html_to_text(item.get("jobDescription")),
+            salary=salary_text(item.get("salaryMin"), item.get("salaryMax"), item.get("salaryCurrency"),
+                               item.get("salaryPeriod")),
         )
         for item in data.get("jobs") or []
     ]

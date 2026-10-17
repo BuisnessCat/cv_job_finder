@@ -7,6 +7,9 @@ DB_PATH = ROOT / "jobs.db"
 LOG_PATH = ROOT / "job_finder.log"
 ICON_PATH = ROOT / "job_finder" / "icon.ico"
 
+# Jobs older than this by the site's date are not scored: the widest freshness filter hides them anyway
+OLD_JOB_DAYS = 30
+
 # Sources that return their whole list: a job missing from them was probably taken down
 FULL_LIST_SOURCES = ("junior.guru", "Jobicy")
 

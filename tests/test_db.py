@@ -151,6 +151,10 @@ def test_init_adds_columns_to_old_database(tmp_path, monkeypatch):
     assert [row["url"] for row in db.list_jobs("h1", 5)] == ["a"]  # data kept
     db.apply("a")
     assert db.list_applied()[0]["status"] == "applied"
+    salaried = Job(url="b", source="Himalayas", title="Job b", company="ACME", city="Remote",
+                   published="2026-10-01", description="", salary="$1,000–2,000 / month")
+    db.save_jobs("Himalayas", [salaried])
+    assert [j.salary for j in db.pending_jobs("h2")] == ["$1,000–2,000 / month"]  # the new salary column
 
 
 def test_new_rows_are_unseen_until_marked():

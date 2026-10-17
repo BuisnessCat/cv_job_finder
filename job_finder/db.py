@@ -26,12 +26,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     applied_at  TEXT,               -- application date YYYY-MM-DD
     notes       TEXT,               -- application notes
     seen        INTEGER NOT NULL DEFAULT 0, -- 0: appeared after the window was last closed (new)
-    first_seen  TEXT                -- YYYY-MM-DD when the app first saw this job (or its twin)
+    first_seen  TEXT,               -- YYYY-MM-DD when the app first saw this job (or its twin)
+    salary      TEXT                -- "$2,000–3,000 / month" when the site gives one
 )
 """
 
 # Same order as the Job fields
-JOB_FIELDS = "url, source, title, company, city, published, description"
+JOB_FIELDS = "url, source, title, company, city, published, description, salary"
 
 STATUSES = ("applied", "accepted", "rejected")  # waiting, accepted, rejected
 
@@ -54,7 +55,7 @@ def init() -> None:
         conn.execute("CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)")
         # A database created before the newer columns: add the missing ones, jobs and evaluations are kept
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
-        for column in ("status", "applied_at", "notes"):
+        for column in ("status", "applied_at", "notes", "salary"):
             if column not in columns:
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} TEXT")
         if "seen" not in columns:
@@ -94,11 +95,11 @@ def save_jobs(source: str, jobs: list[Job], today: str | None = None) -> None:
         conn.execute("UPDATE jobs SET active = 0 WHERE source = ?", (source,))
         conn.executemany(
             f"""INSERT INTO jobs ({JOB_FIELDS}, first_seen)
-                VALUES (:url, :source, :title, :company, :city, :published, :description, :first_seen)
+                VALUES (:url, :source, :title, :company, :city, :published, :description, :salary, :first_seen)
                 ON CONFLICT(url) DO UPDATE SET
                     source = excluded.source, title = excluded.title, company = excluded.company,
                     city = excluded.city, published = excluded.published,
-                    description = excluded.description, active = 1""",
+                    description = excluded.description, salary = excluded.salary, active = 1""",
             [{**asdict(job), "first_seen": earliest.get(same_job_key(job.company, job.title), today)}
              for job in jobs],
         )
@@ -229,7 +230,7 @@ def list_jobs(cv_hash: str, min_score: int) -> list[dict]:
                 ORDER BY score DESC, published DESC""",
             (cv_hash, min_score),
         ).fetchall()
-    return [make_row(Job(*tuple(row)[:7]), json.loads(row["evaluation"]), row["first_seen"] or "") for row in rows]
+    return [make_row(Job(*tuple(row)[:8]), json.loads(row["evaluation"]), row["first_seen"] or "") for row in rows]
 
 
 def list_applied() -> list[dict]:
@@ -243,7 +244,7 @@ def list_applied() -> list[dict]:
         listed = {same_job_key(r["company"], r["title"])
                   for r in conn.execute("SELECT company, title FROM jobs WHERE active = 1")}
     return [
-        {**make_row(Job(*tuple(row)[:7]), json.loads(row["evaluation"]), row["first_seen"] or ""),
+        {**make_row(Job(*tuple(row)[:8]), json.loads(row["evaluation"]), row["first_seen"] or ""),
          "status": row["status"], "applied_at": row["applied_at"], "notes": row["notes"] or "",
          # Only sources that return their whole list tell honestly that a job was taken down
          "closed": (not row["active"] and row["source"] in config.FULL_LIST_SOURCES
