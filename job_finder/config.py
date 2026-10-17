@@ -7,6 +7,9 @@ DB_PATH = ROOT / "jobs.db"
 LOG_PATH = ROOT / "job_finder.log"
 ICON_PATH = ROOT / "job_finder" / "icon.ico"
 
+# While the app runs (also hidden in the tray) it looks for new jobs this often
+AUTO_REFRESH_HOURS = 3
+
 # Jobs older than this by the site's date are not scored: the widest freshness filter hides them anyway
 OLD_JOB_DAYS = 30
 

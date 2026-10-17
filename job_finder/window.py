@@ -3,15 +3,14 @@ import time
 from datetime import date
 
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtGui import QColor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
-    QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QButtonGroup, QDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSplitter,
+    QStackedWidget, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from job_finder import db, freshness, insights, llm, settings, sources, style
+from job_finder import busy, config, db, freshness, insights, llm, settings, sources, style
 from job_finder.settings import Settings
 from job_finder.worker import Worker, read_cv
 
@@ -23,6 +22,9 @@ STATUS_TEXT = {"applied": "Waiting", "accepted": "Accepted", "rejected": "Reject
 REPOST_MARK = "↻ "  # before the title of a found job you already applied to
 NEW_MARK = "• "  # before the title of a job that appeared after the window was last closed
 BAR_WIDTH = 220  # the longest bar on the Insights tab
+RETRY_MINUTES = 15  # the automatic refresh waits this long while a full-screen game runs
+TRAY_HINT = (f"Job Finder keeps running in the tray and looks for new jobs every {config.AUTO_REFRESH_HOURS} hours. "
+             "To close it, right-click the icon and choose Quit.")
 
 
 def _search_changed(old: Settings, new: Settings) -> bool:
@@ -131,6 +133,8 @@ def _bar_row(name: str, count: int, yours: int, scale: int, mine: bool = False) 
 
 class MainWindow(QMainWindow):
     clock = staticmethod(time.monotonic)  # for the time-left estimate; tests replace it
+    tray_available = staticmethod(QSystemTrayIcon.isSystemTrayAvailable)  # tests replace it
+    exit_app = staticmethod(QApplication.quit)  # ends the event loop after Quit; tests replace it
 
     def __init__(self):
         super().__init__()
@@ -222,6 +226,18 @@ class MainWindow(QMainWindow):
         self.worker.progress.connect(self.on_progress)
         self.worker.evaluated.connect(self.on_evaluated)
         self.worker.finished.connect(self.on_finished)
+
+        self.quitting = False  # Quit from the tray: closing the window really closes the app
+        self.tray_hint_shown = False
+        self.tray = self._build_tray() if self.tray_available() else None
+        self.auto_timer = QTimer(self)  # look for new jobs every few hours, also from the tray
+        self.auto_timer.setInterval(config.AUTO_REFRESH_HOURS * 3600 * 1000)
+        self.auto_timer.timeout.connect(self.auto_refresh)
+        self.auto_timer.start()
+        self.retry_timer = QTimer(self)  # a full-screen game was running: try again a bit later
+        self.retry_timer.setSingleShot(True)
+        self.retry_timer.setInterval(RETRY_MINUTES * 60 * 1000)
+        self.retry_timer.timeout.connect(self.auto_refresh)
 
         self.load_rows()
         QTimer.singleShot(0, self.refresh)  # refresh right after the window is shown
@@ -901,8 +917,66 @@ class MainWindow(QMainWindow):
         db.set_notes(self.notes_url, text)
         row["notes"] = text
 
+    def _build_tray(self) -> QSystemTrayIcon:
+        tray = QSystemTrayIcon(QIcon(str(config.ICON_PATH)), self)
+        tray.setToolTip("Job Finder")
+        menu = QMenu(self)
+        menu.addAction("Open Job Finder", self.show_window)
+        menu.addAction("Refresh now", self.refresh_now)
+        menu.addSeparator()
+        menu.addAction("Quit", self.quit_app)
+        tray.setContextMenu(menu)
+        tray.activated.connect(self.on_tray_activated)
+        tray.messageClicked.connect(self.show_window)
+        tray.show()
+        return tray
+
+    def on_tray_activated(self, reason) -> None:
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self.show_window()
+
+    def show_window(self) -> None:
+        self.load_rows()  # the "new" marks were cleared when the window was hidden
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def refresh_now(self) -> None:
+        if not self.refreshing:  # one refresh at a time; the Refresh button is disabled meanwhile, the menu is not
+            self.refresh()
+
+    def auto_refresh(self) -> None:
+        """The periodic refresh; while a full-screen game or presentation runs it waits a bit and tries again."""
+        if self.refreshing:
+            return
+        if busy.windows_busy():
+            self.retry_timer.start()
+            return
+        self.refresh()
+
+    def quit_app(self) -> None:
+        """Quit from the tray menu: the same questions as closing the window before the tray existed."""
+        self.quitting = True
+        if self.close():
+            if self.tray is not None:
+                self.tray.hide()
+            self.exit_app()
+
+    def hide_to_tray(self) -> None:
+        self.save_notes()
+        db.mark_all_seen()  # like closing the window used to: what was in the list is no longer new
+        self.hide()
+        if not self.tray_hint_shown:
+            self.tray_hint_shown = True
+            self.tray.showMessage("Job Finder", TRAY_HINT, QSystemTrayIcon.Information, 8000)
+
     def closeEvent(self, event) -> None:
+        if self.tray is not None and not self.quitting:
+            event.ignore()  # the app keeps running in the tray and looks for new jobs
+            self.hide_to_tray()
+            return
         if self.refreshing and not self.confirm_close():
+            self.quitting = False  # "Cancel": the app stays as it was
             event.ignore()
             return
         self.save_notes()

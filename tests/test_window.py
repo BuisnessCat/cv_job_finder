@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QLabel
 
 from helpers import use_settings
 
-from job_finder import config, db, settings, settings_window, style, worker
+from job_finder import busy, config, db, llm, settings, settings_window, style, worker
 from job_finder.sources import Job
 from job_finder.window import MainWindow, days_waiting, plural_days
 
@@ -28,10 +28,27 @@ def window(app, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "jobs.db")
     monkeypatch.setattr(config, "CV_PATH", tmp_path / "master_cv.md")  # no CV, so the list is empty
     monkeypatch.setattr(worker.Worker, "start", lambda self: None)
+    monkeypatch.setattr(MainWindow, "tray_available", staticmethod(lambda: False))  # the tray has its own tests
     db.init()
     w = MainWindow()
     w.freshness_buttons.button(3).click()  # "All": older tests use fixed dates; freshness tests pick a filter
     yield w
+    w.deleteLater()
+
+
+@pytest.fixture
+def tray_window(app, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "jobs.db")
+    monkeypatch.setattr(config, "CV_PATH", tmp_path / "master_cv.md")
+    monkeypatch.setattr(worker.Worker, "start", lambda self: None)
+    monkeypatch.setattr(MainWindow, "tray_available", staticmethod(lambda: True))
+    db.init()
+    w = MainWindow()
+    exits = []
+    monkeypatch.setattr(w, "exit_app", lambda: exits.append(True))  # the real one ends the Qt event loop
+    w.exits = exits
+    yield w
+    w.tray.hide()
     w.deleteLater()
 
 
@@ -732,3 +749,61 @@ def test_undo_toast_stays_usable_after_tab_switch_and_resize(window):
     window.resize(900, 600)
     QApplication.processEvents()
     assert card.rect().contains(window.undo_toast.geometry())  # long title elided, toast kept inside
+
+
+def test_close_hides_to_tray_and_marks_seen(tray_window, monkeypatch):
+    actions = [action.text() for action in tray_window.tray.contextMenu().actions()]
+    assert actions == ["Open Job Finder", "Refresh now", "", "Quit"]
+    messages = []
+    monkeypatch.setattr(tray_window.tray, "showMessage", lambda *args: messages.append(args[1]))
+    released = []
+    monkeypatch.setattr(llm, "release", lambda wait=True: released.append(wait))
+    db.save_jobs("Jobicy", [Job(url="a", source="Jobicy", title="Dev", company="A", city="", published="",
+                                description="")])
+    db.save_evaluation("a", row("a", 8)["evaluation"], "key")  # shown in the list (not evaluated stays new)
+    tray_window.worker.model_loaded = True  # a refresh is still running
+    tray_window.refreshing = True
+    tray_window.show()
+    tray_window.close()
+    assert not tray_window.isVisible() and tray_window.exits == [] and released == []  # still running
+    assert db.unseen_urls() == set()  # what was in the list is no longer new
+    assert len(messages) == 1 and "Quit" in messages[0]  # how to close it, once per run
+    tray_window.show_window()
+    tray_window.close()
+    assert len(messages) == 1
+
+
+def test_close_without_tray_quits(window):
+    assert window.tray is None
+    window.show()
+    window.close()
+    assert not window.isVisible()
+
+
+def test_quit_closes_for_real(tray_window, monkeypatch):
+    tray_window.refreshing = True
+    monkeypatch.setattr(tray_window, "confirm_close", lambda: False)
+    tray_window.quit_app()
+    assert tray_window.exits == [] and not tray_window.quitting  # "Cancel": the app keeps running
+    monkeypatch.setattr(tray_window, "confirm_close", lambda: True)
+    tray_window.quit_app()
+    assert tray_window.exits == [True]
+
+
+def test_auto_refresh_skips_busy_and_running(tray_window, monkeypatch):
+    assert tray_window.auto_timer.isActive() and tray_window.auto_timer.interval() == 3 * 3600 * 1000
+    started = []
+    monkeypatch.setattr(tray_window, "refresh", lambda: started.append(True))
+    monkeypatch.setattr(busy, "windows_busy", lambda: True)  # a full-screen game shares the graphics card
+    tray_window.auto_refresh()
+    assert started == [] and tray_window.retry_timer.isActive()
+    assert tray_window.retry_timer.interval() == 15 * 60 * 1000
+    monkeypatch.setattr(busy, "windows_busy", lambda: False)
+    tray_window.refreshing = True
+    tray_window.auto_refresh()
+    tray_window.refresh_now()  # "Refresh now" in the tray menu
+    assert started == []  # one refresh at a time
+    tray_window.refreshing = False
+    tray_window.auto_refresh()
+    tray_window.refresh_now()
+    assert started == [True, True]
