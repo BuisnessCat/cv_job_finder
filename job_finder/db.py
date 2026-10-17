@@ -51,6 +51,7 @@ def _connect():
 def init() -> None:
     with _connect() as conn:
         conn.execute(SCHEMA)
+        conn.execute("CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)")
         # A database created before the newer columns: add the missing ones, jobs and evaluations are kept
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
         for column in ("status", "applied_at", "notes"):
@@ -64,6 +65,19 @@ def init() -> None:
             # The site's date for existing jobs: no false "reposted" marks right after the update
             conn.execute("UPDATE jobs SET first_seen = COALESCE(NULLIF(published, ''), ?)",
                          (date.today().isoformat(),))
+
+
+def get_settings() -> dict | None:
+    """The settings row as a dict, None if the wizard was never finished."""
+    with _connect() as conn:
+        row = conn.execute("SELECT data FROM settings WHERE id = 1").fetchone()
+    return json.loads(row["data"]) if row else None
+
+
+def put_settings(data: dict) -> None:
+    with _connect() as conn:
+        conn.execute("INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+                     (json.dumps(data, ensure_ascii=False),))
 
 
 def save_jobs(source: str, jobs: list[Job], today: str | None = None) -> None:
