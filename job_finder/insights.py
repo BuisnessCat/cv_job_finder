@@ -136,9 +136,9 @@ def _top(counter: Counter) -> list[tuple[str, int]]:
     return sorted(counter.items(), key=lambda item: (-item[1], item[0]))[:TOP]
 
 
-def analyze(evaluations: list[dict], cv_skill_lines: list[str]) -> Insights:
+def analyze(evaluations: list[dict], cv_skills: list[str]) -> Insights:
     """Count requirements over the model's have / missing lists; each job gives a requirement at most one point."""
-    in_cv = set().union(*(find(line) for line in cv_skill_lines))
+    in_cv = set().union(*(find(skill) for skill in cv_skills))
     missing, required, yours = Counter(), Counter(), Counter()
     unknown = 0
     for evaluation in evaluations:

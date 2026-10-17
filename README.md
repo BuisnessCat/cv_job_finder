@@ -13,7 +13,8 @@ my CV, and asks a local AI model to score the rest from 1 to 10 and explain the 
 ## What it does
 
 - Pulls new jobs from junior.guru, Himalayas, Jobicy and Working Nomads (all of them have open APIs).
-- Skips jobs that don't mention any skill from my CV, so the model doesn't waste time on them.
+- Skips jobs that don't mention any of my skills, so the model doesn't waste time on them. The skills
+  are found in the CV automatically and can be fixed by hand.
 - Scores the rest with a model running in LM Studio on my own graphics card. For each job I get a
   score, a short reason, what I already have, what's missing and what could rule me out.
 - Shows jobs with a score of 5 or more, best first. Jobs that are new since last time are marked.
@@ -50,38 +51,35 @@ You'll need Windows, Python 3.11, [LM Studio](https://lmstudio.ai) and a graphic
    lms get mistralai/ministral-3-8b
    ```
 
-3. Put your CV in the project folder as `master_cv.md`. Any Markdown is fine, but it needs a
-   `## Skills` section with one line per group of skills, like this:
-
-   ```markdown
-   ## Skills
-   - Python — main language
-   - SQL, PostgreSQL — queries and schema design
-   - Git, GitHub — daily use
-   ```
-
-4. Run the installer. It sets up a virtual environment and puts a Job Finder shortcut on the desktop:
+3. Run the installer. It sets up a virtual environment and puts a Job Finder shortcut on the desktop:
 
    ```bash
    powershell -ExecutionPolicy Bypass -File install.ps1
    ```
 
-5. Open Job Finder from the shortcut. The first run scores every job, so it takes a while (on my
-   RTX 3060 it's about 8 seconds per job). After that only new jobs get scored.
+4. Open Job Finder from the shortcut. The first time, a short setup asks for your CV (Markdown, plain
+   text or PDF), finds the skills in it and asks what you're looking for: city, remote or not, your
+   level (you can pick several, like intern and junior) and the languages you speak. There are no
+   keywords to come up with: the remote job boards are searched by your main skill, which you pick
+   from your own list.
+
+5. After that the app scores every job, so the first run takes a while (on my RTX 3060 it's about
+   8 seconds per job). Later only new jobs get scored.
 
 You don't have to open LM Studio yourself. The app starts it, loads the model and unloads it when
 it's done.
 
-![My CV window](docs/screenshots/cv.png)
+![Settings](docs/screenshots/settings.png)
 
 ## Changing things
 
-Most settings are in `job_finder/config.py`: the minimum score, after how many days to remind you
-about an application, the model, and what to ask the job boards for. Right now it's set up for
-Prague and remote jobs. The Prague filter for junior.guru is in `job_finder/sources.py`.
+Everything about you is in Settings (the button at the top of the window): your CV and skills, the
+main skill, city, levels and languages. If a change affects the scores, the app tells you how long
+scoring everything again will take before it saves.
 
-The rules the model uses for scoring are plain text in `job_finder/llm.py`. If you change them or
-your CV, all jobs get scored again on the next refresh.
+The technical bits are in `job_finder/config.py`: the model and what to ask the job boards for. The
+rules the model uses for scoring are a plain-text template in `job_finder/llm.py`, filled in from
+your settings. If you change the template or your CV, all jobs get scored again on the next refresh.
 
 ## Tests
 

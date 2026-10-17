@@ -2,19 +2,10 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CV_PATH = ROOT / "master_cv.md"
+CV_PATH = ROOT / "master_cv.md"  # if it exists, the first-run wizard offers it as the CV
 DB_PATH = ROOT / "jobs.db"
 LOG_PATH = ROOT / "job_finder.log"
 ICON_PATH = ROOT / "job_finder" / "icon.ico"
-
-# Show jobs scored at or above this threshold
-MIN_SCORE = 5
-
-# An application with no reply for longer than this many days is highlighted: time to follow up or close it
-STALE_DAYS = 14
-
-# A job older than this many days is shown muted in the found list
-STALE_JOB_DAYS = 21
 
 # Sources that return their whole list: a job missing from them was probably taken down
 FULL_LIST_SOURCES = ("junior.guru", "Jobicy")
