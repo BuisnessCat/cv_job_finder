@@ -72,6 +72,14 @@ def test_scoring_changed_sees_language_order_but_not_path_spelling():
     assert not settings.scoring_changed(base, replace(base, cv_path="./cv.md"))  # the same file
 
 
+def test_detect_skills_ignores_everyday_words():
+    assert settings.detect_skills("Mobile: +420 123. Spring 2024 exams, grade C. I like to go deeper. "
+                                  "The rest is history.") == []
+    assert settings.detect_skills("Go, C, C++, R, Spring Boot, mobile apps, REST APIs") == [
+        "C/C++", "Go", "R", "Spring", "Mobile", "REST API"]
+    assert settings.guess_main_skill(["Go", "Python"], "go go go. Python") == "Python"
+
+
 def test_canonical_skill_and_language_names():
     assert settings.skill_name("python") == "Python" and settings.skill_name("Kotlin MP") == "Kotlin MP"
     assert settings.language_name("  english ") == "English"

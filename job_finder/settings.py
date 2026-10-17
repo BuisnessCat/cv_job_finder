@@ -1,6 +1,7 @@
 """Everything personal about the user: CV, skills, where and what to search, level, languages, thresholds
 (spec section 15). Stored as one JSON row in the database; filled by the first-run wizard."""
 import os
+import re
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
@@ -21,6 +22,17 @@ SCORING_FIELDS = ("cv_path", "city", "remote", "levels", "languages")
 # Dictionary groups that are not skills you list in a CV's skills
 NOT_SKILLS = {"Experience 2+ years", "Czech", "German", "Other languages", "English C1+", "Degree",
               "Domain knowledge", "Soft skills", "Project management"}
+# Names the job dictionary matches loosely that are everyday words in a CV: here they count only when written like
+# the skill ("Go", not "go deeper"; "C," in a list, not "grade C."; not "Spring 2024", "Mobile: +420", "the rest")
+_WORD = r"(?<![\w#+.])(?:{})(?![\w#+])"
+CV_PATTERNS = {
+    "C/C++": re.compile(_WORD.format(r"C(?=\s*[,/)])|C\+\+|c\+\+")),
+    "Go": re.compile(_WORD.format(r"Go(?!-)|Golang|golang")),
+    "R": re.compile(_WORD.format(r"R(?=\s*[,/)])|R programming|RStudio")),
+    "Spring": re.compile(_WORD.format(r"spring(?!\s+(?:19|20)\d\d)"), re.IGNORECASE),
+    "Mobile": re.compile(_WORD.format(r"android|ios|mobile(?!\s*:)|flutter|react native"), re.IGNORECASE),
+    "REST API": re.compile(_WORD.format(r"REST(?:ful)?|(?i:rest\s+apis?|restful|apis?|web\s+services?)")),
+}
 
 
 @dataclass
@@ -100,10 +112,15 @@ def read_cv_text(path: str) -> str:
     return text
 
 
+def _cv_mentions(name: str, text: str) -> int:
+    """How many times a CV mentions a skill from the dictionary (stricter for everyday words, see CV_PATTERNS)."""
+    pattern = CV_PATTERNS.get(name)
+    return len(pattern.findall(text)) if pattern else insights.mentions(name, text)
+
+
 def detect_skills(text: str) -> list[str]:
     """Skills mentioned in a CV, by the Insights dictionary, in dictionary order."""
-    found = insights.find(text) - NOT_SKILLS
-    return [name for name in insights.REQUIREMENTS if name in found]
+    return [name for name in insights.REQUIREMENTS if name not in NOT_SKILLS and _cv_mentions(name, text)]
 
 
 def skill_name(name: str) -> str:
@@ -122,7 +139,7 @@ def guess_main_skill(skills: list[str], cv_text: str) -> str:
     """The programming language among the skills that the CV mentions most; without one, the first skill."""
     languages = [name for name in skills if name in PROGRAMMING_LANGUAGES]
     if languages:
-        return max(languages, key=lambda name: insights.mentions(name, cv_text))  # a tie: the earlier one
+        return max(languages, key=lambda name: _cv_mentions(name, cv_text))  # a tie: the earlier one
     return skills[0] if skills else ""
 
 
