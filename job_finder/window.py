@@ -227,6 +227,7 @@ class MainWindow(QMainWindow):
         self.worker.evaluated.connect(self.on_evaluated)
         self.worker.finished.connect(self.on_finished)
 
+        self.new_good = 0  # new jobs scored NOTIFY_SCORE+ during the current refresh, for the notification
         self.quitting = False  # Quit from the tray: closing the window really closes the app
         self.tray_hint_shown = False
         self.tray = self._build_tray() if self.tray_available() else None
@@ -820,6 +821,7 @@ class MainWindow(QMainWindow):
         self.settings_button.setEnabled(False)  # the pass reads the settings once, at its start
         self.settings_button.setToolTip("Available when the refresh finishes")
         self.load_rows()  # if the CV changed, old scores leave the list
+        self.new_good = 0
         self.worker.start()
 
     def on_progress(self, done: int, total: int) -> None:
@@ -836,7 +838,12 @@ class MainWindow(QMainWindow):
             return
         self.rows.append(row)  # render() puts it in place according to the filters and order
         self.new_urls = db.unseen_urls()  # the job may have reached the database after the list was loaded
+        if row["score"] >= self.notify_score() and row["url"] in self.new_urls:  # a job seen before is not news
+            self.new_good += 1
         self.render()
+
+    def notify_score(self) -> int:
+        return max(config.NOTIFY_SCORE, (self.settings or Settings()).min_score)
 
     def on_finished(self) -> None:
         self.refreshing = False
@@ -847,6 +854,11 @@ class MainWindow(QMainWindow):
         self.load_rows()  # drop jobs that vanished from the source or were filtered out by location
         if self.views.currentIndex() == 1:
             self.render_insights()  # the numbers changed while the tab was open
+        if self.new_good and self.tray is not None and not self.isActiveWindow():  # hidden, minimized or behind
+            jobs = "job" if self.new_good == 1 else "jobs"
+            self.tray.showMessage("Job Finder", f"{self.new_good} new {jobs} with a score of {self.notify_score()}+",
+                                  QSystemTrayIcon.Information, 10000)
+        self.new_good = 0
 
     def show_cv(self) -> None:
         """Show the "My CV" window with the current file; one window for the whole app."""

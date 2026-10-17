@@ -807,3 +807,37 @@ def test_auto_refresh_skips_busy_and_running(tray_window, monkeypatch):
     tray_window.auto_refresh()
     tray_window.refresh_now()
     assert started == [True, True]
+
+
+def test_notification_for_new_good_jobs_when_window_inactive(tray_window, monkeypatch):
+    use_settings(config.CV_PATH)  # temporary CV from the fixture; threshold 5
+    messages = []
+    monkeypatch.setattr(tray_window.tray, "showMessage", lambda *args: messages.append(args[1]))
+
+    def scored(url, score):  # a job that arrived during this refresh and got its score
+        db.save_jobs(f"src-{url}", [Job(url=url, source=f"src-{url}", title=f"Job {url}", company="A", city="",
+                                        published="2026-10-01", description="")])
+        db.save_evaluation(url, row(url, score)["evaluation"], "key")
+        tray_window.on_evaluated(row(url, score))
+
+    tray_window.refresh()
+    scored("a", 8)
+    scored("b", 6)
+    tray_window.on_finished()
+    assert messages == ["1 new job with a score of 7+"]
+    tray_window.refresh()
+    scored("c", 9)
+    monkeypatch.setattr(tray_window, "isActiveWindow", lambda: True)
+    tray_window.on_finished()
+    assert len(messages) == 1  # the window is in front: the list shows them
+    monkeypatch.setattr(tray_window, "isActiveWindow", lambda: False)
+    db.mark_all_seen()
+    tray_window.refresh()
+    tray_window.on_evaluated(row("c", 9))  # scored again (e.g. after a settings change), but already seen
+    tray_window.on_finished()
+    assert len(messages) == 1
+    tray_window.refresh()
+    scored("e", 7)
+    scored("f", 10)
+    tray_window.on_finished()
+    assert messages[-1] == "2 new jobs with a score of 7+"

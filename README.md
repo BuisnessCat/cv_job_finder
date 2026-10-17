@@ -26,6 +26,10 @@ my CV, and asks a local AI model to score the rest from 1 to 10 and explain the 
   accepted or rejected, write notes and see how long I've been waiting for an answer.
 - The Insights tab counts what I'm missing most often across all jobs. Handy for deciding what to
   learn next.
+- Lives in the tray. Every 3 hours it looks for new jobs by itself, and a Windows notification tells
+  me when there are new ones scored 7 or more. It waits while a full-screen game is running, because
+  the game and the model share the graphics card.
+- Doesn't spend time scoring jobs older than a month, and shows the salary when the site gives one.
 
 Nothing leaves the computer except the requests to the job boards. The CV and the database stay on
 your machine.
@@ -121,6 +125,10 @@ can start reading right away. Later only new jobs get scored, which is a matter 
 
 Avoid playing games while it's scoring: the game and the model share the video memory, and scoring
 gets slow or fails.
+
+Closing the window doesn't quit the app: it keeps running in the tray (next to the clock) and looks for
+new jobs every 3 hours. Click the icon to open the window again; to quit, right-click it and choose
+**Quit**.
 
 Everything from the setup can be changed later with the **Settings** button at the top of the window.
 If a change affects the scores (your CV, city, levels or languages), the app tells you how long
