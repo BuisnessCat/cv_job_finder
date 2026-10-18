@@ -96,6 +96,15 @@ def test_evaluated_rows_carry_first_seen(setup, monkeypatch):
     assert len(rows) == 3 and all(r["first_seen"] for r in rows)
 
 
+def test_remote_sources_not_fetched_are_saved_as_such(setup, monkeypatch):
+    settings.save(replace(settings.load(), remote=False))
+    monkeypatch.setattr(sources, "fetch_all", lambda s: ({"Jobicy": [], "junior.guru": []}, {}))
+    saved = []
+    monkeypatch.setattr(db, "save_jobs", lambda name, jobs, **kwargs: saved.append((name, kwargs.get("fetched", True))))
+    worker.Worker()._refresh()
+    assert dict(saved) == {"Jobicy": False, "junior.guru": True}  # Jobicy is remote-only: not asked, not gone
+
+
 def test_old_jobs_are_not_scored(setup, monkeypatch):
     # Older than the widest freshness filter (30 days): the model's time is not spent on them
     jobs = [Job(url=url, source="Jobicy", title=f"Python dev {url}", company="A", city="", published=published,

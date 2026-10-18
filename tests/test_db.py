@@ -323,6 +323,9 @@ def test_gone_jobs_stay_listed_for_a_week():
     db.save_jobs("Jobicy", [job("a"), job("b")], today="2026-10-17")  # back in the list
     assert {r["url"]: r["gone_at"] for r in db.list_jobs("h1", 5, gone_days=7, today="2026-10-17")} == {
         "a": "", "b": ""}
+    db.save_jobs("Jobicy", [job("b")], today="2026-10-18")  # gone again: the new date, not the old one
+    assert {r["url"]: r["gone_at"] for r in db.list_jobs("h1", 5, gone_days=7, today="2026-10-18")}["a"] == \
+        "2026-10-18"
 
 
 def test_update_shows_recently_gone_jobs_for_a_week(tmp_path, monkeypatch):
@@ -345,3 +348,37 @@ def test_update_shows_recently_gone_jobs_for_a_week(tmp_path, monkeypatch):
     db.save_jobs("Jobicy", [])
     assert {r["url"]: r["gone_at"] for r in db.list_jobs("h1", 5, gone_days=7)} == {
         "recent": date.today().isoformat()}
+
+
+def test_gone_job_not_shown_next_to_its_repost():
+    first = Job(url="a1", source="Jobicy", title="Dev", company="ACME", city="Remote", published="2026-10-01",
+                description="")
+    db.save_jobs("Jobicy", [first], today="2026-10-10")
+    db.save_evaluation("a1", evaluation(8), "h1")
+    db.save_jobs("Jobicy", [Job(url="a2", source="Jobicy", title="Dev", company="ACME", city="Remote",
+                                published="2026-10-11", description="")], today="2026-10-11")  # a new link
+    db.save_evaluation("a2", evaluation(8), "h1")
+    assert [r["url"] for r in db.list_jobs("h1", 5, gone_days=7, today="2026-10-12")] == ["a2"]
+    # The labour office's titles are profession classes: another job with the same title is not the same job
+    for url, day in [("u1", "2026-10-10"), ("u2", "2026-10-11")]:
+        db.save_jobs("Úřad práce", [Job(url=url, source="Úřad práce", title="Vývojáři softwaru", company="Skype",
+                                        city="Prague", published=day, description="")], today=day)
+        db.save_evaluation(url, evaluation(7), "h1")
+    assert {r["url"] for r in db.list_jobs("h1", 5, gone_days=7, today="2026-10-12")} >= {"u1", "u2"}
+
+
+def test_sources_not_fetched_are_not_gone():
+    # Remote turned off: the remote sites aren't asked, their jobs are not "no longer listed"
+    db.save_jobs("Remote OK", [job("r", source="Remote OK")], today="2026-10-10")
+    db.save_evaluation("r", evaluation(8), "h1")
+    db.save_jobs("Remote OK", [], today="2026-10-11", fetched=False)
+    assert db.list_jobs("h1", 5, gone_days=7, today="2026-10-12") == []
+
+
+def test_recently_gone_jobs_are_scored_again():
+    # After a CV or settings change a job still shown as "no longer listed" needs its new score
+    db.save_jobs("Jobicy", [job("a"), job("old")], today="2026-10-01")
+    db.save_jobs("Jobicy", [job("old")], today="2026-10-10")  # "a" is gone since 10-10
+    assert set(urls(db.pending_jobs("new", gone_days=7, today="2026-10-12"))) == {"a", "old"}
+    assert urls(db.pending_jobs("new")) == ["old"]  # without gone_days: listed jobs only
+    assert urls(db.pending_jobs("new", gone_days=7, today="2026-10-30")) == ["old"]  # gone over a week ago

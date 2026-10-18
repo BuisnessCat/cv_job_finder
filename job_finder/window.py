@@ -614,11 +614,8 @@ class MainWindow(QMainWindow):
         """Re-read found jobs (scored under the current CV) and applications from the database."""
         self.settings = settings.load()
         cv = read_cv(self.settings)
-        rows = db.list_jobs(cv[1], self.settings.min_score, config.GONE_DAYS) if cv else []
-        # A job gone from a source that is still searched stays a week (muted, with a note); a job that is simply
-        # not searched any more (another city, remote turned off) leaves the list at once
-        self.rows = [row for row in rows if not row["gone_at"]
-                     or sources.still_fetched(row["source"], row["city"], self.settings)]
+        # Also jobs their source stopped listing in the last week: muted, with a note to check the link
+        self.rows = db.list_jobs(cv[1], self.settings.min_score, config.GONE_DAYS) if cv else []
         self.applied = db.list_applied()
         for row in self.applied:  # "probably filled" only if still searched for: after a city change it isn't fetched
             row["closed"] = row["closed"] and (self.settings is None

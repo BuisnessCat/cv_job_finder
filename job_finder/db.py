@@ -89,11 +89,12 @@ def put_settings(data: dict) -> None:
                      (json.dumps(data, ensure_ascii=False),))
 
 
-def save_jobs(source: str, jobs: list[Job], today: str | None = None) -> None:
+def save_jobs(source: str, jobs: list[Job], today: str | None = None, fetched: bool = True) -> None:
     """Store a source's fresh batch; its jobs missing from the batch become inactive (gone_at: since when).
 
     A new job gets first_seen = the earliest first_seen of a job with the same company and title, else today;
-    an existing job keeps its first_seen."""
+    an existing job keeps its first_seen. fetched=False: the source wasn't asked (remote turned off), so its jobs
+    are not "no longer listed", just not searched for."""
     today = today or date.today().isoformat()
     with _connect() as conn:
         earliest: dict[tuple[str, str], str] = {}
@@ -114,17 +115,20 @@ def save_jobs(source: str, jobs: list[Job], today: str | None = None) -> None:
              for job in jobs],
         )
         conn.execute("UPDATE jobs SET gone_at = ? WHERE source = ? AND active = 0 AND gone_at IS NULL",
-                     (today, source))
+                     (today if fetched else "2000-01-01", source))
 
 
-def pending_jobs(cv_hash: str) -> list[Job]:
-    """Active, not hidden jobs with no application and no evaluation under the current key, newest first."""
+def pending_jobs(cv_hash: str, gone_days: int = 0, today: str | None = None) -> list[Job]:
+    """Active, not hidden jobs with no application and no evaluation under the current key, newest first. With
+    gone_days, also jobs gone in the last gone_days days: they are still shown and need a score under the new key."""
+    since = (date.fromisoformat(today) if today else date.today()) - timedelta(days=gone_days)
     with _connect() as conn:
         rows = conn.execute(
             f"""SELECT {JOB_FIELDS} FROM jobs
-                WHERE active = 1 AND hidden = 0 AND status IS NULL AND (cv_hash IS NULL OR cv_hash != ?)
+                WHERE (active = 1 OR (? > 0 AND gone_at >= ?)) AND hidden = 0 AND status IS NULL
+                  AND (cv_hash IS NULL OR cv_hash != ?)
                 ORDER BY published DESC""",
-            (cv_hash,),
+            (gone_days, since.isoformat(), cv_hash),
         ).fetchall()
     return [Job(**dict(row)) for row in rows]
 
@@ -245,8 +249,14 @@ def list_jobs(cv_hash: str, min_score: int, gone_days: int = 0, today: str | Non
                 ORDER BY score DESC, published DESC""",
             (gone_days, since.isoformat(), cv_hash, min_score),
         ).fetchall()
+        # A gone job that is listed again under another link (a repost, or another site) is not shown twice
+        listed = {same_job_key(r["company"], r["title"]) for r in conn.execute(
+            "SELECT company, title FROM jobs WHERE active = 1")}
     return [{**make_row(Job(*tuple(row)[:8]), json.loads(row["evaluation"]), row["first_seen"] or ""),
-             "gone_at": "" if row["active"] else row["gone_at"] or ""} for row in rows]
+             "gone_at": "" if row["active"] else row["gone_at"] or ""}
+            for row in rows
+            if row["active"] or row["source"] in config.NO_TWIN_SOURCES
+            or same_job_key(row["company"], row["title"]) not in listed]
 
 
 def list_applied() -> list[dict]:

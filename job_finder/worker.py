@@ -75,7 +75,8 @@ class Worker(QObject):
         self.status.emit("Loading jobs…")
         fetched, errors = sources.fetch_all(s)
         for name, jobs in fetched.items():
-            db.save_jobs(name, jobs)
+            # Remote turned off: the remote-only sites weren't asked, their jobs aren't "no longer listed"
+            db.save_jobs(name, jobs, fetched=s.remote or name not in sources.REMOTE_ONLY)
         log.info("Loaded: %s", {name: len(jobs) for name, jobs in fetched.items()})
         notes = [f"{name}: error ({error})" for name, error in errors.items()]
 
@@ -88,7 +89,7 @@ class Worker(QObject):
         if not skill_list:
             return _join("No skills in Settings, evaluation skipped", notes)
         today = date.today()
-        todo = [job for job in db.pending_jobs(cv_hash)
+        todo = [job for job in db.pending_jobs(cv_hash, config.GONE_DAYS)
                 if skills.matches(job, skill_list) and not too_old(job, today)]
         log.info("To evaluate: %d", len(todo))
 

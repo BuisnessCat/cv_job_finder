@@ -947,6 +947,8 @@ def test_paused_refresh_is_retried(tray_window):
 def test_gone_job_shown_muted_with_a_note(window):
     add_found("a", 8)
     add_found("b", 7)
+    with sqlite3.connect(config.DB_PATH) as conn:  # fresh jobs: muted only because one of them is gone
+        conn.execute("UPDATE jobs SET published = ?, first_seen = ?", (date.today().isoformat(),) * 2)
     db.save_jobs("src-a", [])  # "a" is no longer in its source's list
     window.load_rows()
     rows = {window.table.item(i, 1).text(): i for i in range(window.table.rowCount())}
@@ -956,6 +958,8 @@ def test_gone_job_shown_muted_with_a_note(window):
     assert window.table.item(gone, 1).foreground().color().name() == style.COLORS["muted"]
     window.table.selectRow(gone)
     assert not window.d_gone.isHidden() and "src-a" in window.d_gone.text() and "check" in window.d_gone.text()
+    assert "no longer listed" not in window.table.item(rows["Job b"], 4).text()
+    assert window.table.item(rows["Job b"], 1).foreground().color().name() != style.COLORS["muted"]
     window.table.selectRow(rows["Job b"])
     assert window.d_gone.isHidden()
 
