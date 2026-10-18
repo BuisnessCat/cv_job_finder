@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -73,7 +73,7 @@ def test_list_filters_by_threshold_and_sorts():
         db.save_evaluation(url, evaluation(score), "h1")
     rows = db.list_jobs("h1", 5)
     assert [row["url"] for row in rows] == ["c", "d", "a"]
-    assert rows[0] == db.make_row(job("c"), evaluation(9), date.today().isoformat())
+    assert rows[0] == {**db.make_row(job("c"), evaluation(9), date.today().isoformat()), "gone_at": ""}
 
 
 def test_duplicate_url_in_one_batch():
@@ -257,30 +257,26 @@ def test_unhide_returns_job():
 
 
 def test_closed_mark_only_for_full_list_sources():
-    jg = Job(url="jg", source="junior.guru", title="Dev", company="A", city="Prague", published="2026-10-01",
-             description="")
-    him = Job(url="him", source="Himalayas", title="Dev", company="B", city="Remote", published="2026-10-01",
-              description="")
-    db.save_jobs("junior.guru", [jg])
-    db.save_jobs("Himalayas", [him])
-    for url in ("jg", "him"):
+    # junior.guru only shows jobs from other sites (jobs.cz, LinkedIn) and drops some early: no "probably filled"
+    for url, source in [("jb", "Jobicy"), ("jg", "junior.guru"), ("him", "Himalayas")]:
+        db.save_jobs(source, [Job(url=url, source=source, title="Dev", company=url, city="Remote",
+                                  published="2026-10-01", description="")])
         db.save_evaluation(url, evaluation(8), "h1")
         db.apply(url)
-    db.save_jobs("junior.guru", [])
-    db.save_jobs("Himalayas", [])
+        db.save_jobs(source, [])
     closed = {r["url"]: r["closed"] for r in db.list_applied()}
-    assert closed == {"jg": True, "him": False}
+    assert closed == {"jb": True, "jg": False, "him": False}
 
 
 def test_closed_mark_skipped_when_listed_elsewhere():
-    jg = Job(url="jg", source="junior.guru", title="Dev", company="A", city="Prague", published="2026-10-01",
+    jb = Job(url="jb", source="Jobicy", title="Dev", company="A", city="Remote", published="2026-10-01",
              description="")
-    db.save_jobs("junior.guru", [jg])
-    db.save_evaluation("jg", evaluation(8), "h1")
-    db.apply("jg")
-    db.save_jobs("junior.guru", [])
-    db.save_jobs("Jobicy", [Job(url="jb", source="Jobicy", title="dev", company="a", city="Remote",
-                                published="2026-10-02", description="")])
+    db.save_jobs("Jobicy", [jb])
+    db.save_evaluation("jb", evaluation(8), "h1")
+    db.apply("jb")
+    db.save_jobs("Jobicy", [])
+    db.save_jobs("Himalayas", [Job(url="him", source="Himalayas", title="dev", company="a", city="Remote",
+                                   published="2026-10-02", description="")])
     assert db.list_applied()[0]["closed"] is False
 
 
@@ -310,3 +306,42 @@ def test_labour_office_jobs_keep_their_own_first_seen():
                  published="2026-10-18", description="")
     db.save_jobs("Úřad práce", [first, second], today="2026-10-18")
     assert db.first_seen("b") == "2026-10-18"
+
+
+def test_gone_jobs_stay_listed_for_a_week():
+    db.save_jobs("Jobicy", [job("a"), job("b")], today="2026-10-10")
+    db.save_evaluation("a", evaluation(8), "h1")
+    db.save_evaluation("b", evaluation(7), "h1")
+    db.save_jobs("Jobicy", [job("b")], today="2026-10-12")  # "a" is gone from the source
+    rows = db.list_jobs("h1", 5, gone_days=7, today="2026-10-15")
+    assert {r["url"]: r["gone_at"] for r in rows} == {"a": "2026-10-12", "b": ""}
+    assert [r["url"] for r in db.list_jobs("h1", 5)] == ["b"]  # the refresh summary counts listed jobs only
+    assert [r["url"] for r in db.list_jobs("h1", 5, gone_days=7, today="2026-10-20")] == ["b"]  # a week later
+    db.save_jobs("Jobicy", [job("b")], today="2026-10-16")  # still gone: the date it went stays
+    assert {r["url"]: r["gone_at"] for r in db.list_jobs("h1", 5, gone_days=7, today="2026-10-16")}["a"] == \
+        "2026-10-12"
+    db.save_jobs("Jobicy", [job("a"), job("b")], today="2026-10-17")  # back in the list
+    assert {r["url"]: r["gone_at"] for r in db.list_jobs("h1", 5, gone_days=7, today="2026-10-17")} == {
+        "a": "", "b": ""}
+
+
+def test_update_shows_recently_gone_jobs_for_a_week(tmp_path, monkeypatch):
+    # Before this version nobody noted when a job went: one seen in the last month counts as gone today
+    # (so a good job that just vanished comes back for a week); older ones stay hidden
+    old = tmp_path / "old.db"
+    conn = sqlite3.connect(old)
+    conn.execute("""CREATE TABLE jobs (url TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT NOT NULL,
+        company TEXT NOT NULL, city TEXT NOT NULL, published TEXT NOT NULL, description TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, score INTEGER, evaluation TEXT,
+        cv_hash TEXT)""")
+    for url, days in [("recent", 3), ("old", 60)]:
+        published = (date.today() - timedelta(days=days)).isoformat()
+        conn.execute("INSERT INTO jobs VALUES (?, 'Jobicy', ?, 'ACME', 'Praha', ?, '', 0, 0, 8, ?, 'h1')",
+                     (url, f"Job {url}", published, json.dumps(evaluation(8))))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(config, "DB_PATH", old)
+    db.init()
+    db.save_jobs("Jobicy", [])
+    assert {r["url"]: r["gone_at"] for r in db.list_jobs("h1", 5, gone_days=7)} == {
+        "recent": date.today().isoformat()}

@@ -3,7 +3,7 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict
-from datetime import date
+from datetime import date, timedelta
 
 from job_finder import config
 from job_finder.sources import Job, same_job_key
@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     notes       TEXT,               -- application notes
     seen        INTEGER NOT NULL DEFAULT 0, -- 0: appeared after the window was last closed (new)
     first_seen  TEXT,               -- YYYY-MM-DD when the app first saw this job (or its twin)
-    salary      TEXT                -- "$2,000–3,000 / month" when the site gives one
+    salary      TEXT,               -- "$2,000–3,000 / month" when the site gives one
+    gone_at     TEXT                -- YYYY-MM-DD when the source stopped listing it (NULL while listed)
 )
 """
 
@@ -66,6 +67,13 @@ def init() -> None:
             # The site's date for existing jobs: no false "reposted" marks right after the update
             conn.execute("UPDATE jobs SET first_seen = COALESCE(NULLIF(published, ''), ?)",
                          (date.today().isoformat(),))
+        if "gone_at" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN gone_at TEXT")
+            # Nobody noted before when a job went: one first seen in the last month counts as gone today (a good
+            # job that just vanished comes back for a week), older ones as gone long ago
+            today = date.today()
+            conn.execute("UPDATE jobs SET gone_at = CASE WHEN first_seen >= ? THEN ? ELSE '2000-01-01' END "
+                         "WHERE active = 0", ((today - timedelta(days=30)).isoformat(), today.isoformat()))
 
 
 def get_settings() -> dict | None:
@@ -82,7 +90,7 @@ def put_settings(data: dict) -> None:
 
 
 def save_jobs(source: str, jobs: list[Job], today: str | None = None) -> None:
-    """Store a source's fresh batch; its jobs missing from the batch become inactive.
+    """Store a source's fresh batch; its jobs missing from the batch become inactive (gone_at: since when).
 
     A new job gets first_seen = the earliest first_seen of a job with the same company and title, else today;
     an existing job keeps its first_seen."""
@@ -99,11 +107,14 @@ def save_jobs(source: str, jobs: list[Job], today: str | None = None) -> None:
                 ON CONFLICT(url) DO UPDATE SET
                     source = excluded.source, title = excluded.title, company = excluded.company,
                     city = excluded.city, published = excluded.published,
-                    description = excluded.description, salary = excluded.salary, active = 1""",
+                    description = excluded.description, salary = excluded.salary, active = 1,
+                    gone_at = NULL""",
             [{**asdict(job), "first_seen": today if job.source in config.NO_TWIN_SOURCES
               else earliest.get(same_job_key(job.company, job.title), today)}
              for job in jobs],
         )
+        conn.execute("UPDATE jobs SET gone_at = ? WHERE source = ? AND active = 0 AND gone_at IS NULL",
+                     (today, source))
 
 
 def pending_jobs(cv_hash: str) -> list[Job]:
@@ -222,16 +233,20 @@ def make_row(job: Job, evaluation: dict, first_seen: str = "") -> dict:
     return {**row, "score": evaluation["score"], "evaluation": evaluation, "first_seen": first_seen}
 
 
-def list_jobs(cv_hash: str, min_score: int) -> list[dict]:
-    """Jobs for the window: scored under the current CV at or above the threshold, best first."""
+def list_jobs(cv_hash: str, min_score: int, gone_days: int = 0, today: str | None = None) -> list[dict]:
+    """Jobs for the window: scored under the current CV at or above the threshold, best first. With gone_days,
+    also jobs their source stopped listing in the last gone_days days (gone_at says since when)."""
+    since = (date.fromisoformat(today) if today else date.today()) - timedelta(days=gone_days)
     with _connect() as conn:
         rows = conn.execute(
-            f"""SELECT {JOB_FIELDS}, evaluation, first_seen FROM jobs
-                WHERE active = 1 AND hidden = 0 AND status IS NULL AND cv_hash = ? AND score >= ?
+            f"""SELECT {JOB_FIELDS}, evaluation, first_seen, active, gone_at FROM jobs
+                WHERE (active = 1 OR (? > 0 AND gone_at >= ?)) AND hidden = 0 AND status IS NULL
+                  AND cv_hash = ? AND score >= ?
                 ORDER BY score DESC, published DESC""",
-            (cv_hash, min_score),
+            (gone_days, since.isoformat(), cv_hash, min_score),
         ).fetchall()
-    return [make_row(Job(*tuple(row)[:8]), json.loads(row["evaluation"]), row["first_seen"] or "") for row in rows]
+    return [{**make_row(Job(*tuple(row)[:8]), json.loads(row["evaluation"]), row["first_seen"] or ""),
+             "gone_at": "" if row["active"] else row["gone_at"] or ""} for row in rows]
 
 
 def list_applied() -> list[dict]:

@@ -41,8 +41,12 @@ NOTIFY_SCORE = 7
 # Jobs older than this by the site's date are not scored: the default 30-day freshness filter hides them anyway
 OLD_JOB_DAYS = 30
 
-# Sources that return their whole list: a job missing from them was probably taken down
-FULL_LIST_SOURCES = ("junior.guru", "Jobicy", "Úřad práce")
+# Sources that return their whole list: a job missing from them was probably taken down. Not junior.guru: it
+# only shows jobs from other sites (jobs.cz, LinkedIn, StartupJobs) and drops some while they are still open
+FULL_LIST_SOURCES = ("Jobicy", "Úřad práce")
+
+# A job its source stopped listing stays in the found list this many days, muted, with a note to check the link
+GONE_DAYS = 7
 
 # Titles there are profession classes ("Vývojáři softwaru"): the same company and title can be a different job
 NO_TWIN_SOURCES = ("Úřad práce",)

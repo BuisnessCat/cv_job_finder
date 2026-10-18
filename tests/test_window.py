@@ -667,7 +667,7 @@ def test_undo_for_filtered_job_does_not_crash(window):
 def test_closed_mark_only_for_jobs_still_searched(window):
     s = use_settings(config.CV_PATH)  # temporary CV from the fixture; Praha, remote is fine
     key = worker.read_cv(s)[1]
-    for url, source, city in [("jg", "junior.guru", "Prague"), ("jy", "Jobicy", "Remote")]:
+    for url, source, city in [("up", "Úřad práce", "Prague"), ("jy", "Jobicy", "Remote")]:
         db.save_jobs(source, [Job(url=url, source=source, title=f"Dev {url}", company=url, city=city,
                                   published="2026-10-01", description="")])
         db.save_evaluation(url, row(url, 8)["evaluation"], key)
@@ -678,11 +678,11 @@ def test_closed_mark_only_for_jobs_still_searched(window):
         window.load_rows()
         return sorted(window.applied_table.item(i, 1).text() for i in range(window.applied_table.rowCount()))
 
-    assert marks() == ["⊘ Dev jg", "⊘ Dev jy"]
+    assert marks() == ["⊘ Dev jy", "⊘ Dev up"]
     settings.save(replace(s, city="Brno"))  # Prague jobs are not searched for any more; remote ones still are
-    assert marks() == ["Dev jg", "⊘ Dev jy"]
+    assert marks() == ["Dev up", "⊘ Dev jy"]
     settings.save(replace(s, city="Brno", remote=False))
-    assert marks() == ["Dev jg", "Dev jy"]
+    assert marks() == ["Dev jy", "Dev up"]
 
 
 def test_settings_save_reloads_open_cv_window(window, monkeypatch, tmp_path):
@@ -717,7 +717,7 @@ def test_settings_save_reloads_open_cv_window(window, monkeypatch, tmp_path):
 def test_closed_application_marked(window):
     use_settings(config.CV_PATH)  # temporary CV from the fixture
     key = worker.read_cv(settings.load())[1]
-    for url, source, title in [("jg", "junior.guru", "Dev JG"), ("him", "Himalayas", "Dev H")]:
+    for url, source, title in [("jb", "Jobicy", "Dev JB"), ("him", "Himalayas", "Dev H")]:
         db.save_jobs(source, [Job(url=url, source=source, title=title, company=url, city="Prague",
                                   published="2026-10-01", description="")])
         db.save_evaluation(url, row(url, 8)["evaluation"], key)
@@ -726,10 +726,10 @@ def test_closed_application_marked(window):
     window.load_rows()
     window.show_tab(1)
     by_title = {window.applied_table.item(i, 1).text(): i for i in range(window.applied_table.rowCount())}
-    assert set(by_title) == {"⊘ Dev JG", "Dev H"}
-    window.applied_table.selectRow(by_title["⊘ Dev JG"])
+    assert set(by_title) == {"⊘ Dev JB", "Dev H"}
+    window.applied_table.selectRow(by_title["⊘ Dev JB"])
     assert not window.d_closed.isHidden()
-    assert window.d_closed.text() == "No longer listed on junior.guru — probably filled"
+    assert window.d_closed.text() == "No longer listed on Jobicy — probably filled"
     window.applied_table.selectRow(by_title["Dev H"])
     assert window.d_closed.isHidden()
 
@@ -942,3 +942,31 @@ def test_paused_refresh_is_retried(tray_window):
     tray_window.worker.paused = True  # a full-screen game started during scoring
     tray_window.on_finished()
     assert tray_window.retry_timer.isActive()
+
+
+def test_gone_job_shown_muted_with_a_note(window):
+    add_found("a", 8)
+    add_found("b", 7)
+    db.save_jobs("src-a", [])  # "a" is no longer in its source's list
+    window.load_rows()
+    rows = {window.table.item(i, 1).text(): i for i in range(window.table.rowCount())}
+    assert set(rows) == {"Job a", "Job b"}  # still in the list for a week
+    gone = rows["Job a"]
+    assert "no longer listed" in window.table.item(gone, 4).text()
+    assert window.table.item(gone, 1).foreground().color().name() == style.COLORS["muted"]
+    window.table.selectRow(gone)
+    assert not window.d_gone.isHidden() and "src-a" in window.d_gone.text() and "check" in window.d_gone.text()
+    window.table.selectRow(rows["Job b"])
+    assert window.d_gone.isHidden()
+
+
+def test_gone_remote_job_hidden_when_remote_is_off(window):
+    s = use_settings(config.CV_PATH)
+    key = worker.read_cv(s)[1]
+    db.save_jobs("Remote OK", [Job(url="r", source="Remote OK", title="Remote dev", company="R", city="Remote",
+                                   published=date.today().isoformat(), description="")])
+    db.save_evaluation("r", row("r", 8)["evaluation"], key)
+    settings.save(replace(s, remote=False))
+    db.save_jobs("Remote OK", [])  # not fetched with remote off: not "gone", just not searched for
+    window.load_rows()
+    assert window.rows == []

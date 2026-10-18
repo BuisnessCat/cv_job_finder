@@ -319,6 +319,9 @@ class MainWindow(QMainWindow):
         self.d_closed.setContentsMargins(0, 6, 0, 0)
         self.d_closed.hide()
         box.addWidget(self.d_closed)
+        self.d_gone = _label("staleHint")  # "No longer listed on … since …", found jobs gone from their source
+        self.d_gone.hide()
+        box.addWidget(self.d_gone)
         box.addWidget(self.notes_box)
         box.addWidget(self.d_notice)
         box.addSpacing(14)
@@ -611,7 +614,11 @@ class MainWindow(QMainWindow):
         """Re-read found jobs (scored under the current CV) and applications from the database."""
         self.settings = settings.load()
         cv = read_cv(self.settings)
-        self.rows = db.list_jobs(cv[1], self.settings.min_score) if cv else []
+        rows = db.list_jobs(cv[1], self.settings.min_score, config.GONE_DAYS) if cv else []
+        # A job gone from a source that is still searched stays a week (muted, with a note); a job that is simply
+        # not searched any more (another city, remote turned off) leaves the list at once
+        self.rows = [row for row in rows if not row["gone_at"]
+                     or sources.still_fetched(row["source"], row["city"], self.settings)]
         self.applied = db.list_applied()
         for row in self.applied:  # "probably filled" only if still searched for: after a city change it isn't fetched
             row["closed"] = row["closed"] and (self.settings is None
@@ -644,10 +651,13 @@ class MainWindow(QMainWindow):
             posted = freshness.age_text(day, today)
             if freshness.is_reposted(row["published"], row.get("first_seen", "")):
                 posted += " · reposted"
+            gone = bool(row.get("gone_at"))
+            if gone:
+                posted += " · no longer listed"
             items = [title_item, QTableWidgetItem(row["company"]), QTableWidgetItem(row["city"]),
                      QTableWidgetItem(posted)]
             age = freshness.age_days(day, today)
-            if age is not None and age > limits.stale_job_days:  # old: muted, the score keeps its colour
+            if gone or (age is not None and age > limits.stale_job_days):  # old or gone: muted, the score keeps its colour
                 for item in items:
                     item.setForeground(QColor(style.COLORS["muted"]))
             return [_score_item(row["score"]), *items]
@@ -797,6 +807,11 @@ class MainWindow(QMainWindow):
         else:
             self.notes_url = None
         self.d_stale.setVisible(stale)
+        gone = not is_application and bool(row.get("gone_at"))
+        self.d_gone.setVisible(gone)
+        if gone:
+            self.d_gone.setText(f"No longer listed on {row['source']} since {row['gone_at']}: it may be filled, "
+                                "or the site just dropped it. Open the job to check.")
         closed = is_application and row["closed"]
         self.d_closed.setVisible(closed)
         if closed:
