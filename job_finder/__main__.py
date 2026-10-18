@@ -10,7 +10,7 @@ from PySide6.QtNetwork import QLocalSocket
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from job_finder import config, db, llm, ready_window, settings, style
+from job_finder import config, db, installer, llm, ready_window, settings, style
 from job_finder.settings import Settings
 from job_finder.settings_window import first_run
 from job_finder.window import MainWindow
@@ -49,6 +49,12 @@ def main() -> None:
     )
     # pythonw has no console: unhandled exceptions go to the log
     sys.excepthook = lambda *exc_info: logging.critical("Unhandled exception", exc_info=exc_info)
+    if "--uninstall" in sys.argv:  # the "Uninstall Job Finder" shortcut
+        if acquire_lock(config.LOCK_PATH) is None:
+            installer.message("Job Finder is running. Close it (right-click its icon next to the clock, Quit) "
+                              "and try again.", error=True)
+            os._exit(1)
+        os._exit(installer.uninstall_main(config.DATA_DIR))
     # Our own app ID: otherwise Windows shows the pythonw.exe icon on the taskbar
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("job_finder.desktop")
     app = QApplication(sys.argv)
