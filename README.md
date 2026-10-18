@@ -38,79 +38,43 @@ your machine.
 
 ## Installing it
 
-It takes about 20 minutes, most of it waiting for downloads.
+It takes about 20 minutes, most of it waiting for downloads. You don't need Python or anything else
+besides LM Studio.
 
 ### What you need
 
 - Windows 10 or 11.
-- A graphics card with at least 8 GB of video memory that LM Studio supports. The AI model runs on
-  it. I use an RTX 3060 with 12 GB.
-- About 8 GB of free disk space: 6 GB for the model, the rest for Python libraries.
+- A graphics card that LM Studio supports. The AI model runs on it. With 8 GB of video memory or more
+  you get the same model I use (on my RTX 3060 with 12 GB). With less, the app picks a smaller model:
+  it's weaker, so the scores may differ a bit, but it works.
+- About 8 GB of free disk space: up to 6 GB for the model, the rest for the app.
 - Your CV as a Markdown, text or PDF file. A PDF has to contain text, not a scanned picture. If your
   CV is in Word, save it as PDF.
 
-### 1. Install Python 3.11
+### 1. Install LM Studio
 
-1. Download the Windows installer for **Python 3.11** (64-bit) from
-   [python.org/downloads](https://www.python.org/downloads/windows/). It has to be 3.11: the setup
-   script asks for exactly that version.
-2. Run it with the default options. Leave "py launcher" checked, the setup script needs it.
-3. Check it: open PowerShell and run
+Download and install [LM Studio](https://lmstudio.ai) and **open it once**: on the first start it sets
+up its command-line tool, which Job Finder uses to run the model. After that you can close it. You
+don't need to download a model there, Job Finder does it for you.
 
-   ```powershell
-   py -3.11 --version
-   ```
+### 2. Install Job Finder
 
-   It should print `Python 3.11.something`.
+1. Download **`JobFinder-Setup.exe`** from the
+   [latest release](https://github.com/BuisnessCat/cv_job_finder/releases/latest).
+2. Run it. Windows will probably say "Windows protected your PC", because the app isn't signed (a
+   signature costs money every year). Click **More info**, then **Run anyway**.
+3. The setup puts Job Finder into your user folder and makes shortcuts on the desktop and in the Start
+   menu. At the end it offers to open the app.
 
-### 2. Install LM Studio and download the model
+### 3. First start
 
-1. Download and install [LM Studio](https://lmstudio.ai).
-2. Open it once. On the first start it sets up its command-line tool (`lms`), which Job Finder uses to
-   start the model. After that you can close it.
-3. Download the model, about 6 GB. Either search for **ministral 3 8b** in LM Studio and download
-   `mistralai/ministral-3-8b`, or run this in PowerShell:
+If something is still missing, a **Getting ready** window says what:
 
-   ```powershell
-   & "$env:USERPROFILE\.lmstudio\bin\lms.exe" get mistralai/ministral-3-8b
-   ```
+- **LM Studio** isn't installed or was never opened: install it, open it once, click **Check again**.
+- **The AI model** isn't downloaded: click **Download model**. It's about 6 GB (or about 3 GB for the
+  smaller model), so it takes a while; you can keep the window open or continue, the download goes on.
 
-You don't need to load the model or start a server yourself. Job Finder does that when it needs the
-model and unloads it when it's done, so the video memory is free again.
-
-### 3. Download Job Finder
-
-Put it in a folder you're going to keep, for example `C:\Users\<you>\JobFinder`. The desktop shortcut
-points to this folder, and your jobs and notes are saved there, so don't use Downloads or a temporary
-folder.
-
-- With Git:
-
-  ```powershell
-  git clone https://github.com/BuisnessCat/cv_job_finder.git JobFinder
-  ```
-
-- Without Git: on the GitHub page click **Code → Download ZIP** and unzip it into that folder.
-
-### 4. Run the setup script
-
-1. Open the folder in Explorer, right-click an empty spot and choose **Open in Terminal** (on Windows 10:
-   hold Shift, right-click and choose **Open PowerShell window here**).
-2. Run:
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File install.ps1
-   ```
-
-   `-ExecutionPolicy Bypass` lets this one script run without changing any Windows settings.
-
-The script creates a `.venv` folder with the libraries the app needs (a couple of minutes) and puts a
-**Job Finder** shortcut on the desktop. When it prints `Done: a Job Finder shortcut is on the
-desktop`, you're set.
-
-### 5. First start
-
-Open Job Finder from the shortcut. A short setup asks three things:
+Then a short setup asks three things:
 
 1. **Your CV.** Pick the file. The app finds the skills in it and shows them as chips: remove the wrong
    ones, add the missing ones. Then pick your **main skill**. Remote job boards are searched by it, so
@@ -125,12 +89,12 @@ After **Start search** the app scores every job it found. The first time this ta
 8 seconds per job on my RTX 3060, so 20–40 minutes. Jobs show up in the list as they're scored, so you
 can start reading right away. Later only new jobs get scored, which is a matter of minutes.
 
-Avoid playing games while it's scoring: the game and the model share the video memory, and scoring
-gets slow or fails.
+Avoid playing games while it's scoring: the game and the model share the video memory. When a
+full-screen game is running, the app pauses the scoring and picks it up later.
 
 Closing the window doesn't quit the app: it keeps running in the tray (next to the clock) and looks for
-new jobs every 3 hours. Click the icon to open the window again; to quit, right-click it and choose
-**Quit**.
+new jobs every 3 hours. Click the icon or the desktop shortcut to open the window again; to quit,
+right-click the icon and choose **Quit**.
 
 Everything from the setup can be changed later with the **Settings** button at the top of the window.
 If a change affects the scores (your CV, city, levels or languages), the app tells you how long
@@ -140,32 +104,45 @@ scoring everything again will take and asks first.
 
 ### Updating
 
-- With Git: run `git pull` in the folder, then run the setup script again.
-- With a ZIP: download the new ZIP and unzip it over the old folder. Your jobs and settings are in
-  `jobs.db`, which isn't in the ZIP, so they stay. Then run the setup script again.
+Download the new `JobFinder-Setup.exe` and run it (quit Job Finder first). Your jobs, applications,
+notes and settings stay: they live in `%LOCALAPPDATA%\Job Finder`, apart from the app.
 
 ### Uninstalling
 
-Delete the desktop shortcut and the folder. Your jobs, applications and notes are in `jobs.db` in that
-folder, so copy it somewhere first if you want to keep them. The model can be deleted in LM Studio
-under My Models.
+Start menu → **Uninstall Job Finder**. Your jobs and notes stay in `%LOCALAPPDATA%\Job Finder`;
+delete that folder too if you don't need them. The model can be deleted in LM Studio under My Models.
 
 ### If something goes wrong
 
 | What you see | What to do |
 |---|---|
-| `Could not create .venv (Python 3.11 is required)` | Python 3.11 isn't installed, or the py launcher is missing. Go back to step 1. |
-| `running scripts is disabled on this system` | You ran `.\install.ps1` directly. Use the full command from step 4. |
-| `LM Studio: not found: …lms.exe` in the status line | LM Studio isn't installed or was never opened. Install it and open it once. |
-| `LM Studio: model failed to load` | The model isn't downloaded, or there isn't enough free video memory. Check step 2 and close games or other heavy apps. |
+| "Windows protected your PC" | The app isn't signed. Click **More info** → **Run anyway**. |
+| "Job Finder is running. Close it…" during setup | Right-click the icon next to the clock → **Quit**, then run the setup again. |
+| **Getting ready** says LM Studio isn't installed, but it is | Open LM Studio once (it sets up its command-line tool then) and click **Check again**. |
+| The model download failed | Check the internet connection and click **Download model** again, or download the model in LM Studio (search for "Ministral 3"). |
+| `LM Studio: model failed to load` in the status line | There isn't enough free video memory. Close games or other heavy apps and click Refresh. |
 | Scoring is very slow or times out | The graphics card is busy with something else. Close it and click Refresh. |
 | `Himalayas: error (521 …)` or another site error | That site is down for a while. The other sites still work; click Refresh later. |
-| `Job Finder is already open.` | It's already running. If you can't see it, end `pythonw.exe` in Task Manager. |
-| Anything else | Look at `job_finder.log` in the folder: every error is written there with details. |
+| Anything else | Look at `job_finder.log` in `%LOCALAPPDATA%\Job Finder`: every error is written there with details. |
+
+## Running it from the source code
+
+For developers, or if you'd rather not run an unsigned exe. You need Python **3.11** (with the py
+launcher) and LM Studio.
+
+```powershell
+git clone https://github.com/BuisnessCat/cv_job_finder.git JobFinder
+cd JobFinder
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+`install.ps1` makes a virtual environment with the libraries and a Job Finder shortcut on the desktop.
+Run from the source code, the app keeps its data in the project folder. To build `JobFinder-Setup.exe`
+yourself: `powershell -ExecutionPolicy Bypass -File build.ps1` (it puts the result into `dist`).
 
 ## Changing things
 
-Everything about you is in Settings. The technical bits are in `job_finder/config.py`: the model and
+Everything about you is in Settings. The technical bits are in `job_finder/config.py`: the models and
 what to ask the job boards for. The rules the model uses for scoring are a plain-text template in
 `job_finder/llm.py`, filled in from your settings. If you change the template or your CV, all jobs get
 scored again on the next refresh.
