@@ -10,3 +10,6 @@ master_cv.md
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Downloaded data kept between refreshes
+cache/
