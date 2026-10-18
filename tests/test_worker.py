@@ -23,6 +23,8 @@ def setup(tmp_path, monkeypatch):
                 published=days_ago(4 - i), description="") for i in (1, 2, 3)]  # u3 is the newest
     monkeypatch.setattr(sources, "fetch_all", lambda s: ({"Jobicy": jobs}, {}))
     monkeypatch.setattr(llm, "prepare", lambda: None)
+    # Not the real "Windows is busy" check: a full-screen app open while the tests run would pause the scoring
+    monkeypatch.setattr(worker.Worker, "pause_check", staticmethod(lambda: False))
     released = []
     monkeypatch.setattr(llm, "release", lambda wait=True: released.append(wait))
     return released
