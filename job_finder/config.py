@@ -39,6 +39,10 @@ HIMALAYAS_SENIORITY = {"intern": ["Entry-level"], "junior": ["Entry-level", "Mid
 # Dictionary names that the general rule (the part before "/", without " (any)") would turn into a poor search word
 HIMALAYAS_QUERY = {"C#/.NET": "C#", "C/C++": "C++", "CI/CD": "CI/CD"}
 HIMALAYAS_MAX_PAGES = 10  # 20 jobs per page
-JOBICY_URL = "https://jobicy.com/api/v2/remote-jobs"
+# Úřad práce ČR: every vacancy registered in Czechia, updated daily (~190 MB); the IT selection is kept in UP_CACHE
+UP_URL = "https://data.mpsv.cz/od/soubory/volna-mista/volna-mista.json"
+UP_CACHE = ROOT / "cache" / "uradprace.json"
+UP_DETAIL_URL = "https://up.gov.cz/volna-mista-v-cr#/volna-mista-detail/{}"
+JOBICY_URL ="https://jobicy.com/api/v2/remote-jobs"
 JOBICY_PARAMS = {"count": 50, "geo": "czechia", "industry": "dev"}
 WORKINGNOMADS_URL = "https://www.workingnomads.com/api/exposed_jobs/"
