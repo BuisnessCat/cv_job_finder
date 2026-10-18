@@ -72,7 +72,8 @@ If something is still missing, a **Getting ready** window says what:
 
 - **LM Studio** isn't installed or was never opened: install it, open it once, click **Check again**.
 - **The AI model** isn't downloaded: click **Download model**. It's about 6 GB (or about 3 GB for the
-  smaller model), so it takes a while; you can keep the window open or continue, the download goes on.
+  smaller model), so it takes a while. You can keep the window open, or continue and click **Refresh** in
+  the app when the download has finished.
 
 Then a short setup asks three things:
 
@@ -109,8 +110,8 @@ notes and settings stay: they live in `%LOCALAPPDATA%\Job Finder`, apart from th
 
 ### Uninstalling
 
-Start menu → **Uninstall Job Finder**. Your jobs and notes stay in `%LOCALAPPDATA%\Job Finder`;
-delete that folder too if you don't need them. The model can be deleted in LM Studio under My Models.
+Start menu → **Uninstall Job Finder** (the app isn't listed in Windows Settings → Apps). Your jobs and
+notes stay in `%LOCALAPPDATA%\Job Finder`; delete that folder too if you don't need them. The model can be deleted in LM Studio under My Models.
 
 ### If something goes wrong
 
@@ -120,7 +121,8 @@ delete that folder too if you don't need them. The model can be deleted in LM St
 | "Job Finder is running. Close it…" during setup | Right-click the icon next to the clock → **Quit**, then run the setup again. |
 | **Getting ready** says LM Studio isn't installed, but it is | Open LM Studio once (it sets up its command-line tool then) and click **Check again**. |
 | The model download failed | Check the internet connection and click **Download model** again, or download the model in LM Studio (search for "Ministral 3"). |
-| `LM Studio: model failed to load` in the status line | There isn't enough free video memory. Close games or other heavy apps and click Refresh. |
+| `LM Studio: model failed to load` in the status line | The model isn't downloaded yet (wait for the download, then click Refresh), or there isn't enough free video memory (close games or other heavy apps and click Refresh). |
+| Windows Defender or Smart App Control blocks the setup | The app isn't signed, so some security settings block it. Allow it in Windows Security, or run it from the source code (below). |
 | Scoring is very slow or times out | The graphics card is busy with something else. Close it and click Refresh. |
 | `Himalayas: error (521 …)` or another site error | That site is down for a while. The other sites still work; click Refresh later. |
 | Anything else | Look at `job_finder.log` in `%LOCALAPPDATA%\Job Finder`: every error is written there with details. |
@@ -136,7 +138,8 @@ cd JobFinder
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-`install.ps1` makes a virtual environment with the libraries and a Job Finder shortcut on the desktop.
+`install.ps1` makes a virtual environment with the libraries and a Job Finder shortcut on the desktop
+(don't also run the setup on the same computer: it would take over that shortcut).
 Run from the source code, the app keeps its data in the project folder. To build `JobFinder-Setup.exe`
 yourself: `powershell -ExecutionPolicy Bypass -File build.ps1` (it puts the result into `dist`).
 

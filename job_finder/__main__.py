@@ -50,7 +50,8 @@ def main() -> None:
     # pythonw has no console: unhandled exceptions go to the log
     sys.excepthook = lambda *exc_info: logging.critical("Unhandled exception", exc_info=exc_info)
     if "--uninstall" in sys.argv:  # the "Uninstall Job Finder" shortcut
-        if acquire_lock(config.LOCK_PATH) is None:
+        lock = acquire_lock(config.LOCK_PATH)  # kept until the end: the app can't start while removing
+        if lock is None:
             installer.message("Job Finder is running. Close it (right-click its icon next to the clock, Quit) "
                               "and try again.", error=True)
             os._exit(1)

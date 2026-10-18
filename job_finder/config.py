@@ -48,7 +48,8 @@ FULL_LIST_SOURCES = ("junior.guru", "Jobicy", "Úřad práce")
 NO_TWIN_SOURCES = ("Úřad práce",)
 
 # LM Studio
-LMS_EXE = Path.home() / ".lmstudio" / "bin" / "lms.exe"
+LMS_HOME = Path.home() / ".lmstudio"
+LMS_EXE = LMS_HOME / "bin" / "lms.exe"
 LM_PORT = 1234
 LM_URL = f"http://localhost:{LM_PORT}/v1"
 MODEL = "mistralai/ministral-3-8b"  # graphics cards with 8 GB and more

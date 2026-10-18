@@ -57,11 +57,24 @@ def test_uninstall_removes_shortcuts_and_schedules_the_folder(tmp_path):
         link.parent.mkdir(exist_ok=True)
         link.write_text("")
     target = tmp_path / "Programs" / "Job Finder"
+    target.mkdir(parents=True)
+    (target / "Job Finder.exe").write_text("")
     commands = []
-    installer.uninstall(target, desktop, start, run=lambda command, **kwargs: commands.append(command))
+    installer.uninstall(target, desktop, start, run=lambda command, **kwargs: commands.append((command, kwargs)))
     assert not list(desktop.iterdir()) and not list(start.iterdir())
-    # The running app can't delete its own folder: a short-lived command does it after the app quits
-    assert "rmdir /s /q" in commands[0] and f'"{target}"' in commands[0]
+    # The running app can't delete its own folder: a short-lived command does it after the app quits,
+    # started outside the folder (a process's current folder can't be removed)
+    command, kwargs = commands[0]
+    assert "rmdir /s /q" in command and f'"{target}"' in command and kwargs["cwd"] == str(target.parent)
+
+
+def test_uninstall_deletes_only_the_apps_own_folder(tmp_path):
+    shared = tmp_path / "Downloads"  # the exe copied somewhere else by hand
+    shared.mkdir()
+    (shared / "Job Finder.exe").write_text("")
+    commands = []
+    installer.uninstall(shared, tmp_path / "D", tmp_path / "S", run=lambda command, **kwargs: commands.append(command))
+    assert commands == []
 
 
 def test_shortcut_script_quotes_paths():
@@ -69,3 +82,16 @@ def test_shortcut_script_quotes_paths():
                                        Path("C:/Users/O'Brien/AppData/Local/Programs/Job Finder/Job Finder.exe"),
                                        "--uninstall")
     assert "O''Brien" in script and "'--uninstall'" in script
+    quote = chr(0x2019)  # a typographic quote: PowerShell treats it like an apostrophe
+    assert f"Ji{quote}{quote}" in installer.shortcut_script(Path(f"C:/Ji{quote}/x.lnk"), Path("C:/a.exe"))
+
+
+def test_shortcut_failure_after_install_says_it_is_installed(tmp_path):
+    archive = archive_with(tmp_path / "app.zip", {"Job Finder.exe": "new"})
+
+    def broken(link, exe, arguments=""):
+        raise installer.ShortcutError("Could not make the shortcut Job Finder.lnk")
+
+    with pytest.raises(installer.ShortcutError):
+        installer.install(archive, tmp_path / "Job Finder", tmp_path / "D", tmp_path / "S", make_shortcut=broken)
+    assert (tmp_path / "Job Finder" / "Job Finder.exe").exists()  # the app is there, only a shortcut is missing

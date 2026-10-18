@@ -17,8 +17,9 @@ def app():
 @pytest.fixture
 def machine(monkeypatch):
     """A fake computer: is LM Studio installed, which models are downloaded, what a download does."""
-    state = {"lms": True, "models": set(), "downloads": [], "result": 0, "vram": 12.0}
+    state = {"lms": True, "models": set(), "files": set(), "downloads": [], "result": 0, "vram": 12.0}
     monkeypatch.setattr(ready_window, "lms_installed", lambda: state["lms"])
+    monkeypatch.setattr(ready_window, "model_file_present", lambda model: model in state["files"])
     monkeypatch.setattr(llm, "downloaded_models", lambda: set(state["models"]))
     monkeypatch.setattr(ready_window, "vram_gb", lambda: state["vram"])
 
@@ -83,3 +84,25 @@ def test_dialog_is_freed(app, machine):
     ref = weakref.ref(dialog)
     del dialog
     assert ref() is None
+
+
+def test_model_file_is_enough_without_running_lms(machine, monkeypatch):
+    machine["files"].add(MODEL)  # the model's file is in LM Studio's downloads folder
+    monkeypatch.setattr(llm, "downloaded_models", lambda: pytest.fail("lms must not run: it would wake LM Studio"))
+    assert ready_window.everything_ready(MODEL)
+
+
+def test_model_file_present(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "LMS_HOME", tmp_path / ".lmstudio")
+    models = tmp_path / "Models"  # moved in LM Studio's settings
+    (tmp_path / ".lmstudio").mkdir()
+    (tmp_path / ".lmstudio" / "settings.json").write_text(
+        '{"downloadsFolder": "' + str(models).replace("\\", "\\\\") + '"}', encoding="utf-8")
+    folder = models / "lmstudio-community" / "Ministral-3-8B-Instruct-2512-GGUF"
+    folder.mkdir(parents=True)
+    (folder / "mmproj-Ministral-3-3B-Instruct-2512-F16.gguf").write_text("")  # a helper file, not the model
+    (folder / "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf").write_text("")
+    assert ready_window.model_file_present(config.MODEL)
+    assert not ready_window.model_file_present(config.SMALL_MODEL)
+    (tmp_path / ".lmstudio" / "settings.json").unlink()  # no settings: the default folder, which is empty
+    assert not ready_window.model_file_present(config.MODEL)

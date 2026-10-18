@@ -3,6 +3,7 @@ prepare / evaluate / release: prepare and release become empty, evaluate calls t
 import json
 import logging
 import subprocess
+import tempfile
 import time
 
 import requests
@@ -146,9 +147,15 @@ def _server_up() -> bool:
 
 
 def downloaded_models() -> set[str]:
-    """The keys of the models downloaded in LM Studio; empty if it can't tell."""
+    """The keys of the models downloaded in LM Studio; empty if it can't tell. The output goes to a temporary file,
+    not a pipe: lms may start LM Studio's background service, which would inherit a pipe and keep the call waiting
+    forever, even past the timeout."""
     try:
-        entries = json.loads(_lms("ls", "--llm", "--json", timeout=60).stdout)
+        with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out:
+            subprocess.run([str(config.LMS_EXE), "ls", "--llm", "--json"], stdin=subprocess.DEVNULL, stdout=out,
+                           stderr=subprocess.DEVNULL, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+            out.seek(0)
+            entries = json.loads(out.read())
     except (OSError, subprocess.SubprocessError, ValueError):
         return set()
     return {entry.get("modelKey") for entry in entries if isinstance(entry, dict)} if isinstance(entries, list) else set()

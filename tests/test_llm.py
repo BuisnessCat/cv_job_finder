@@ -132,3 +132,17 @@ def test_prepare_reloads_another_model(tmp_path, monkeypatch):
     calls.clear()
     llm.prepare("mistralai/ministral-3-8b")  # the right one is loaded already
     assert [call[0] for call in calls] == ["ps"]
+
+
+def test_downloaded_models_reads_lms_output_from_a_file(monkeypatch):
+    # Not a pipe: lms may start LM Studio's service, which would inherit a pipe and keep the call waiting forever
+    seen = {}
+
+    def fake_run(args, **kwargs):
+        seen.update(kwargs)
+        kwargs["stdout"].write('[{"type": "llm", "modelKey": "mistralai/ministral-3-8b"}]')
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(llm.subprocess, "run", fake_run)
+    assert llm.downloaded_models() == {"mistralai/ministral-3-8b"}
+    assert hasattr(seen["stdout"], "fileno") and seen["stdout"] is not subprocess.PIPE and "capture_output" not in seen

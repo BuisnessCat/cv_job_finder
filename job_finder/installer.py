@@ -15,10 +15,15 @@ APP_NAME = "Job Finder"
 EXE = "Job Finder.exe"
 LINKS = ("Job Finder.lnk", "Uninstall Job Finder.lnk")
 CSIDL_PROGRAMS, CSIDL_DESKTOP = 0x0002, 0x0010  # the Start menu's Programs folder, the desktop
+QUOTES = "'" + chr(0x2018) + chr(0x2019) + chr(0x201A) + chr(0x201B)  # PowerShell takes all of these for '
 
 
 class InstallError(Exception):
     """Installing failed for a reason the person can fix; the message says how."""
+
+
+class ShortcutError(InstallError):
+    """The app is in place, only a shortcut could not be made."""
 
 
 def install_dir(environ=os.environ) -> Path:
@@ -49,7 +54,11 @@ def shortcut_dirs(environ=os.environ) -> tuple[Path, Path]:
 
 
 def _quoted(value) -> str:
-    return "'" + str(value).replace("'", "''") + "'"  # a PowerShell string
+    """A PowerShell string: every kind of single quote inside is doubled."""
+    text = str(value)
+    for quote in QUOTES:
+        text = text.replace(quote, quote * 2)
+    return f"'{text}'"
 
 
 def shortcut_script(link: Path, exe: Path, arguments: str = "") -> str:
@@ -61,9 +70,10 @@ def shortcut_script(link: Path, exe: Path, arguments: str = "") -> str:
 def make_shortcut(link: Path, exe: Path, arguments: str = "") -> None:
     result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
                              shortcut_script(link, exe, arguments)],
-                            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                            capture_output=True, text=True, errors="replace",
+                            creationflags=subprocess.CREATE_NO_WINDOW)
     if result.returncode != 0:
-        raise InstallError(f"Could not make the shortcut {link.name}: {result.stderr.strip()[-200:]}")
+        raise ShortcutError(f"Could not make the shortcut {link.name}: {result.stderr.strip()[-200:]}")
 
 
 def install(archive: Path, target: Path, desktop: Path, programs: Path, make_shortcut=make_shortcut) -> Path:
@@ -74,8 +84,9 @@ def install(archive: Path, target: Path, desktop: Path, programs: Path, make_sho
         try:
             target.rename(old)  # fails while the app runs (its files are in use): nothing is deleted then
         except OSError as error:
-            raise InstallError("Job Finder is running. Close it (right-click its icon next to the clock, Quit) "
-                               "and run the setup again.") from error
+            raise InstallError("Job Finder is running, or its folder is in use (e.g. by an antivirus scan). "
+                               "Close Job Finder (right-click its icon next to the clock, Quit) and run the setup "
+                               "again.") from error
         shutil.rmtree(old, ignore_errors=True)
     target.mkdir(parents=True)
     with zipfile.ZipFile(archive) as files:
@@ -94,13 +105,17 @@ def uninstall(target: Path, desktop: Path, programs: Path, run=subprocess.Popen)
     command does it a few seconds after the app quits."""
     for link in (desktop / LINKS[0], programs / LINKS[0], programs / LINKS[1]):
         link.unlink(missing_ok=True)
-    run(f'cmd /c ping -n 4 127.0.0.1 >nul & rmdir /s /q "{target}"',
-        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS)
+    if target.name != APP_NAME or not (target / EXE).exists():
+        return  # not the folder the setup made (e.g. the exe copied somewhere by hand): never delete it
+    # Started outside the folder: a process's current folder can't be removed
+    run(f'cmd /c ping -n 4 127.0.0.1 >nul & rmdir /s /q "{target}"', cwd=str(target.parent),
+        creationflags=subprocess.DETACHED_PROCESS)
 
 
 def message(text: str, ask: bool = False, error: bool = False) -> bool:
     """A Windows message box; with ask: Yes/No, True for Yes."""
-    flags = (0x4 if ask else 0x0) | (0x10 if error else 0x40)  # MB_YESNO, MB_ICONERROR / MB_ICONINFORMATION
+    flags = ((0x4 if ask else 0x0) | (0x10 if error else 0x40)  # MB_YESNO, MB_ICONERROR / MB_ICONINFORMATION
+             | 0x10000 | 0x40000)  # MB_SETFOREGROUND, MB_TOPMOST: not hidden behind other windows
     return ctypes.windll.user32.MessageBoxW(None, text, APP_NAME, flags) == 6  # IDYES
 
 
@@ -112,6 +127,11 @@ def setup_main(argv: list[str]) -> int:
     desktop, programs = shortcut_dirs()
     try:
         exe = install(archive, target, desktop, programs)
+    except ShortcutError as error:
+        if not quiet:
+            message(f"Job Finder is installed in\n{target}\nbut a shortcut couldn't be made ({error}).\n\n"
+                    f"You can start it from that folder: {EXE}.", error=True)
+        return 1
     except (InstallError, OSError, zipfile.BadZipFile) as error:
         if not quiet:
             message(f"Job Finder was not installed.\n\n{error}", error=True)

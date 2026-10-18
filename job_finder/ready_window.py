@@ -1,7 +1,9 @@
 """The "Getting ready" window: is LM Studio installed and the AI model downloaded (spec section 18.3).
 Shown at start only when something is missing; a download starts only when the button is clicked."""
+import json
 import subprocess
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -13,6 +15,7 @@ from job_finder.window import _label
 
 LM_STUDIO_URL = "https://lmstudio.ai"
 MODEL_INFO = {config.MODEL: ("Ministral 3 8B", "about 6 GB"), config.SMALL_MODEL: ("Ministral 3 3B", "about 3 GB")}
+MODEL_FILES = {config.MODEL: "ministral-3-8b", config.SMALL_MODEL: "ministral-3-3b"}  # how the model's file starts
 
 
 def lms_installed() -> bool:
@@ -20,8 +23,30 @@ def lms_installed() -> bool:
     return config.LMS_EXE.exists()
 
 
+def _downloads_folder() -> Path:
+    """LM Studio's downloads folder: from its settings (it can be moved), else the default one."""
+    try:
+        folder = json.loads((config.LMS_HOME / "settings.json").read_text(encoding="utf-8")).get("downloadsFolder")
+    except (OSError, ValueError, AttributeError):
+        folder = None
+    return Path(folder) if folder else config.LMS_HOME / "models"
+
+
+def model_file_present(model: str) -> bool:
+    """Whether the model's file is in LM Studio's downloads folder: a look on disk, LM Studio isn't started."""
+    start, folder = MODEL_FILES.get(model), _downloads_folder()
+    if not start or not folder.is_dir():
+        return False
+    return any(file.name.lower().startswith(start) for file in folder.rglob("*.gguf"))
+
+
+def have_model(model: str) -> bool:
+    """The file on disk is enough; only without it LM Studio itself is asked (which may start it)."""
+    return model_file_present(model) or model in llm.downloaded_models()
+
+
 def everything_ready(model: str) -> bool:
-    return lms_installed() and model in llm.downloaded_models()
+    return lms_installed() and have_model(model)
 
 
 def download_model(model: str) -> int:
@@ -118,7 +143,7 @@ class ReadyDialog(QDialog):
 
     def check(self) -> None:
         installed = lms_installed()
-        downloaded = installed and self.model in llm.downloaded_models()
+        downloaded = installed and have_model(self.model)
         self.lms_status.setText("✓ LM Studio is installed" if installed
                                 else "✕ LM Studio is not installed (or was never opened). Install it, open it "
                                      "once, then click Check again.")
@@ -142,14 +167,15 @@ class ReadyDialog(QDialog):
         self.download_button.setEnabled(False)
         self.progress.show()
         self.download_note.setText(f"Downloading {self.name} ({self.size}). It can take a while; you can keep "
-                                   "this window open or continue, the download goes on.")
+                                   "this window open or continue (the download goes on: click Refresh in the app "
+                                   "when it has finished).")
         start_thread(self.downloader.run)
 
     def on_download_done(self, code: int) -> None:
         self.downloading = False
         self.progress.hide()
         self.check()
-        if self.model not in llm.downloaded_models():
+        if not have_model(self.model):
             self.download_note.setText("The download failed (no internet?). Try again, or download the model in "
                                        f"LM Studio: search for {self.name}.")
         else:
