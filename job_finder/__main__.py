@@ -10,7 +10,8 @@ from PySide6.QtNetwork import QLocalSocket
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from job_finder import config, db, style
+from job_finder import config, db, llm, ready_window, settings, style
+from job_finder.settings import Settings
 from job_finder.settings_window import first_run
 from job_finder.window import MainWindow
 
@@ -60,6 +61,9 @@ def main() -> None:
             QMessageBox.information(None, "Job Finder", "Job Finder is already open.")
         os._exit(0)
     db.init()
+    model = llm.model_name(settings.load() or Settings())
+    if not ready_window.everything_ready(model):  # LM Studio or the model is missing: say what to do
+        ready_window.ReadyDialog(model).exec()
     if not first_run(config.CV_PATH):
         os._exit(0)  # the wizard was closed: nothing is saved, the next start shows it again
     window = MainWindow()

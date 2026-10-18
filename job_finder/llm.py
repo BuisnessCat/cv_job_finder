@@ -145,6 +145,15 @@ def _server_up() -> bool:
         return False
 
 
+def downloaded_models() -> set[str]:
+    """The keys of the models downloaded in LM Studio; empty if it can't tell."""
+    try:
+        entries = json.loads(_lms("ls", "--llm", "--json", timeout=60).stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return set()
+    return {entry.get("modelKey") for entry in entries if isinstance(entry, dict)} if isinstance(entries, list) else set()
+
+
 def _loaded_model() -> tuple[bool, str]:
     """Whether a model is loaded under our name, and which one (its key, "" if LM Studio doesn't say)."""
     out = _lms("ps", "--json").stdout
