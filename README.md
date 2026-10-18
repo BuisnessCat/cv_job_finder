@@ -12,8 +12,10 @@ my CV, and asks a local AI model to score the rest from 1 to 10 and explain the 
 
 ## What it does
 
-- Pulls new jobs from junior.guru, Himalayas, Jobicy and Working Nomads (all of them have open APIs).
-  It looks for jobs in Czechia and remote jobs open to people in Czechia.
+- Pulls new jobs from junior.guru, the Czech labour office (Úřad práce, its open data), Himalayas, Jobicy,
+  Working Nomads, Remote OK and We Work Remotely. All of them have open APIs or feeds. It looks for jobs in
+  your region of Czechia and remote jobs open to people in Czechia; the labour office's jobs always come with
+  a salary.
 - Skips jobs that don't mention any of my skills, so the model doesn't waste time on them. The skills
   are found in the CV automatically and can be fixed by hand.
 - Scores the rest with a model running in LM Studio on my own graphics card. For each job I get a
