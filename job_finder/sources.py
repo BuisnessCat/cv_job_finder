@@ -193,6 +193,8 @@ def fetch_workingnomads() -> list[Job]:
 
 def parse_remoteok(data: list) -> list[Job]:
     """Remote OK's API answer: the first element is their terms, the rest are jobs."""
+    if not isinstance(data, list):  # e.g. a rate-limit message: an error, not "no jobs" (they would all look gone)
+        raise ValueError(f"unexpected answer: {str(data)[:100]}")
     jobs = []
     for item in data:
         if not isinstance(item, dict) or not item.get("position") or not item.get("url"):
@@ -211,7 +213,7 @@ def fetch_remoteok() -> list[Job]:
     return parse_remoteok(_get(config.REMOTEOK_URL).json())
 
 
-def parse_wwr(xml_text: str) -> list[Job]:
+def parse_wwr(xml_text: str | bytes) -> list[Job]:
     """A We Work Remotely RSS feed: the title is "Company: Position"."""
     jobs = []
     for item in ElementTree.fromstring(xml_text).iter("item"):
@@ -238,7 +240,7 @@ def fetch_wwr() -> list[Job]:
     for index, category in enumerate(config.WWR_CATEGORIES):
         if index:
             time.sleep(1)
-        for job in parse_wwr(_get(config.WWR_URL.format(category)).text):
+        for job in parse_wwr(_get(config.WWR_URL.format(category)).content):  # bytes: the XML says its encoding
             if job.url not in seen:
                 seen.add(job.url)
                 jobs.append(job)
@@ -285,16 +287,13 @@ def same_job_key(company: str, title: str) -> tuple[str, str]:
 
 
 def dedupe(fetched: dict[str, list[Job]]) -> dict[str, list[Job]]:
-    """Remove repeats by "company + title"; the record from the source earlier in the dict stays."""
+    """Remove a job another source earlier in the dict already has ("company + title"). Within one source every
+    job has its own link, and the labour office has many different jobs called e.g. "Vývojáři softwaru"."""
     seen = set()
     result = {}
     for name, jobs in fetched.items():
-        result[name] = []
-        for job in jobs:
-            key = same_job_key(job.company, job.title)
-            if key not in seen:
-                seen.add(key)
-                result[name].append(job)
+        result[name] = [job for job in jobs if same_job_key(job.company, job.title) not in seen]
+        seen.update(same_job_key(job.company, job.title) for job in result[name])
     return result
 
 

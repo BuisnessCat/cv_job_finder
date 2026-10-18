@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+import pytest
+
 from job_finder import config, sources, uradprace
 from job_finder.settings import Settings
 from job_finder.sources import Job
@@ -303,7 +305,8 @@ def test_parse_wwr():
 
 def test_fetch_wwr_reads_each_category_and_drops_repeats(monkeypatch):
     calls = []
-    monkeypatch.setattr(sources, "_get", lambda url, params=None: calls.append(url) or FakeResponse(text=WWR_RSS))
+    monkeypatch.setattr(sources, "_get", lambda url, params=None: calls.append(url) or FakeResponse(
+        content=WWR_RSS.encode("utf-8")))  # bytes: the XML declaration decides the encoding
     monkeypatch.setattr(sources.time, "sleep", lambda seconds: None)
     assert len(sources.fetch_wwr()) == 2 and len(calls) == len(config.WWR_CATEGORIES) == 5
 
@@ -328,3 +331,18 @@ def test_still_fetched_uradprace():
     assert sources.still_fetched("Úřad práce", "Brno region", replace(s, city="Brno"))
     assert not sources.still_fetched("Remote OK", "Remote", s)
     assert not sources.still_fetched("We Work Remotely", "Remote", s)
+
+
+def test_dedupe_only_across_sources():
+    # Within one source every job has its own link; the labour office titles are profession classes
+    # ("Vývojáři softwaru"), so one company can have several different jobs with the same title
+    fetched = {"Úřad práce": [make("u1", "Úřad práce", title="Vývojáři softwaru"),
+                              make("u2", "Úřad práce", title="Vývojáři softwaru")],
+               "Himalayas": [make("u3", "Himalayas", title="Vývojáři softwaru")]}
+    result = sources.dedupe(fetched)
+    assert [job.url for job in result["Úřad práce"]] == ["u1", "u2"] and result["Himalayas"] == []
+
+
+def test_parse_remoteok_rejects_an_unexpected_answer():
+    with pytest.raises(ValueError):  # e.g. a rate-limit message: not "no jobs", or every job would look gone
+        sources.parse_remoteok({"error": "rate limited"})

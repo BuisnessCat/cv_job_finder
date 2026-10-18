@@ -299,3 +299,14 @@ def test_init_sets_first_seen_on_old_database(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", old)
     db.init()
     assert db.first_seen("a") == "2026-10-01"  # no false "reposted" marks right after the update
+
+
+def test_labour_office_jobs_keep_their_own_first_seen():
+    # Its titles are profession classes: the same company and title can be a different, new job
+    first = Job(url="a", source="Úřad práce", title="Vývojáři softwaru", company="Skype", city="Prague",
+                published="2026-09-01", description="")
+    db.save_jobs("Úřad práce", [first], today="2026-09-01")
+    second = Job(url="b", source="Úřad práce", title="Vývojáři softwaru", company="Skype", city="Prague",
+                 published="2026-10-18", description="")
+    db.save_jobs("Úřad práce", [first, second], today="2026-10-18")
+    assert db.first_seen("b") == "2026-10-18"

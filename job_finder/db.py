@@ -100,7 +100,8 @@ def save_jobs(source: str, jobs: list[Job], today: str | None = None) -> None:
                     source = excluded.source, title = excluded.title, company = excluded.company,
                     city = excluded.city, published = excluded.published,
                     description = excluded.description, salary = excluded.salary, active = 1""",
-            [{**asdict(job), "first_seen": earliest.get(same_job_key(job.company, job.title), today)}
+            [{**asdict(job), "first_seen": today if job.source in config.NO_TWIN_SOURCES
+              else earliest.get(same_job_key(job.company, job.title), today)}
              for job in jobs],
         )
 

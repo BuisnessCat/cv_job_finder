@@ -19,6 +19,9 @@ OLD_JOB_DAYS = 30
 # Sources that return their whole list: a job missing from them was probably taken down
 FULL_LIST_SOURCES = ("junior.guru", "Jobicy", "Úřad práce")
 
+# Titles there are profession classes ("Vývojáři softwaru"): the same company and title can be a different job
+NO_TWIN_SOURCES = ("Úřad práce",)
+
 # LM Studio
 LMS_EXE = Path.home() / ".lmstudio" / "bin" / "lms.exe"
 LM_PORT = 1234
