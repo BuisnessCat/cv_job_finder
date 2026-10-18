@@ -17,7 +17,7 @@ NOTIFY_SCORE = 7
 OLD_JOB_DAYS = 30
 
 # Sources that return their whole list: a job missing from them was probably taken down
-FULL_LIST_SOURCES = ("junior.guru", "Jobicy")
+FULL_LIST_SOURCES = ("junior.guru", "Jobicy", "Úřad práce")
 
 # LM Studio
 LMS_EXE = Path.home() / ".lmstudio" / "bin" / "lms.exe"
@@ -43,6 +43,10 @@ HIMALAYAS_MAX_PAGES = 10  # 20 jobs per page
 UP_URL = "https://data.mpsv.cz/od/soubory/volna-mista/volna-mista.json"
 UP_CACHE = ROOT / "cache" / "uradprace.json"
 UP_DETAIL_URL = "https://up.gov.cz/volna-mista-v-cr#/volna-mista-detail/{}"
-JOBICY_URL ="https://jobicy.com/api/v2/remote-jobs"
+REMOTEOK_URL = "https://remoteok.com/api"  # terms: link to the job on Remote OK and name it as the source
+WWR_URL = "https://weworkremotely.com/categories/remote-{}-jobs.rss"
+WWR_CATEGORIES = ("programming", "full-stack-programming", "back-end-programming", "front-end-programming",
+                  "devops-sysadmin")
+JOBICY_URL = "https://jobicy.com/api/v2/remote-jobs"
 JOBICY_PARAMS = {"count": 50, "geo": "czechia", "industry": "dev"}
 WORKINGNOMADS_URL = "https://www.workingnomads.com/api/exposed_jobs/"

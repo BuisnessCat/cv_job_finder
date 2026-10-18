@@ -1,4 +1,4 @@
-"""Job sources: four aggregators with open APIs."""
+"""Job sources: job boards with open APIs and feeds (the labour office's data is in uradprace.py)."""
 from __future__ import annotations
 
 import csv
@@ -8,7 +8,9 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, fields
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING
+from xml.etree import ElementTree
 
 import requests
 from bs4 import BeautifulSoup
@@ -189,8 +191,62 @@ def fetch_workingnomads() -> list[Job]:
     return parse_workingnomads(_get(config.WORKINGNOMADS_URL).json())
 
 
+def parse_remoteok(data: list) -> list[Job]:
+    """Remote OK's API answer: the first element is their terms, the rest are jobs."""
+    jobs = []
+    for item in data:
+        if not isinstance(item, dict) or not item.get("position") or not item.get("url"):
+            continue
+        location = (item.get("location") or "").strip()
+        jobs.append(Job(
+            url=item["url"], source="Remote OK", title=item["position"], company=item.get("company"),
+            city=f"Remote: {location}" if location else "Remote", published=(item.get("date") or "")[:10],
+            description=html_to_text(item.get("description")),
+            salary=salary_text(item.get("salary_min"), item.get("salary_max"), "USD", "yearly"),
+        ))
+    return jobs
+
+
+def fetch_remoteok() -> list[Job]:
+    return parse_remoteok(_get(config.REMOTEOK_URL).json())
+
+
+def parse_wwr(xml_text: str) -> list[Job]:
+    """A We Work Remotely RSS feed: the title is "Company: Position"."""
+    jobs = []
+    for item in ElementTree.fromstring(xml_text).iter("item"):
+        link, heading = (item.findtext("link") or "").strip(), (item.findtext("title") or "").strip()
+        if not link or not heading:
+            continue
+        company, _, title = heading.partition(": ")
+        if not title:
+            company, title = "", heading
+        region = (item.findtext("region") or "").strip()
+        try:
+            published = parsedate_to_datetime(item.findtext("pubDate") or "").strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            published = ""
+        jobs.append(Job(url=link, source="We Work Remotely", title=title, company=company,
+                        city=f"Remote: {region}" if region else "Remote", published=published,
+                        description=html_to_text(item.findtext("description"))))
+    return jobs
+
+
+def fetch_wwr() -> list[Job]:
+    """Several category feeds; a job listed in two of them is kept once."""
+    jobs, seen = [], set()
+    for index, category in enumerate(config.WWR_CATEGORIES):
+        if index:
+            time.sleep(1)
+        for job in parse_wwr(_get(config.WWR_URL.format(category)).text):
+            if job.url not in seen:
+                seen.add(job.url)
+                jobs.append(job)
+    return jobs
+
+
 # Sources that list remote jobs only: not fetched when remote work is not fine
-REMOTE_ONLY = ("Himalayas", "Jobicy", "Working Nomads")
+REMOTE_ONLY = ("Himalayas", "Jobicy", "Working Nomads", "Remote OK", "We Work Remotely")
 
 
 def still_fetched(source: str, city: str, s: Settings) -> bool:
@@ -199,16 +255,23 @@ def still_fetched(source: str, city: str, s: Settings) -> bool:
         return s.remote
     if source == "junior.guru":
         return city == juniorguru_place(s.city) or (city == "Remote" and s.remote)
+    if source == "Úřad práce":
+        from job_finder import uradprace  # here, not at the top: uradprace itself uses this module
+        return city == uradprace.place(s.city)
     return True
 
 
 def sources_for(s: Settings) -> list[tuple[str, Callable[[], list[Job]]]]:
     """The sources and how to fetch them for these settings; the order is the priority when removing duplicates."""
+    from job_finder import uradprace  # here, not at the top: uradprace itself uses this module
     return [
         ("junior.guru", lambda: fetch_juniorguru(s.city, s.remote)),
+        ("Úřad práce", lambda: uradprace.fetch(s.city)),  # office jobs: fetched also when remote isn't fine
         ("Himalayas", lambda: fetch_himalayas(s.main_skill, s.levels)),
         ("Jobicy", fetch_jobicy),
         ("Working Nomads", fetch_workingnomads),
+        ("Remote OK", fetch_remoteok),
+        ("We Work Remotely", fetch_wwr),
     ]
 
 

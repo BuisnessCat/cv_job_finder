@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from job_finder import config, sources
+from job_finder import config, sources, uradprace
 from job_finder.settings import Settings
 from job_finder.sources import Job
 
@@ -40,9 +40,10 @@ WORKINGNOMADS = [
 
 
 class FakeResponse:
-    def __init__(self, content=b"", data=None):
+    def __init__(self, content=b"", data=None, text=""):
         self.content = content
         self._data = data
+        self.text = text
 
     def raise_for_status(self):
         pass
@@ -234,11 +235,13 @@ def test_no_remote_skips_remote_sources(monkeypatch):
         raise AssertionError("a remote-only source was fetched")
 
     monkeypatch.setattr(sources, "fetch_juniorguru", lambda city, remote: [make("u1", "junior.guru")])
-    for name in ("fetch_himalayas", "fetch_jobicy", "fetch_workingnomads"):
+    monkeypatch.setattr(uradprace, "fetch", lambda city: [make("u2", "Úřad práce", title="Analyst")])  # office jobs
+    for name in ("fetch_himalayas", "fetch_jobicy", "fetch_workingnomads", "fetch_remoteok", "fetch_wwr"):
         monkeypatch.setattr(sources, name, must_not_run)
     fetched, errors = sources.fetch_all(replace(SETTINGS, remote=False))
     assert {name: [j.url for j in jobs] for name, jobs in fetched.items()} == {
-        "junior.guru": ["u1"], "Himalayas": [], "Jobicy": [], "Working Nomads": []}
+        "junior.guru": ["u1"], "Úřad práce": ["u2"], "Himalayas": [], "Jobicy": [], "Working Nomads": [],
+        "Remote OK": [], "We Work Remotely": []}
     assert errors == {}
 
 
@@ -260,3 +263,68 @@ def test_parsers_read_salary():
         "salaryMin": 2000, "salaryMax": 3000, "salaryCurrency": "USD", "salaryPeriod": "monthly"}]})
     assert him[0].salary == "$50,000–70,000 / year" and jobicy[0].salary == "$2,000–3,000 / month"
     assert sources.parse_jobicy(JOBICY)[0].salary == ""  # no salary from the site: nothing shown
+
+
+REMOTEOK = [
+    {"legal": "API Terms of Service: Please link back to the URL on Remote OK"},
+    {"id": "1", "position": "Python Developer", "company": "Epsilon", "location": "Europe",
+     "date": "2026-10-15T10:00:00+00:00", "description": "<p>Python</p>", "url": "https://remoteok.com/remote-jobs/1",
+     "salary_min": 60000, "salary_max": 90000},
+    {"id": "2", "position": "Marketer", "company": "Zeta", "location": "", "date": None, "description": None,
+     "url": "https://remoteok.com/remote-jobs/2", "salary_min": 0, "salary_max": 0},
+]
+
+WWR_RSS = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>We Work Remotely</title>
+<item><title>Eta: Senior Python Engineer</title><region>Anywhere in the World</region>
+<link>https://weworkremotely.com/remote-jobs/eta-python</link><pubDate>Thu, 15 Oct 2026 12:00:00 +0000</pubDate>
+<description>&lt;p&gt;Django&lt;/p&gt;</description></item>
+<item><title>No company here</title><link>https://weworkremotely.com/remote-jobs/x</link><pubDate>not a date</pubDate></item>
+<item><title></title><link>https://weworkremotely.com/remote-jobs/y</link></item>
+</channel></rss>"""
+
+
+def test_parse_remoteok():
+    jobs = sources.parse_remoteok(REMOTEOK)  # the first element (the terms) is not a job
+    assert jobs[0] == Job(url="https://remoteok.com/remote-jobs/1", source="Remote OK", title="Python Developer",
+                          company="Epsilon", city="Remote: Europe", published="2026-10-15", description="Python",
+                          salary="$60,000–90,000 / year")
+    assert len(jobs) == 2 and (jobs[1].city, jobs[1].published, jobs[1].salary) == ("Remote", "", "")
+
+
+def test_parse_wwr():
+    jobs = sources.parse_wwr(WWR_RSS)
+    assert jobs[0] == Job(url="https://weworkremotely.com/remote-jobs/eta-python", source="We Work Remotely",
+                          title="Senior Python Engineer", company="Eta", city="Remote: Anywhere in the World",
+                          published="2026-10-15", description="Django")
+    assert (jobs[1].company, jobs[1].title, jobs[1].city, jobs[1].published) == ("", "No company here", "Remote", "")
+    assert len(jobs) == 2  # an item without a title is skipped
+
+
+def test_fetch_wwr_reads_each_category_and_drops_repeats(monkeypatch):
+    calls = []
+    monkeypatch.setattr(sources, "_get", lambda url, params=None: calls.append(url) or FakeResponse(text=WWR_RSS))
+    monkeypatch.setattr(sources.time, "sleep", lambda seconds: None)
+    assert len(sources.fetch_wwr()) == 2 and len(calls) == len(config.WWR_CATEGORIES) == 5
+
+
+def test_sources_order_and_remote_flags(monkeypatch):
+    called = []
+    for name in ("fetch_juniorguru", "fetch_himalayas", "fetch_jobicy", "fetch_workingnomads", "fetch_remoteok",
+                 "fetch_wwr"):
+        monkeypatch.setattr(sources, name, lambda *args, n=name: called.append(n) or [])
+    monkeypatch.setattr(uradprace, "fetch", lambda city: called.append(f"uradprace {city}") or [])
+    fetched, errors = sources.fetch_all(SETTINGS)
+    assert list(fetched) == ["junior.guru", "Úřad práce", "Himalayas", "Jobicy", "Working Nomads", "Remote OK",
+                             "We Work Remotely"]  # the order is the priority when removing duplicates
+    assert "uradprace Praha" in called
+
+
+def test_still_fetched_uradprace():
+    s = replace(SETTINGS, city="Praha", remote=False)
+    assert "Úřad práce" in config.FULL_LIST_SOURCES  # the registry is complete: a missing job was taken down
+    assert sources.still_fetched("Úřad práce", "Prague", s)
+    assert not sources.still_fetched("Úřad práce", "Prague", replace(s, city="Brno"))
+    assert sources.still_fetched("Úřad práce", "Brno region", replace(s, city="Brno"))
+    assert not sources.still_fetched("Remote OK", "Remote", s)
+    assert not sources.still_fetched("We Work Remotely", "Remote", s)
