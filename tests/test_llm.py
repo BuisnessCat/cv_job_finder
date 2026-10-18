@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from job_finder import config, llm
+from job_finder import config, hardware, llm
 from job_finder.settings import Settings
 from job_finder.sources import Job
 
@@ -72,7 +72,7 @@ def test_prepare_starts_server_without_capturing_output(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(args, 0, stdout=f'[{{"identifier": "{config.MODEL_ID}"}}]', stderr="")
 
     monkeypatch.setattr(llm.subprocess, "run", fake_run)
-    llm.prepare()
+    llm.prepare(config.MODEL)
     (start_args, start_kwargs), (ps_args, _) = calls
     assert start_args[:2] == ["server", "start"]
     assert start_kwargs.get("stdout") is subprocess.DEVNULL
@@ -101,3 +101,34 @@ def test_fingerprint_ignores_skills_and_main_skill():
     assert llm.fingerprint(s) == llm.fingerprint(replace(s, skills=["Go"], main_skill="Go", min_score=7))
     assert llm.fingerprint(s) != llm.fingerprint(replace(s, levels=["mid"]))
     assert llm.fingerprint(s) != llm.fingerprint(replace(s, languages={"English": "C1"}))
+
+
+def test_fingerprint_uses_model(monkeypatch):
+    s = Settings(cv_path="a", skills=["Python"], main_skill="Python", languages={"English": "B2"})
+    assert llm.model_name(s) == config.MODEL  # chosen by the graphics card (12 GB in the tests' fixture)
+    assert llm.fingerprint(s) == f"{config.MODEL}\n{llm.render_rules(s)}"  # the author's key stays the same
+    small = replace(s, model="mistralai/ministral-3-3b")
+    assert llm.model_name(small) == "mistralai/ministral-3-3b" and llm.fingerprint(small) != llm.fingerprint(s)
+    monkeypatch.setattr(hardware, "default_model", lambda: "mistralai/ministral-3-3b")  # a 6 GB card
+    assert llm.model_name(s) == "mistralai/ministral-3-3b"
+
+
+def test_prepare_reloads_another_model(tmp_path, monkeypatch):
+    exe = tmp_path / "lms.exe"
+    exe.write_text("")
+    monkeypatch.setattr(config, "LMS_EXE", exe)
+    monkeypatch.setattr(llm, "_server_up", lambda: True)
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args[1:])
+        out = (f'[{{"identifier": "{config.MODEL_ID}", "modelKey": "mistralai/ministral-3-8b"}}]'
+               if args[1] == "ps" else "")
+        return subprocess.CompletedProcess(args, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(llm.subprocess, "run", fake_run)
+    llm.prepare("mistralai/ministral-3-3b")  # another model is loaded under our name
+    assert [call[0] for call in calls] == ["ps", "unload", "load"] and calls[2][1] == "mistralai/ministral-3-3b"
+    calls.clear()
+    llm.prepare("mistralai/ministral-3-8b")  # the right one is loaded already
+    assert [call[0] for call in calls] == ["ps"]

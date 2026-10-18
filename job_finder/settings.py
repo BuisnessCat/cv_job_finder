@@ -48,6 +48,7 @@ class Settings:
     levels: list[str] = field(default_factory=lambda: ["junior"])  # one or more of LEVELS
     # language -> one of LANGUAGE_LEVELS; "" = the level is not chosen yet
     languages: dict[str, str] = field(default_factory=lambda: {"English": ""})
+    model: str = ""  # the AI model; "" = the one that fits the graphics card (hardware.default_model)
     min_score: int = 5
     stale_days: int = 14
     stale_job_days: int = 21

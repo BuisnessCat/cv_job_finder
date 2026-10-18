@@ -1,11 +1,36 @@
 """App settings."""
+import os
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CV_PATH = ROOT / "master_cv.md"  # if it exists, the first-run wizard offers it as the CV
-DB_PATH = ROOT / "jobs.db"
-LOG_PATH = ROOT / "job_finder.log"
-ICON_PATH = ROOT / "job_finder" / "icon.ico"
+FROZEN = getattr(sys, "frozen", False)  # the installed app (built with PyInstaller), not the sources
+APP_DIR = Path(getattr(sys, "_MEIPASS", ROOT))  # where the app's own files are (the icon)
+
+
+def data_dir(frozen: bool, environ) -> Path:
+    """Where the database, log and cache live: the project folder for the sources, the user's app data folder for
+    the installed app (updating or removing the app keeps them); JOB_FINDER_DATA overrides both (for checks)."""
+    if environ.get("JOB_FINDER_DATA"):
+        return Path(environ["JOB_FINDER_DATA"])
+    if frozen:
+        return Path(environ.get("LOCALAPPDATA") or Path.home()) / "Job Finder"
+    return ROOT
+
+
+def lock_path(environ) -> Path:
+    """One "already open" lock per user: the sources and the installed app never run at once with one model."""
+    if environ.get("JOB_FINDER_DATA"):
+        return Path(environ["JOB_FINDER_DATA"]) / "job_finder.lock"
+    return Path(environ.get("LOCALAPPDATA") or Path.home()) / "Job Finder" / "job_finder.lock"
+
+
+DATA_DIR = data_dir(FROZEN, os.environ)
+LOCK_PATH = lock_path(os.environ)
+CV_PATH = DATA_DIR / "master_cv.md"  # if it exists, the first-run wizard offers it as the CV
+DB_PATH = DATA_DIR / "jobs.db"
+LOG_PATH = DATA_DIR / "job_finder.log"
+ICON_PATH = APP_DIR / "job_finder" / "icon.ico"
 
 # While the app runs (also hidden in the tray) it looks for new jobs this often
 AUTO_REFRESH_HOURS = 3
@@ -26,7 +51,8 @@ NO_TWIN_SOURCES = ("Úřad práce",)
 LMS_EXE = Path.home() / ".lmstudio" / "bin" / "lms.exe"
 LM_PORT = 1234
 LM_URL = f"http://localhost:{LM_PORT}/v1"
-MODEL = "mistralai/ministral-3-8b"
+MODEL = "mistralai/ministral-3-8b"  # graphics cards with 8 GB and more
+SMALL_MODEL = "mistralai/ministral-3-3b"  # smaller cards: weaker, the scores may differ a bit
 MODEL_ID = "job-finder"  # identifier of the loaded model in LM Studio and in the API
 CONTEXT_LENGTH = 8192
 MAX_DESCRIPTION_CHARS = 8000
@@ -44,7 +70,7 @@ HIMALAYAS_QUERY = {"C#/.NET": "C#", "C/C++": "C++", "CI/CD": "CI/CD"}
 HIMALAYAS_MAX_PAGES = 10  # 20 jobs per page
 # Úřad práce ČR: every vacancy registered in Czechia, updated daily (~190 MB); the IT selection is kept in UP_CACHE
 UP_URL = "https://data.mpsv.cz/od/soubory/volna-mista/volna-mista.json"
-UP_CACHE = ROOT / "cache" / "uradprace.json"
+UP_CACHE = DATA_DIR / "cache" / "uradprace.json"
 UP_DETAIL_URL = "https://up.gov.cz/volna-mista-v-cr#/volna-mista-detail/{}"
 REMOTEOK_URL = "https://remoteok.com/api"  # terms: link to the job on Remote OK and name it as the source
 WWR_URL = "https://weworkremotely.com/categories/remote-{}-jobs.rss"

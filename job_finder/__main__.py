@@ -40,6 +40,8 @@ def tell_running_instance(name: str = SERVER_NAME) -> bool:
 
 
 def main() -> None:
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    config.LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         filename=config.LOG_PATH, encoding="utf-8", level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -52,7 +54,7 @@ def main() -> None:
     app.setWindowIcon(QIcon(str(config.ICON_PATH)))
     style.apply_app_theme(app)
     # A second launch: two windows would share one model, and closing one would unload it for the other
-    lock = acquire_lock(config.ROOT / "job_finder.lock")
+    lock = acquire_lock(config.LOCK_PATH)
     if lock is None:
         if not tell_running_instance():  # it may be hidden in the tray: its window comes up
             QMessageBox.information(None, "Job Finder", "Job Finder is already open.")

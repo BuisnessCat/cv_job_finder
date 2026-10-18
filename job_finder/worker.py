@@ -96,7 +96,7 @@ class Worker(QObject):
             self.status.emit("Starting LM Studio…")
             self.model_loaded = True
             try:
-                llm.prepare()
+                llm.prepare(llm.model_name(s))
                 failed = self._evaluate(todo, cv_text, cv_hash, llm.render_rules(s))
                 if failed:
                     notes.append(f"failed to evaluate: {failed}")

@@ -7,7 +7,7 @@ import time
 
 import requests
 
-from job_finder import config
+from job_finder import config, hardware
 from job_finder.settings import LEVELS, Settings
 from job_finder.sources import Job
 
@@ -117,7 +117,12 @@ def render_rules(s: Settings) -> str:
 
 def fingerprint(s: Settings) -> str:
     """What determines a score besides the CV: if it changes, earlier scores are outdated."""
-    return f"{config.MODEL}\n{render_rules(s)}"
+    return f"{model_name(s)}\n{render_rules(s)}"
+
+
+def model_name(s: Settings) -> str:
+    """The model that scores: from the settings, or the one that fits this computer's graphics card."""
+    return s.model or hardware.default_model()
 
 
 class ModelLost(RuntimeError):
@@ -140,7 +145,20 @@ def _server_up() -> bool:
         return False
 
 
-def prepare() -> None:
+def _loaded_model() -> tuple[bool, str]:
+    """Whether a model is loaded under our name, and which one (its key, "" if LM Studio doesn't say)."""
+    out = _lms("ps", "--json").stdout
+    try:
+        entries = json.loads(out)
+    except ValueError:
+        return config.MODEL_ID in out, ""
+    for entry in entries if isinstance(entries, list) else []:
+        if isinstance(entry, dict) and entry.get("identifier") == config.MODEL_ID:
+            return True, entry.get("modelKey") or ""
+    return False, ""
+
+
+def prepare(model: str) -> None:
     """Start the LM Studio server and load the model if it is not loaded yet."""
     if not config.LMS_EXE.exists():
         raise RuntimeError(f"not found: {config.LMS_EXE}")
@@ -157,10 +175,14 @@ def prepare() -> None:
             if time.monotonic() > deadline:
                 raise RuntimeError("server did not start within 30 s")
             time.sleep(1)
-    if config.MODEL_ID not in _lms("ps", "--json").stdout:
+    loaded, key = _loaded_model()
+    if loaded and key and key != model:  # another model under our name (e.g. the settings changed)
+        _lms("unload", config.MODEL_ID)
+        loaded = False
+    if not loaded:
         # --ttl: if the app closes in the middle of loading, LM Studio unloads the model by itself
         result = _lms(
-            "load", config.MODEL, "--identifier", config.MODEL_ID,
+            "load", model, "--identifier", config.MODEL_ID,
             "--context-length", str(config.CONTEXT_LENGTH), "--gpu", "max", "--ttl", "300", "-y",
             timeout=300,
         )
