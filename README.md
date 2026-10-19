@@ -1,136 +1,167 @@
+<div align="center">
+
+<img src="docs/icon.png" width="88" alt="">
+
 # Job Finder
 
-A small Windows app that goes through job boards for me and tells me which jobs are actually worth
-applying to.
+**Reads job boards for you and tells you which jobs are worth applying to.**
 
-I made it while looking for my first Python job in Prague. Checking job boards every day got old
-fast: most listings want years of experience, a different stack, or an office in another city. So the
-app does the first pass for me. It downloads new listings, drops the ones that have nothing to do with
-my CV, and asks a local AI model to score the rest from 1 to 10 and explain the score.
+[![Download JobFinder-Setup.exe](https://img.shields.io/badge/Download-JobFinder--Setup.exe-2ea043?style=for-the-badge)](https://github.com/BuisnessCat/cv_job_finder/releases/latest)
+
+![Latest release](https://img.shields.io/github/v/release/BuisnessCat/cv_job_finder?color=2ea043)
+![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4)
+![The AI runs on your PC](https://img.shields.io/badge/AI-runs%20on%20your%20PC-8957e5)
+![MIT license](https://img.shields.io/badge/license-MIT-blue)
+
+</div>
 
 ![The main window](docs/screenshots/found.png)
 
+Job Finder downloads new listings, drops the ones that don't match your CV, and asks an AI model
+running on your own graphics card to score the rest from 1 to 10 and explain why. I made it while
+looking for my first Python job in Prague: checking job boards every day got old fast.
+
 ## What it does
 
-- Pulls new jobs from junior.guru, the Czech labour office (Úřad práce, its open data), Himalayas, Jobicy,
-  Working Nomads, Remote OK and We Work Remotely. All of them have open APIs or feeds. It looks for jobs in
-  your region of Czechia and remote jobs open to people in Czechia; the labour office's jobs always come with
-  a salary.
-- Skips jobs that don't mention any of my skills, so the model doesn't waste time on them. The skills
-  are found in the CV automatically and can be fixed by hand.
-- Scores the rest with a model running in LM Studio on my own graphics card. For each job I get a
-  score, a short reason, what I already have, what's missing and what could rule me out.
-- Shows jobs with a score of 5 or more, best first. Jobs that are new since last time are marked.
-- Shows how old each job really is. Job sites like to bump old listings so they look new, so the app
-  remembers when it first saw a job and marks those as "reposted". There's a search box, a
-  7 / 14 / 30 days filter and a "newest first" order above the list.
-- Keeps track of where I applied. One click moves a job to My applications, where I can mark it
-  accepted or rejected, write notes and see how long I've been waiting for an answer.
-- The Insights tab counts what I'm missing most often across all jobs. Handy for deciding what to
-  learn next.
-- Lives in the tray. Every 3 hours it looks for new jobs by itself, and a Windows notification tells
-  me when there are new ones scored 7 or more. It waits while a full-screen game is running, because
-  the game and the model share the graphics card.
-- Doesn't spend time scoring jobs older than a month, and shows the salary when the site gives one.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-Nothing leaves the computer except the requests to the job boards. The CV and the database stay on
-your machine.
+🔎 **Seven job sites**<br>
+junior.guru, Úřad práce, Himalayas, Jobicy, Working Nomads, Remote OK and We Work Remotely. Your
+region of Czechia and remote jobs open to it.
 
-## Installing it
+</td>
+<td width="50%" valign="top">
 
-It takes about 20 minutes, most of it waiting for downloads. You don't need Python or anything else
-besides LM Studio.
+🤖 **A score for every job**<br>
+From 1 to 10, with the reason, what you already have, what's missing and what could rule you out.
 
-### What you need
+</td>
+</tr>
+<tr>
+<td valign="top">
 
-- Windows 10 or 11.
-- A graphics card that LM Studio supports. The AI model runs on it. With 8 GB of video memory or more
-  you get the same model I use (on my RTX 3060 with 12 GB). With less, the app picks a smaller model:
-  it's weaker, so the scores may differ a bit, but it works.
-- About 8 GB of free disk space: up to 6 GB for the model, the rest for the app.
-- Your CV as a Markdown, text or PDF file. A PDF has to contain text, not a scanned picture. If your
-  CV is in Word, save it as PDF.
+⭐ **The good ones first**<br>
+Jobs scored 5 or more, best first, new ones marked. Jobs that don't mention your skills or are older
+than a month are skipped.
 
-### 1. Install LM Studio
+</td>
+<td valign="top">
 
-Download and install [LM Studio](https://lmstudio.ai) and **open it once**: on the first start it sets
-up its command-line tool, which Job Finder uses to run the model. After that you can close it. You
-don't need to download a model there, Job Finder does it for you.
+♻️ **Old jobs spotted**<br>
+Sites bump old listings so they look new. The app remembers when it first saw a job and marks
+reposts.
 
-### 2. Install Job Finder
+</td>
+</tr>
+<tr>
+<td valign="top">
 
-1. Download **`JobFinder-Setup.exe`** from the
-   [latest release](https://github.com/BuisnessCat/cv_job_finder/releases/latest).
-2. Run it. Windows will probably say "Windows protected your PC", because the app isn't signed (a
-   signature costs money every year). Click **More info**, then **Run anyway**.
-3. The setup puts Job Finder into your user folder and makes shortcuts on the desktop and in the Start
-   menu. At the end it offers to open the app.
+📋 **Your applications**<br>
+Notes, accepted or rejected, and how long you've been waiting for an answer.
 
-### 3. First start
+</td>
+<td valign="top">
 
-If something is still missing, a **Getting ready** window says what:
+📚 **What to learn next**<br>
+The Insights tab counts the skills jobs want that you don't have yet.
 
-- **LM Studio** isn't installed or was never opened: install it, open it once, click **Check again**.
-- **The AI model** isn't downloaded: click **Download model**. It's about 6 GB (or about 3 GB for the
-  smaller model), so it takes a while. You can keep the window open, or continue and click **Refresh** in
-  the app when the download has finished.
+</td>
+</tr>
+<tr>
+<td valign="top">
 
-Then a short setup asks three things:
+🔔 **Works in the background**<br>
+Sits in the tray, looks for new jobs every 3 hours and notifies you when one scores 7 or more.
 
-1. **Your CV.** Pick the file. The app finds the skills in it and shows them as chips: remove the wrong
-   ones, add the missing ones. Then pick your **main skill**. Remote job boards are searched by it, so
-   choose what you'd type into a job search, like Python or Java. You don't have to come up with any
-   keywords.
-2. **What you're looking for.** City, whether remote is fine, and your level. You can pick several
-   levels, like Intern and Junior.
-3. **Languages.** Every language you speak and how well. The AI checks each job's language
-   requirements against them.
+</td>
+<td valign="top">
 
-After **Start search** the app scores every job it found. The first time this takes a while, about
-8 seconds per job on my RTX 3060, so 20–40 minutes. Jobs show up in the list as they're scored, so you
-can start reading right away. Later only new jobs get scored, which is a matter of minutes.
+🔒 **Stays on your computer**<br>
+Only the requests to the job sites go out. Your CV and the jobs stay on your machine.
 
-Avoid playing games while it's scoring: the game and the model share the video memory. When a
-full-screen game is running, the app pauses the scoring and picks it up later.
+</td>
+</tr>
+</table>
 
-Closing the window doesn't quit the app: it keeps running in the tray (next to the clock) and looks for
-new jobs every 3 hours. Click the icon or the desktop shortcut to open the window again; to quit,
-right-click the icon and choose **Quit**.
+## Installing
 
-Everything from the setup can be changed later with the **Settings** button at the top of the window.
-If a change affects the scores (your CV, city, levels or languages), the app tells you how long
-scoring everything again will take and asks first.
+About 20 minutes, most of it waiting for downloads. You don't need Python.
 
-![Settings](docs/screenshots/settings.png)
+> [!IMPORTANT]
+> **You need** Windows 10 or 11, a graphics card that LM Studio supports, about 8 GB of free disk
+> space and your CV as a PDF, Markdown or text file (a PDF with real text, not a scan).
+> With 8 GB of video memory or more you get the full model; with less, the app picks a smaller one,
+> which scores a bit less precisely.
 
-### Updating
+### Step 1 · LM Studio
 
-Download the new `JobFinder-Setup.exe` and run it (quit Job Finder first). Your jobs, applications,
-notes and settings stay: they live in `%LOCALAPPDATA%\Job Finder`, apart from the app.
+Download [LM Studio](https://lmstudio.ai), install it and **open it once**: on the first start it
+sets up the command-line tool Job Finder uses. Then you can close it. You don't need to download a
+model there.
 
-### Uninstalling
+### Step 2 · Job Finder
 
-Start menu → **Uninstall Job Finder** (the app isn't listed in Windows Settings → Apps). Your jobs and
-notes stay in `%LOCALAPPDATA%\Job Finder`; delete that folder too if you don't need them. The model can be deleted in LM Studio under My Models.
+Download **JobFinder-Setup.exe** from the
+[latest release](https://github.com/BuisnessCat/cv_job_finder/releases/latest) and run it. It
+installs into your user folder and adds shortcuts to the desktop and the Start menu.
 
-### If something goes wrong
+> [!TIP]
+> If Windows says **"Windows protected your PC"**, click **More info**, then **Run anyway**. The app
+> isn't signed: a code signature costs money every year.
+
+### Step 3 · First start
+
+1. **Getting ready.** If LM Studio or the AI model is missing, a window says what to do. The model
+   downloads with one click: about 6 GB, or 3 GB for the smaller one.
+2. **Setup.** Pick your CV, check the skills the app found in it and choose your main skill, like
+   Python or Java. Then your city, whether remote is fine, your level (you can pick several, like
+   Intern and Junior) and the languages you speak.
+3. **Start search.** The first scoring takes a while: about 8 seconds per job, so 20–40 minutes on an
+   RTX 3060. Jobs appear as they're scored, so you can start reading right away. Later only new jobs
+   are scored.
+
+## Day to day
+
+- **Closing the window doesn't quit the app.** It stays in the tray next to the clock. To quit,
+  right-click the icon and choose **Quit**.
+- **Settings**, at the top of the window, changes anything from the setup. If a change affects the
+  scores, the app says how long scoring everything again will take and asks first.
+- **Games and the model share the video memory**, so the app pauses scoring while a full-screen game
+  is running and picks it up later.
+- **Updating:** quit Job Finder, download the new `JobFinder-Setup.exe` and run it. Your jobs,
+  applications and settings stay: they live in `%LOCALAPPDATA%\Job Finder`, apart from the app.
+- **Uninstalling:** Start menu → **Uninstall Job Finder** (it isn't listed in Windows Settings → Apps).
+  Your data stays in
+  `%LOCALAPPDATA%\Job Finder`: delete that folder too if you don't need it. The model can be deleted
+  in LM Studio under **My Models**.
+
+<details>
+<summary><b>If something goes wrong</b></summary>
+
+<br>
 
 | What you see | What to do |
 |---|---|
-| "Windows protected your PC" | The app isn't signed. Click **More info** → **Run anyway**. |
+| "Windows protected your PC" | Click **More info** → **Run anyway**. |
 | "Job Finder is running. Close it…" during setup | Right-click the icon next to the clock → **Quit**, then run the setup again. |
-| **Getting ready** says LM Studio isn't installed, but it is | Open LM Studio once (it sets up its command-line tool then) and click **Check again**. |
-| The model download failed | Check the internet connection and click **Download model** again, or download the model in LM Studio (search for "Ministral 3"). |
-| `LM Studio: model failed to load` in the status line | The model isn't downloaded yet (wait for the download, then click Refresh), or there isn't enough free video memory (close games or other heavy apps and click Refresh). |
-| Windows Defender or Smart App Control blocks the setup | The app isn't signed, so some security settings block it. Allow it in Windows Security, or run it from the source code (below). |
-| Scoring is very slow or times out | The graphics card is busy with something else. Close it and click Refresh. |
-| `Himalayas: error (521 …)` or another site error | That site is down for a while. The other sites still work; click Refresh later. |
-| Anything else | Look at `job_finder.log` in `%LOCALAPPDATA%\Job Finder`: every error is written there with details. |
+| **Getting ready** says LM Studio isn't installed, but it is | Open LM Studio once and click **Check again**. |
+| The model download failed | Check the internet connection and click **Download model** again, or download "Ministral 3" in LM Studio. |
+| `LM Studio: model failed to load` | Wait until the model has downloaded, or close games and other heavy apps to free video memory. Then click **Refresh**. |
+| Windows Security or Smart App Control blocks the setup | Allow it in Windows Security, or run the app from the source code (below). |
+| Scoring is very slow or times out | Something else is using the graphics card. Close it and click **Refresh**. |
+| `Himalayas: error (521 …)` or another site error | That site is down for a while. The others still work; click **Refresh** later. |
+| Anything else | Every error is written to `job_finder.log` in `%LOCALAPPDATA%\Job Finder`. |
 
-## Running it from the source code
+</details>
 
-For developers, or if you'd rather not run an unsigned exe. You need Python **3.11** (with the py
-launcher) and LM Studio.
+<details>
+<summary><b>For developers: running from the source code</b></summary>
+
+<br>
+
+For developers, or if you'd rather not run an unsigned exe. You need Python 3.11 and LM Studio.
 
 ```powershell
 git clone https://github.com/BuisnessCat/cv_job_finder.git JobFinder
@@ -138,33 +169,27 @@ cd JobFinder
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-`install.ps1` makes a virtual environment with the libraries and a Job Finder shortcut on the desktop
-(don't also run the setup on the same computer: it would take over that shortcut).
-Run from the source code, the app keeps its data in the project folder. To build `JobFinder-Setup.exe`
-yourself: `powershell -ExecutionPolicy Bypass -File build.ps1` (it puts the result into `dist`).
+`install.ps1` makes a virtual environment and a Job Finder shortcut on the desktop. Run this way, the
+app keeps its data in the project folder. Don't also run the setup on the same computer: it would take
+over the shortcut.
 
-## Changing things
+- **Build the setup:** `powershell -ExecutionPolicy Bypass -File build.ps1` → `dist\JobFinder-Setup.exe`
+- **Run the tests:** `.venv\Scripts\python -m pytest tests -q` (a few seconds, no internet or LM Studio needed)
+- **Models and job site queries:** `job_finder/config.py`
+- **Scoring rules:** a plain-text template in `job_finder/llm.py`. Changing it, or your CV, re-scores
+  every job on the next refresh.
 
-Everything about you is in Settings. The technical bits are in `job_finder/config.py`: the models and
-what to ask the job boards for. The rules the model uses for scoring are a plain-text template in
-`job_finder/llm.py`, filled in from your settings. If you change the template or your CV, all jobs get
-scored again on the next refresh.
+</details>
 
-## Tests
+## About
 
-```powershell
-.venv\Scripts\python -m pytest tests -q
-```
+I use Job Finder for my own job search and keep improving it based on what I see there: which jobs it
+misses, which scores feel wrong.
 
-They take a few seconds and don't need internet or LM Studio.
+I built it with [Claude Code](https://claude.com/claude-code), Anthropic's AI coding assistant. My part
+was the product: what the app should do, how it should look and work, which trade-offs to make, and
+testing every change on my real job search. Claude did most of the coding. The design notes and plans
+are in [`docs/superpowers/`](docs/superpowers/), and [`docs/how-it-works.ru.md`](docs/how-it-works.ru.md)
+explains how the parts fit together (both in Russian).
 
-## How it was made
-
-I built this with Claude Code, Anthropic's coding assistant. The idea, the decisions about what the
-app should do and the testing on my own job search were mine, and Claude wrote most of the code and
-tests. The notes and plans from that process are in `docs/superpowers/` (in Russian), and there's a
-plain explanation of how everything fits together in `docs/how-it-works.ru.md`.
-
-## License
-
-MIT
+Licensed under MIT.
