@@ -9,12 +9,12 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import QSize
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QSystemTrayIcon
 
 from helpers import use_settings
 
-from job_finder import busy, config, db, llm, settings, settings_window, style, worker
+from job_finder import busy, config, db, llm, settings, settings_window, style, updates, worker
 from job_finder.__main__ import tell_running_instance
 from job_finder.sources import Job
 from job_finder.window import MainWindow, days_waiting, plural_days
@@ -974,3 +974,58 @@ def test_gone_remote_job_hidden_when_remote_is_off(window):
     db.save_jobs("Remote OK", [])  # not fetched with remote off: not "gone", just not searched for
     window.load_rows()
     assert window.rows == []
+
+
+def test_update_button_opens_the_release_page(window, monkeypatch):
+    monkeypatch.setattr(MainWindow, "updates_on", True)
+    monkeypatch.setattr(updates, "start_thread", lambda target: target())  # no thread in tests
+    monkeypatch.setattr(updates, "check", lambda current=None: "9.0.0")
+    assert window.update_button.isHidden()
+    window.check_updates()
+    assert not window.update_button.isHidden()
+    assert window.update_button.text() == "Update to 9.0.0"
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url.toString()))
+    window.update_button.click()
+    assert opened == [config.RELEASES_PAGE]
+
+
+def test_no_update_check_when_run_from_the_sources(window, monkeypatch):
+    monkeypatch.setattr(MainWindow, "updates_on", False)  # the sources are updated with git
+    started = []
+    monkeypatch.setattr(updates, "start_thread", lambda target: started.append(target))
+    window.check_updates()
+    assert started == []
+    assert window.update_button.isHidden()
+
+
+def test_update_checked_with_every_auto_refresh(tray_window, monkeypatch):
+    monkeypatch.setattr(MainWindow, "updates_on", True)
+    checks = []
+    monkeypatch.setattr(updates, "start_thread", lambda target: checks.append(target))
+    monkeypatch.setattr(busy, "windows_busy", lambda: True)  # even while a game runs: one small request
+    tray_window.auto_timer.timeout.emit()
+    assert len(checks) == 1
+
+
+def test_update_notified_once_from_the_tray(tray_window, monkeypatch):
+    messages, opened = [], []
+    monkeypatch.setattr(tray_window.tray, "showMessage", lambda *args: messages.append(args[1]))
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url.toString()))
+    monkeypatch.setattr(tray_window, "isActiveWindow", lambda: False)
+    tray_window.on_update("9.0.0")
+    assert messages == ["Version 9.0.0 is out. Click here to download it."]
+    tray_window.tray.messageClicked.emit()
+    assert opened == [config.RELEASES_PAGE]
+    tray_window.on_update("9.0.0")  # the next check finds the same version
+    assert len(messages) == 1
+    tray_window.on_update("9.1.0")
+    assert len(messages) == 2
+    assert tray_window.update_button.text() == "Update to 9.1.0"
+    monkeypatch.setattr(tray_window, "isActiveWindow", lambda: True)
+    tray_window.on_update("9.2.0")  # the window is in front: the button is enough
+    assert len(messages) == 2
+
+
+def test_tray_tooltip_shows_the_version(tray_window):
+    assert tray_window.tray.toolTip() == f"Job Finder {config.VERSION}"

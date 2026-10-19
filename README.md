@@ -130,8 +130,10 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
   scores, the app says how long scoring everything again will take and asks first.
 - **Games and the model share the video memory**, so the app pauses scoring while a full-screen game
   is running and picks it up later.
-- **Updating:** quit Job Finder, download the new `JobFinder-Setup.exe` and run it. Your jobs,
-  applications and settings stay: they live in `%LOCALAPPDATA%\Job Finder`, apart from the app.
+- **Updating:** when a new version is out, a green **Update** button appears at the top of the window
+  (and a notification, if the app is in the tray). Click it, download the new `JobFinder-Setup.exe`, quit
+  Job Finder and run the setup. Your jobs, applications and settings stay: they live in
+  `%LOCALAPPDATA%\Job Finder`, apart from the app.
 - **Uninstalling:** Start menu → **Uninstall Job Finder** (it isn't listed in Windows Settings → Apps).
   Your data stays in
   `%LOCALAPPDATA%\Job Finder`: delete that folder too if you don't need it. The model can be deleted

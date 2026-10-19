@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from job_finder import busy, config, db, freshness, insights, llm, settings, sources, style
+from job_finder import busy, config, db, freshness, insights, llm, settings, sources, style, updates
 from job_finder.settings import Settings
 from job_finder.worker import Worker, read_cv
 
@@ -136,6 +136,7 @@ class MainWindow(QMainWindow):
     clock = staticmethod(time.monotonic)  # for the time-left estimate; tests replace it
     tray_available = staticmethod(QSystemTrayIcon.isSystemTrayAvailable)  # tests replace it
     exit_app = staticmethod(QApplication.quit)  # ends the event loop after Quit; tests replace it
+    updates_on = config.FROZEN  # only the installed app looks for new versions: the sources are updated with git
 
     def __init__(self):
         super().__init__()
@@ -183,6 +184,11 @@ class MainWindow(QMainWindow):
         self.cv_window = None  # the "My CV" window is created on first click
         self.settings_button = QPushButton("Settings")
         self.settings_button.clicked.connect(self.open_settings)
+        self.update_button = QPushButton()  # "Update to 1.2.0", shown when a newer version is out
+        self.update_button.setObjectName("primary")
+        self.update_button.setToolTip("Download the new setup, quit Job Finder from the tray and run the setup")
+        self.update_button.clicked.connect(self.open_releases)
+        self.update_button.hide()
         top = QHBoxLayout()
         top.addWidget(self.refresh_button)
         top.addSpacing(style.GAP)
@@ -190,6 +196,7 @@ class MainWindow(QMainWindow):
         top.addSpacing(style.GAP)
         top.addWidget(self.status_label, 1)
         top.addWidget(self.progress)
+        top.addWidget(self.update_button)
         top.addWidget(self.cv_button)
         top.addWidget(self.settings_button)
 
@@ -231,6 +238,10 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self.on_finished)
 
         self.jobs_message = False  # the last tray message was about new jobs (clicking it opens the window)
+        self.update_message = False  # the last tray message was about a new version (clicking it opens its page)
+        self.notified_version = ""  # a new version is told about once
+        self.update_checker = updates.UpdateChecker()
+        self.update_checker.found.connect(self.on_update)
         self.refresh_action = None  # "Refresh now" in the tray menu
         self.quitting = False  # Quit from the tray: closing the window really closes the app
         self.tray_hint_shown = False
@@ -238,6 +249,7 @@ class MainWindow(QMainWindow):
         self.auto_timer = QTimer(self)  # look for new jobs every few hours, also from the tray
         self.auto_timer.setInterval(config.AUTO_REFRESH_HOURS * 3600 * 1000)
         self.auto_timer.timeout.connect(self.auto_refresh)
+        self.auto_timer.timeout.connect(self.check_updates)
         self.auto_timer.start()
         self.retry_timer = QTimer(self)  # a full-screen game was running: try again a bit later
         self.retry_timer.setSingleShot(True)
@@ -246,6 +258,7 @@ class MainWindow(QMainWindow):
 
         self.load_rows()
         QTimer.singleShot(0, self.refresh)  # refresh right after the window is shown
+        self.check_updates()
 
     def _build_details(self) -> QWidget:
         """Details card: header with the score, application pills, facts, "why", lists; buttons at the bottom."""
@@ -881,7 +894,7 @@ class MainWindow(QMainWindow):
         self.scored_urls = set()
         if good and self.tray is not None and not self.isActiveWindow():  # hidden, minimized or behind
             jobs = "job" if len(good) == 1 else "jobs"
-            self.jobs_message = True
+            self.jobs_message, self.update_message = True, False
             self.tray.showMessage("Job Finder", f"{len(good)} new {jobs} with a score of {self.notify_score()}+",
                                   QSystemTrayIcon.Information, 10000)
         if self.worker.paused:
@@ -964,7 +977,7 @@ class MainWindow(QMainWindow):
 
     def _build_tray(self) -> QSystemTrayIcon:
         tray = QSystemTrayIcon(QIcon(str(config.ICON_PATH)), self)
-        tray.setToolTip("Job Finder")
+        tray.setToolTip(f"Job Finder {config.VERSION}")
         menu = QMenu(self)
         menu.addAction("Open Job Finder", self.show_window)
         self.refresh_action = menu.addAction("Refresh now", self.refresh_now)
@@ -980,6 +993,27 @@ class MainWindow(QMainWindow):
     def on_message_clicked(self) -> None:
         if self.jobs_message:  # not the "keeps running in the tray" hint: that window was just closed
             self.show_window()
+        elif self.update_message:
+            self.open_releases()
+
+    def check_updates(self) -> None:
+        """Ask GitHub for the latest release in the background; on_update gets a newer version."""
+        if self.updates_on:
+            updates.start_thread(self.update_checker.run)
+
+    def on_update(self, version: str) -> None:
+        self.update_button.setText(f"Update to {version}")
+        self.update_button.show()
+        if version == self.notified_version:
+            return
+        self.notified_version = version
+        if self.tray is not None and not self.isActiveWindow():  # in front, the button is enough
+            self.jobs_message, self.update_message = False, True
+            self.tray.showMessage("Job Finder", f"Version {version} is out. Click here to download it.",
+                                  QSystemTrayIcon.Information, 10000)
+
+    def open_releases(self) -> None:
+        QDesktopServices.openUrl(QUrl(config.RELEASES_PAGE))
 
     def listen_for_launches(self, name: str) -> None:
         """A second launch of the app (the shortcut clicked again) asks this one to show its window."""
@@ -1032,7 +1066,7 @@ class MainWindow(QMainWindow):
         self.hide()
         if not self.tray_hint_shown:
             self.tray_hint_shown = True
-            self.jobs_message = False
+            self.jobs_message = self.update_message = False
             self.tray.showMessage("Job Finder", TRAY_HINT, QSystemTrayIcon.Information, 8000)
 
     def closeEvent(self, event) -> None:
