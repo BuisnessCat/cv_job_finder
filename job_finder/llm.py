@@ -57,14 +57,13 @@ Answer with a JSON object:
     language is never similar: C, C++ and C# are three different languages, and Java is not JavaScript.
   Only requirements written in the ad: never add a technology the ad does not name. If the ad names few
   concrete requirements, list only those and do not invent requirements. Experience, level, location and
-  residency are not requirements: they are blockers when they rule the candidate out.
+  residency are not requirements: they are blockers when they rule the candidate out. Soft skills (teamwork,
+  communication, curiosity) are not requirements either. A degree the candidate is studying for is "similar".
 - blockers — only real hard stops, each with a kind and evidence (a short quote from the ad):
   "experience" — {experience_blocker};
   "spoken language" — the job requires a language the candidate does not speak at the required level;
   "location" — {location_blocker};
-  "residency" — citizenship or residency of another country is required;
-  "field" — the role is in another field than the candidate's CV (e.g. sales or hardware design for a
-  software developer).
+  "residency" — citizenship or residency of another country is required.
   These are NOT blockers: {not_problems}. An empty list if there are none.
 - summary — 1–2 sentences: the main reasons for and against.
 Write all texts in English, as plain text without Markdown. Rely only on facts from the CV and the job ad.
