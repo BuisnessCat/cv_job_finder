@@ -196,3 +196,9 @@ def test_remote_is_no_location_blocker_for_who_works_remotely():
     assert ceiling("Location: Fully Remote") is None
     assert ceiling("Remote: Brazil only") == 3
     assert ceiling("Location: Fully Remote", replace(S, remote=False)) == 3  # an office in Praha is wanted
+
+
+def test_markdown_is_taken_out_of_the_summary():
+    a = answer([req("Python"), req("SQL"), req("Docker", match="no")])
+    a["summary"] = "The candidate has **Python and SQL**, but no `Docker`."
+    assert score(a, PY_AD, KNOWN)["summary"] == "The candidate has Python and SQL, but no Docker."

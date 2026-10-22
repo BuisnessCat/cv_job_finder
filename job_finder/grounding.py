@@ -216,7 +216,8 @@ def score(answer: dict, job: Job, known: set[str], s: Settings) -> dict:
         risks.append(f"The ad names few concrete requirements: read it before applying (score at most {FEW_CAP})")
     cap = min(caps) if caps and min(caps) < base else None
     return {
-        "score": min(base, cap) if cap else base, "summary": answer.get("summary", ""),
+        "score": min(base, cap) if cap else base,
+        "summary": re.sub(r"\*\*|__|`", "", answer.get("summary", "")),  # the model sometimes writes Markdown
         "requirements": requirements, "blockers": blockers, "counted": {**counted, "base": base, "cap": cap},
         # The lists the Insights tab and older parts of the app read
         "have": [item["requirement"] for item in requirements if item["match"] != "no"],
