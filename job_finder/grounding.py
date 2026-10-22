@@ -20,6 +20,7 @@ MATCH = {"yes": 1.0, "similar": 0.7, "no": 0.0}  # the share of the weight the c
 CAPS = {"experience": 4, "spoken language": 5, "location": 3, "residency": 2}
 LANGUAGE_CAP = 3  # the title names a programming language the CV doesn't have
 MUST_LANGUAGE_CAP = 4  # a must-have programming language the CV doesn't have
+QUOTE_SHARE = 0.6  # of a blocker's longer words that must be in the ad
 FEW_REQUIREMENTS, FEW_CAP = 3, 7  # fewer requirements than this: too little to be sure of a high score
 NO_REQUIREMENTS_SCORE = 5
 
@@ -115,6 +116,14 @@ def _speaks(text: str, languages: dict[str, str]) -> bool | None:
     return bool(have) and (need is None or max(have) >= need)
 
 
+def _quotes(evidence: str, ad: str) -> bool:
+    """Whether a blocker's evidence is the ad's own words (most of its longer words are in the ad), not the
+    model's guess about it."""
+    words = re.findall(r"\w{4,}", evidence.lower())
+    text = ad.lower()
+    return bool(words) and sum(word in text for word in words) >= QUOTE_SHARE * len(words)
+
+
 def _rules_out(blocker: dict, s: Settings) -> bool:
     """Whether the program can confirm a blocker the model found: the model sees blockers where there are none
     ("we don't expect an expert" as experience, "English B2" for a B2 candidate), and a blocker caps the score."""
@@ -168,7 +177,9 @@ def score(answer: dict, job: Job, known: set[str], s: Settings) -> dict:
     base = math.floor(1 + 9 * points / total + 0.5) if total else NO_REQUIREMENTS_SCORE
     risks, caps = [], []
     blockers = [{"kind": item["kind"], "evidence": item["evidence"], "cap": CAPS[item["kind"]]}
-                for item in answer["blockers"] if item.get("kind") in CAPS and _rules_out(item, s)]
+                for item in answer["blockers"]
+                if item.get("kind") in CAPS and _quotes(item["evidence"], f"{job.title}\n{job.description}")
+                and _rules_out(item, s)]
     for item in blockers:
         caps.append(item["cap"])
         risks.append(f"{item['evidence']} (score at most {item['cap']})")

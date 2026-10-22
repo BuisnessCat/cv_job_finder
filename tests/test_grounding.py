@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from job_finder import grounding
 from job_finder.settings import Settings
 from job_finder.sources import Job
@@ -66,7 +68,7 @@ def test_score_is_counted_from_the_requirements():
 def test_blockers_cap_the_score():
     result = score(answer([req("Python"), req("SQL")] + [req(f"skill {i}") for i in range(3)],
                                     [{"kind": "experience", "evidence": "3+ years of commercial experience"}]),
-                             PY_AD, KNOWN)
+                             replace(PY_AD, description=PY_AD.description + " 3+ years of commercial experience."), KNOWN)
     assert result["score"] == 4 and result["counted"]["base"] == 10 and result["counted"]["cap"] == 4
     assert result["blockers"] == [{"kind": "experience", "evidence": "3+ years of commercial experience", "cap": 4}]
     assert result["risks"] == ["3+ years of commercial experience (score at most 4)"]
@@ -113,8 +115,9 @@ def blocker(kind, evidence):
 def test_blockers_count_only_when_the_program_confirms_them():
     met = [req("Python"), req("SQL"), req("Django"), req("Docker")]
 
-    def ceiling(kind, evidence):
-        return score(answer(met, [blocker(kind, evidence)]), PY_AD, KNOWN | {"Django", "Docker"})["counted"]["cap"]
+    def ceiling(kind, evidence):  # the ad says it: the quote test is its own
+        ad = replace(PY_AD, description=f"{PY_AD.description} {evidence}")
+        return score(answer(met, [blocker(kind, evidence)]), ad, KNOWN | {"Django", "Docker"})["counted"]["cap"]
 
     assert ceiling("experience", "We are not looking for a finished expert") is None
     assert ceiling("experience", "0-3 years of experience, graduates welcome") is None
@@ -160,3 +163,14 @@ def test_czech_word_forms_count():
     assert {"Python", "Git", "Docker", "Linux", "C/C++", "Java"} <= grounding.technologies(czech)
     assert grounding.technologies("zkušenost s JavaScriptem") & {"Java", "JavaScript"} == {"JavaScript"}
     assert grounding.technologies("Pracujeme s daty a reporty.") == set()  # ordinary Czech words stay words
+
+
+def test_a_blocker_must_quote_the_ad():
+    ad = Job(url="q", source="Jobicy", title="Junior Developer", company="A", city="", published="",
+             description="Python, SQL, Git. We need at least 3 years of commercial experience. English B2.")
+    met = [req("Python"), req("SQL"), req("Git")]
+    quoted = score(answer(met, [blocker("experience", "at least 3 years of commercial experience")]), ad, KNOWN)
+    assert quoted["counted"]["cap"] == 4
+    guessed = score(answer(met, [blocker("spoken language", "No explicit English requirement, but the context "
+                                                            "implies native or fluent proficiency")]), ad, KNOWN)
+    assert guessed["counted"]["cap"] is None and guessed["blockers"] == []  # the model's guess, not the ad's words
