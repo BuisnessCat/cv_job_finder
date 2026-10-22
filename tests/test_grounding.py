@@ -66,3 +66,11 @@ def test_language_check_spares_families_and_cvs_without_languages():
     assert grounding.check(evaluation(score=7), ts, {"JavaScript"})["score"] == 7  # one family
     java = Job(url="j", source="Jobicy", title="Java Tester", company="A", city="", published="", description="")
     assert grounding.check(evaluation(score=6), java, {"SQL", "Testing"})["score"] == 6  # no languages in the CV
+
+
+def test_czech_word_forms_count():
+    czech = ("Must-have: Znalost programování v\xa0Pythonu, zkušenosti s\xa0používáním Gitu, práce s Dockerem, "
+             "Linuxovým shellem, programování v\xa0Céčku a Javou.")
+    assert {"Python", "Git", "Docker", "Linux", "C/C++", "Java"} <= grounding.technologies(czech)
+    assert grounding.technologies("zkušenost s JavaScriptem") & {"Java", "JavaScript"} == {"JavaScript"}
+    assert grounding.technologies("Pracujeme s daty a reporty.") == set()  # ordinary Czech words stay words

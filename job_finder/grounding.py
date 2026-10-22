@@ -1,5 +1,7 @@
 """Technologies an ad really names, found by the program (the skills dictionary, strict patterns), not by the model:
 facts given to the model with the ad, and a check of its answer (spec section 20.3)."""
+import re
+
 from job_finder import insights, settings
 from job_finder.sources import Job
 
@@ -8,10 +10,27 @@ LANGUAGES = set(settings.PROGRAMMING_LANGUAGES)
 MAX_SCORE_OTHER_LANGUAGE = 3
 
 
+# Czech puts endings on technology names ("v Pythonu", "s Gitem", "Linuxovým shellem"), and the dictionary looks
+# for whole words: such forms are turned back into the name first
+_PLAIN = sorted({alias for name, aliases in insights.REQUIREMENTS.items() if name not in settings.NOT_SKILLS
+                 for alias in aliases if re.fullmatch(r"[a-z]{3,}", alias)}, key=len, reverse=True)
+_CZECH_ENDINGS = re.compile(r"(?<![\w#+.])(" + "|".join(_PLAIN) + r")(?:u|em|a|y|ou|ech|ům|ách|ov\w*)(?![\w#+])",
+                            re.IGNORECASE)
+_CZECH_FORMS = [(re.compile(r"(?<![\w#+.])jav(?:ě|ou|u|y)(?![\w#+])", re.IGNORECASE), "Java"),
+                (re.compile(r"(?<![\w#+.])céč(?:ko|ka|ku|kem)(?![\w#+])", re.IGNORECASE), "C++")]
+
+
+def _base_forms(text: str) -> str:
+    text = _CZECH_ENDINGS.sub(r"\1", text)
+    for pattern, name in _CZECH_FORMS:
+        text = pattern.sub(name, text)
+    return text
+
+
 def technologies(text: str) -> set[str]:
-    """Dictionary technologies written in a text: "C#" is not "C", "go to market" is not Go; not experience,
-    spoken languages or a degree."""
-    return set(settings.detect_skills(text))
+    """Dictionary technologies written in a text, also in Czech forms: "C#" is not "C", "go to market" is not Go;
+    not experience, spoken languages or a degree."""
+    return set(settings.detect_skills(_base_forms(text)))
 
 
 def cv_technologies(cv_text: str) -> set[str]:
