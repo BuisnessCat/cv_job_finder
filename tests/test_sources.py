@@ -346,3 +346,16 @@ def test_dedupe_only_across_sources():
 def test_parse_remoteok_rejects_an_unexpected_answer():
     with pytest.raises(ValueError):  # e.g. a rate-limit message: not "no jobs", or every job would look gone
         sources.parse_remoteok({"error": "rate limited"})
+
+
+def test_source_label_names_the_site_behind_junior_guru():
+    label = sources.source_label
+    assert label("junior.guru", "https://www.linkedin.com/jobs/view/1/?utm_source=juniorguru") == \
+        "junior.guru (from LinkedIn)"
+    assert label("junior.guru", "https://cz.linkedin.com/jobs/view/2/") == "junior.guru (from LinkedIn)"
+    assert label("junior.guru", "https://www.jobs.cz/rpd/2001489876/") == "junior.guru (from jobs.cz)"
+    assert label("junior.guru", "https://www.startupjobs.cz/nabidka/1/x") == "junior.guru (from StartupJobs)"
+    assert label("junior.guru", "https://careers.example.com/job/1") == "junior.guru (from careers.example.com)"
+    assert label("junior.guru", "https://junior.guru/jobs/d66feb3/") == "junior.guru"  # its own job page
+    assert label("junior.guru", "") == "junior.guru"
+    assert label("Himalayas", "https://himalayas.app/jobs/1") == "Himalayas"

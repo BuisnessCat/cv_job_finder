@@ -1076,3 +1076,9 @@ def test_get_model_button_opens_getting_ready(window, monkeypatch):
     monkeypatch.setattr(MainWindow, "refresh", lambda self: refreshed.append(self))
     window.model_button.click()
     assert shown == [config.MODEL] and refreshed == [window]
+
+
+def test_card_names_the_site_behind_junior_guru(window):
+    window.on_evaluated(row("https://www.linkedin.com/jobs/view/1/", 8) | {"source": "junior.guru"})
+    window.table.selectRow(0)
+    assert window.facts["source"].text() == "junior.guru (from LinkedIn)"

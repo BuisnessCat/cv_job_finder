@@ -809,6 +809,7 @@ class MainWindow(QMainWindow):
         self.d_company.setText(row["company"])
         for key, label in self.facts.items():
             label.setText(row.get(key) or "")
+        self.facts["source"].setText(sources.source_label(row["source"], row["url"]))
         has_salary = bool(row.get("salary"))  # only some sites give one
         self.facts["salary"].setVisible(has_salary)
         self.fact_names["salary"].setVisible(has_salary)

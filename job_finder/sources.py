@@ -10,6 +10,7 @@ from dataclasses import dataclass, fields
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 from xml.etree import ElementTree
 
 import requests
@@ -45,6 +46,20 @@ class Job:
 
 def html_to_text(html: str | None) -> str:
     return BeautifulSoup(html or "", "html.parser").get_text("\n", strip=True)
+
+
+SITE_NAMES = {"linkedin.com": "LinkedIn", "jobs.cz": "jobs.cz", "startupjobs.cz": "StartupJobs"}
+
+
+def source_label(source: str, url: str) -> str:
+    """Where a job was found, for the card. junior.guru mostly shows other sites' jobs and links straight to them
+    (its description is a copy from there), so it names that site: "junior.guru (from LinkedIn)"."""
+    host = (urlparse(url).hostname or "").removeprefix("www.")
+    if source != "junior.guru" or not host or host == "junior.guru" or host.endswith(".junior.guru"):
+        return source
+    site = next((name for domain, name in SITE_NAMES.items() if host == domain or host.endswith("." + domain)),
+                host)
+    return f"junior.guru (from {site})"
 
 
 def juniorguru_place(city: str) -> str:
