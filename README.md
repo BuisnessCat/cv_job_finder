@@ -35,7 +35,8 @@ region of Czechia and remote jobs open to it.
 <td width="50%" valign="top">
 
 🤖 **A score for every job**<br>
-From 1 to 10, with the reason, what you already have, what's missing and what could rule you out.
+From 1 to 10, with the reason, what you already have, what's missing and what could rule you out. The app
+checks the AI against the ad, so the technologies listed are the ones the ad really names.
 
 </td>
 </tr>
@@ -113,8 +114,8 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
 
 ### Step 3 · First start
 
-1. **Getting ready.** If LM Studio or the AI model is missing, a window says what to do. The model
-   downloads with one click: about 6 GB, or 3 GB for the smaller one.
+1. **AI model.** If LM Studio or the AI model is missing, the setup starts with them. The model downloads
+   with one click: about 6 GB, or 3 GB for the smaller one. You can go on while it downloads.
 2. **Setup.** Pick your CV, check the skills the app found in it and choose your main skill, like
    Python or Java. Then your city, whether remote is fine, your level (you can pick several, like
    Intern and Junior) and the languages you speak.
@@ -148,8 +149,9 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
 |---|---|
 | "Windows protected your PC" | Click **More info** → **Run anyway**. |
 | "Job Finder is running. Close it…" during setup | Right-click the icon next to the clock → **Quit**, then run the setup again. |
-| **Getting ready** says LM Studio isn't installed, but it is | Open LM Studio once and click **Check again**. |
+| The **AI model** step or **Getting ready** says LM Studio isn't installed, but it is | Open LM Studio once and click **Check again**. |
 | The model download failed | Check the internet connection and click **Download model** again, or download "Ministral 3" in LM Studio. |
+| A green **Get AI model** button at the top | LM Studio or the AI model is missing. Click it and follow the window; the jobs are scored when the download has finished. |
 | `LM Studio: model failed to load` | Wait until the model has downloaded, or close games and other heavy apps to free video memory. Then click **Refresh**. |
 | Windows Security or Smart App Control blocks the setup | Allow it in Windows Security, or run the app from the source code (below). |
 | Scoring is very slow or times out | Something else is using the graphics card. Close it and click **Refresh**. |
