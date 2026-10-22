@@ -136,8 +136,8 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
 - **Games and the model share the video memory**, so the app pauses scoring while a full-screen game
   is running and picks it up later.
 - **Updating:** the app downloads a new version by itself and shows a green **Restart to update** button
-  (and a notification, if it's in the tray). Click it: Job Finder closes, updates and opens again in about
-  20 seconds. If you don't, the update is installed when you quit the app. Your jobs, applications and settings
+  (and a notification, if it's in the tray). Click it: Job Finder closes, updates and opens again in a few
+  seconds. If you don't, the update is installed when you quit the app. Your jobs, applications and settings
   stay: they live in `%LOCALAPPDATA%\Job Finder`, apart from the app. Versions before 1.3.0 can't do this yet:
   update them once by hand, with the new `JobFinder-Setup.exe` from the latest release.
 - **Uninstalling:** Start menu → **Uninstall Job Finder** (it isn't listed in Windows Settings → Apps).

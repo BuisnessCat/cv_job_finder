@@ -1098,7 +1098,7 @@ class MainWindow(QMainWindow):
         self.update_path = setup
         self.update_button.setText("Restart to update")
         self.update_button.setToolTip(f"Version {version} is downloaded: Job Finder closes, updates and opens again "
-                                      "in about 20 seconds. Or it updates when you quit it.")
+                                      "in a few seconds. Or it updates when you quit it.")
         self.update_button.show()
         if self.notified_version == f"ready {version}":
             return
