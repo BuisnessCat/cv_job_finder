@@ -213,6 +213,10 @@ class MainWindow(QMainWindow):
         self.cv_window = None  # the "My CV" window is created on first click
         self.settings_button = QPushButton("Settings")
         self.settings_button.clicked.connect(self.open_settings)
+        self.model_button = QPushButton("Get AI model")  # a pass found no LM Studio or model
+        self.model_button.setObjectName("primary")
+        self.model_button.clicked.connect(self.open_getting_ready)
+        self.model_button.hide()
         self.update_button = QPushButton()  # "Update to 1.2.0", shown when a newer version is out
         self.update_button.setObjectName("primary")
         self.update_button.setToolTip("Download the new setup, quit Job Finder from the tray and run the setup")
@@ -225,6 +229,7 @@ class MainWindow(QMainWindow):
         top.addSpacing(style.GAP)
         top.addWidget(self.status_label, 1)
         top.addWidget(self.progress)
+        top.addWidget(self.model_button)
         top.addWidget(self.update_button)
         top.addWidget(self.cv_button)
         top.addWidget(self.settings_button)
@@ -265,6 +270,9 @@ class MainWindow(QMainWindow):
         self.worker.progress.connect(self.on_progress)
         self.worker.evaluated.connect(self.on_evaluated)
         self.worker.finished.connect(self.on_finished)
+        # Imported here: ready_window takes _label from this module
+        from job_finder import ready_window
+        ready_window.downloader().done.connect(self.on_model_downloaded)
 
         self.jobs_message = False  # the last tray message was about new jobs (clicking it opens the window)
         self.update_message = False  # the last tray message was about a new version (clicking it opens its page)
@@ -914,6 +922,7 @@ class MainWindow(QMainWindow):
             self.refresh_action.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.settings_button.setToolTip("")
+        self.model_button.setVisible(self.worker.model_missing)
         self.load_rows()  # drop jobs that vanished from the source or were filtered out by location
         if self.views.currentIndex() == 1:
             self.render_insights()  # the numbers changed while the tab was open
@@ -1040,6 +1049,22 @@ class MainWindow(QMainWindow):
             self.jobs_message, self.update_message = False, True
             self.tray.showMessage("Job Finder", f"Version {version} is out. Click here to download it.",
                                   QSystemTrayIcon.Information, 10000)
+
+    def open_getting_ready(self) -> None:
+        """LM Studio and the model: what is missing, the download; the jobs are scored once they are there."""
+        from job_finder.ready_window import ReadyDialog
+        dialog = ReadyDialog(llm.model_name(self.settings or Settings()), self)
+        dialog.exec()
+        ready = dialog.panel.ready
+        dialog.deleteLater()
+        if ready:
+            self.refresh()
+
+    def on_model_downloaded(self, code: int) -> None:
+        if self.refreshing:
+            self.refresh_again = True
+        else:
+            self.refresh()
 
     def open_releases(self) -> None:
         QDesktopServices.openUrl(QUrl(config.RELEASES_PAGE))

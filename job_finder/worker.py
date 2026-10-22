@@ -6,7 +6,7 @@ from datetime import date
 
 from PySide6.QtCore import QObject, Signal
 
-from job_finder import busy, config, db, freshness, llm, settings, skills, sources
+from job_finder import busy, config, db, freshness, llm, lmstudio, settings, skills, sources
 from job_finder.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ class Worker(QObject):
         super().__init__()
         self.model_loaded = False
         self.paused = False  # the last pass stopped for a full-screen app; the window tries again later
+        self.model_missing = False  # the last pass had jobs to score but no LM Studio or model: the window offers it
 
     def start(self) -> None:
         # daemon: the window closes right away without waiting for the current model request
@@ -68,7 +69,7 @@ class Worker(QObject):
 
     def _refresh(self) -> str:
         """One refresh. Returns the final status line."""
-        self.paused = False
+        self.paused = self.model_missing = False
         s = settings.load()
         if s is None or settings.missing(s):
             return "Finish the setup in Settings first"
@@ -93,6 +94,14 @@ class Worker(QObject):
                 if skills.matches(job, skill_list) and not too_old(job, today)]
         log.info("To evaluate: %d", len(todo))
 
+        if todo and not lmstudio.everything_ready(llm.model_name(s)):
+            # Loading a model that isn't there only gives a long error from LM Studio
+            self.model_missing = True
+            if not lmstudio.lms_installed():
+                return _join("LM Studio isn't installed: click Get AI model", notes)
+            if lmstudio.downloading:
+                return _join("Downloading the AI model: the jobs will be scored when it has finished", notes)
+            return _join("The AI model isn't downloaded yet: click Get AI model", notes)
         if todo:
             self.status.emit("Starting LM Studio…")
             self.model_loaded = True

@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import pytest
 from helpers import use_settings
 
-from job_finder import config, db, llm, settings, sources, worker
+from job_finder import config, db, llm, lmstudio, settings, sources, worker
 from job_finder.sources import Job
 
 
@@ -23,6 +23,7 @@ def setup(tmp_path, monkeypatch):
                 published=days_ago(4 - i), description="") for i in (1, 2, 3)]  # u3 is the newest
     monkeypatch.setattr(sources, "fetch_all", lambda s: ({"Jobicy": jobs}, {}))
     monkeypatch.setattr(llm, "prepare", lambda model: None)
+    monkeypatch.setattr(lmstudio, "everything_ready", lambda model: True)
     # Not the real "Windows is busy" check: a full-screen app open while the tests run would pause the scoring
     monkeypatch.setattr(worker.Worker, "pause_check", staticmethod(lambda: False))
     released = []
@@ -128,3 +129,23 @@ def test_scoring_pauses_while_windows_is_busy(setup, monkeypatch):
     message = w._refresh()
     assert len(scored) == 1 and w.paused and message.startswith("Paused")
     assert setup == [True]  # the model is unloaded, the game gets the graphics card
+
+
+def test_no_model_no_loading(setup, monkeypatch):
+    monkeypatch.setattr(lmstudio, "everything_ready", lambda model: False)
+    monkeypatch.setattr(lmstudio, "lms_installed", lambda: True)
+    monkeypatch.setattr(llm, "prepare", lambda model: pytest.fail("no model: nothing to load"))
+    w = worker.Worker()
+    assert w._refresh() == "The AI model isn't downloaded yet: click Get AI model"
+    assert w.model_missing
+    monkeypatch.setattr(lmstudio, "downloading", True)
+    assert w._refresh() == "Downloading the AI model: the jobs will be scored when it has finished"
+    monkeypatch.setattr(lmstudio, "downloading", False)
+    monkeypatch.setattr(lmstudio, "lms_installed", lambda: False)
+    assert w._refresh() == "LM Studio isn't installed: click Get AI model"
+    monkeypatch.setattr(lmstudio, "everything_ready", lambda model: True)
+    monkeypatch.setattr(llm, "prepare", lambda model: None)
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules: {
+        "score": 6, "summary": "", "have": [], "missing": [], "risks": []})
+    assert w._refresh() == "Done: 3 matches out of 3 evaluated"
+    assert not w.model_missing

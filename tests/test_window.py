@@ -1049,3 +1049,30 @@ def test_status_stays_one_line(window):
     window.status_label.setText("Done: 3 matches out of 10 evaluated")
     assert shown() == "Done: 3 matches out of 10 evaluated"
     assert window.status_label.toolTip() == ""
+
+
+def test_get_model_button_and_refresh_after_the_download(window, monkeypatch):
+    from job_finder import ready_window
+    assert window.model_button.isHidden()
+    window.worker.model_missing = True  # a pass that had jobs to score but no model
+    window.on_finished()
+    assert not window.model_button.isHidden()
+    refreshed = []
+    monkeypatch.setattr(MainWindow, "refresh", lambda self: refreshed.append(self))
+    ready_window.downloader().done.emit(0)  # the download from the wizard or the button has finished
+    assert refreshed.count(window) == 1
+    window.worker.model_missing = False
+    window.on_finished()
+    assert window.model_button.isHidden()
+
+
+def test_get_model_button_opens_getting_ready(window, monkeypatch):
+    from job_finder import lmstudio, ready_window
+    monkeypatch.setattr(lmstudio, "lms_installed", lambda: True)
+    monkeypatch.setattr(lmstudio, "have_model", lambda model: True)  # downloaded in the meantime
+    monkeypatch.setattr(ready_window, "vram_gb", lambda: 12.0)
+    shown, refreshed = [], []
+    monkeypatch.setattr(ready_window.ReadyDialog, "exec", lambda dialog: shown.append(dialog.panel.model) or 0)
+    monkeypatch.setattr(MainWindow, "refresh", lambda self: refreshed.append(self))
+    window.model_button.click()
+    assert shown == [config.MODEL] and refreshed == [window]
