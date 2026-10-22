@@ -1082,3 +1082,61 @@ def test_card_names_the_site_behind_junior_guru(window):
     window.on_evaluated(row("https://www.linkedin.com/jobs/view/1/", 8) | {"source": "junior.guru"})
     window.table.selectRow(0)
     assert window.facts["source"].text() == "junior.guru (from LinkedIn)"
+
+
+def list_marks(w, key):
+    rows = w.detail_lists[key][2]
+    return [rows.itemAt(i).layout().itemAt(0).widget().text() for i in range(rows.count())]
+
+
+def counted_row(url="c"):
+    """A job scored the new way: the model's requirements, counted by the program."""
+    r = row(url, 6)
+    r["evaluation"] = {
+        "score": 6, "summary": "Python and SQL match; Docker is missing.",
+        "requirements": [{"requirement": "Python", "required": True, "match": "yes"},
+                         {"requirement": "SQL", "required": True, "match": "yes"},
+                         {"requirement": "Django (has FastAPI)", "required": True, "match": "similar"},
+                         {"requirement": "Docker", "required": True, "match": "no"},
+                         {"requirement": "React", "required": False, "match": "no"},
+                         {"requirement": "AWS", "required": False, "match": "no"}],
+        "blockers": [], "counted": {"must": [2.7, 4], "nice": [0.0, 2], "base": 6, "cap": None},
+        "have": ["Python", "SQL", "Django (has FastAPI)"], "missing": ["Docker", "React", "AWS"], "risks": []}
+    return r
+
+
+def test_card_shows_how_the_score_is_counted(window):
+    window.on_evaluated(counted_row())
+    window.table.selectRow(0)
+    assert window.detail_lists["have"][0].text() == "MUST-HAVE · 3 of 4"
+    assert list_texts(window, "have") == ["Python", "SQL", "Django (has FastAPI)", "Docker"]
+    assert list_marks(window, "have") == ["✓", "✓", "≈", "✕"]
+    assert window.detail_lists["missing"][0].text() == "NICE TO HAVE · 0 of 2"
+    assert list_marks(window, "missing") == ["✕", "✕"]
+    assert window.detail_lists["risks"][0].text() == "BLOCKERS"
+    assert list_texts(window, "risks") == ["No blockers found"]
+    assert not window.d_counted.isHidden()
+    assert window.d_counted.text() == "Counted: must-have 2.7 of 4 · nice to have 0 of 2 → 6/10"
+    assert "1 + 9" in window.d_counted.toolTip()
+
+
+def test_card_shows_the_ceiling(window):
+    r = counted_row()
+    r["score"] = r["evaluation"]["score"] = 7  # a low ceiling would hide the job: the list starts at 5
+    r["evaluation"]["counted"] = {"must": [2.0, 2], "nice": [0.0, 0], "base": 10, "cap": 7}
+    r["evaluation"]["risks"] = ["The ad names few concrete requirements: read it before applying (score at most 7)"]
+    window.on_evaluated(r)
+    window.table.selectRow(0)
+    assert window.d_counted.text().endswith("2 of 2 · nice to have 0 of 0 → 10/10, ceiling 7")
+    assert list_texts(window, "risks") == [r["evaluation"]["risks"][0]] and list_marks(window, "risks") == ["!"]
+
+
+def test_card_of_an_old_score_stays_as_it_was(window):
+    window.on_evaluated(counted_row("new"))
+    window.on_evaluated(row("old", 9))  # e.g. an application scored before the counted score
+    window.table.selectRow(1)
+    window.table.selectRow(0)
+    assert window.current["url"] == "old"
+    assert window.detail_lists["have"][0].text() == "YOU HAVE · 1" and list_marks(window, "have") == ["✓"]
+    assert window.detail_lists["risks"][0].text() == "RISKS"
+    assert window.d_counted.isHidden()

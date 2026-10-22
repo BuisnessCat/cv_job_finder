@@ -17,7 +17,12 @@ from job_finder.worker import Worker, read_cv
 
 COLUMNS = ["Score", "Job", "Company", "Location", "Posted"]
 APPLIED_COLUMNS = ["Applied", "Job", "Company", "Status", "Days waiting", "Score"]
-LISTS = [("have", "YOU HAVE", "✓"), ("missing", "MISSING", "✕"), ("risks", "RISKS", "!")]
+LISTS = [("have", "YOU HAVE", "✓"), ("missing", "MISSING", "✕"), ("risks", "RISKS", "!")]  # a score from the model
+# A counted score: the same three places show must-haves, nice-to-haves and blockers; marks by the match
+MATCH_MARKS = {"yes": ("✓", "have"), "similar": ("≈", "risks"), "no": ("✕", "missing")}
+COUNTED_HELP = ("How the score is counted: a must-have counts 2, a nice-to-have 1; you get the whole of it for ✓, "
+                "70 % for ≈ (a similar skill) and nothing for ✕. Score = 1 + 9 × the share you get. A blocker, "
+                "another main language or an ad with few requirements sets a ceiling.")
 EMPTY_LIST = {"have": "—", "missing": "Nothing major"}
 STATUS_TEXT = {"applied": "Waiting", "accepted": "Accepted", "rejected": "Rejected"}
 REPOST_MARK = "↻ "  # before the title of a found job you already applied to
@@ -382,6 +387,11 @@ class MainWindow(QMainWindow):
         box.addWidget(_caption("WHY THIS SCORE"))
         box.addSpacing(8)
         box.addWidget(self.d_summary)
+        self.d_counted = _label("muted")  # "Counted: must-have 2.7 of 4 · nice to have 0 of 2 → 6/10"
+        self.d_counted.setToolTip(COUNTED_HELP)
+        self.d_counted.setContentsMargins(0, 8, 0, 0)
+        self.d_counted.hide()
+        box.addWidget(self.d_counted)
         self.detail_lists: dict[str, tuple[QLabel, str, QVBoxLayout]] = {}
         for key, caption, _ in LISTS:
             header = _caption(caption)
@@ -631,20 +641,49 @@ class MainWindow(QMainWindow):
         scroll.setWidget(page)
         return scroll
 
-    def _fill_list(self, key: str, mark: str, items: list[str]) -> None:
-        """Fill a "you have / missing / risks" list with rows that have a colored marker."""
-        header, caption, rows = self.detail_lists[key]
-        header.setText(f"{caption} · {len(items)}" if items else caption)
+    def _fill_lists(self, evaluation: dict) -> None:
+        """The card's three lists. A counted score (spec section 20.4): must-haves and nice-to-haves marked ✓ ≈ ✕,
+        blockers, and the line with the count; an older score from the model: you have / missing / risks."""
+        no_blockers = [("✓", style.LIST_COLORS["have"], "No blockers found")]
+        risks = [("!", style.LIST_COLORS["risks"], text) for text in evaluation.get("risks") or []]
+        counted = evaluation.get("counted")
+        self.d_counted.setVisible(counted is not None)
+        if counted is None:
+            for key, caption, mark in LISTS:
+                items = evaluation.get(key) or []
+                rows = [(mark, style.LIST_COLORS[key], text) for text in items]
+                header = f"{caption} · {len(items)}" if items else caption
+                self._fill_list(key, header, risks or no_blockers if key == "risks" else rows)
+            return
+        for key, required, caption in (("have", True, "MUST-HAVE"), ("missing", False, "NICE TO HAVE")):
+            group = [item for item in evaluation["requirements"] if item["required"] == required]
+            met = sum(item["match"] != "no" for item in group)
+            rows = []
+            for item in group:
+                mark, color = MATCH_MARKS[item["match"]]
+                rows.append((mark, style.LIST_COLORS[color], item["requirement"]))
+            self._fill_list(key, f"{caption} · {met} of {len(group)}" if group else caption, rows)
+        self._fill_list("risks", "BLOCKERS", risks or no_blockers)
+
+        def points(value: float) -> str:
+            return f"{value:g}"
+
+        if counted["must"][1] or counted["nice"][1]:
+            text = (f"Counted: must-have {points(counted['must'][0])} of {counted['must'][1]} · nice to have "
+                    f"{points(counted['nice'][0])} of {counted['nice'][1]} → {counted['base']}/10")
+        else:
+            text = f"Counted: the ad names no concrete requirements → {counted['base']}/10"
+        self.d_counted.setText(text + (f", ceiling {counted['cap']}" if counted["cap"] else ""))
+
+    def _fill_list(self, key: str, header_text: str, items: list[tuple[str, str, str]]) -> None:
+        """Fill one of the card's lists with rows (mark, its color, text); an empty list shows a dash."""
+        header, _, rows = self.detail_lists[key]
+        header.setText(header_text)
         while rows.count():
             line = rows.takeAt(0).layout()
             while line.count():
                 line.takeAt(0).widget().setParent(None)  # remove from the window now, not after deleteLater
-        color = style.LIST_COLORS[key]
-        if not items and key == "risks":
-            items, mark, color = ["No blockers found"], "✓", style.LIST_COLORS["have"]
-        elif not items:
-            items, mark = [EMPTY_LIST[key]], ""
-        for text in items:
+        for mark, color, text in items or [("", "", EMPTY_LIST.get(key, "—"))]:
             marker = QLabel(mark)
             marker.setFixedWidth(14)
             marker.setStyleSheet(f"color: {color}; font-weight: 700;")
@@ -827,8 +866,7 @@ class MainWindow(QMainWindow):
         self.d_summary.setText(evaluation.get("summary") or "—")
         self.d_summary.setStyleSheet(f"background: {style.COLORS['alt']}; border-left: 3px solid {color};"
                                      " border-radius: 4px; padding: 10px 12px;")
-        for key, _, mark in LISTS:
-            self._fill_list(key, mark, evaluation.get(key) or [])
+        self._fill_lists(evaluation)
 
         is_application = "status" in row
         self.d_status.setVisible(is_application)
