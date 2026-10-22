@@ -34,9 +34,9 @@ region of Czechia and remote jobs open to it.
 </td>
 <td width="50%" valign="top">
 
-🤖 **A score for every job**<br>
-From 1 to 10, with the reason, what you already have, what's missing and what could rule you out. The app
-checks the AI against the ad, so the technologies listed are the ones the ad really names.
+🤖 **A score you can check**<br>
+The AI lists what the ad asks for and marks what your CV has; the app counts the score from that list and
+shows the whole count in the card.
 
 </td>
 </tr>
@@ -129,6 +129,10 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
   right-click the icon and choose **Quit**.
 - **Settings**, at the top of the window, changes anything from the setup. If a change affects the
   scores, the app says how long scoring everything again will take and asks first.
+- **How the score is counted:** the AI lists up to 8 requirements of the ad and marks each one ✓ (you have it),
+  ≈ (a similar skill) or ✕. A must-have counts 2, a nice-to-have 1, a similar skill 70 %, and the score is
+  1 + 9 × the share you get. A blocker such as "3+ years of experience" doesn't subtract, it sets a ceiling.
+  The technologies are checked against the ad, so C++ and C# are never mixed up.
 - **Games and the model share the video memory**, so the app pauses scoring while a full-screen game
   is running and picks it up later.
 - **Updating:** when a new version is out, a green **Update** button appears at the top of the window
