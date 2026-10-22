@@ -174,3 +174,25 @@ def test_a_blocker_must_quote_the_ad():
     guessed = score(answer(met, [blocker("spoken language", "No explicit English requirement, but the context "
                                                             "implies native or fluent proficiency")]), ad, KNOWN)
     assert guessed["counted"]["cap"] is None and guessed["blockers"] == []  # the model's guess, not the ad's words
+
+
+def test_the_models_has_note_is_not_part_of_the_requirement():
+    fnz = Job(url="f", source="Úřad práce", title="Graduate Analyst Developer", company="F", city="Praha",
+              published="", description="Znalost C#, Java nebo C++. Angličtina B2. Git.")
+    result = score(answer([req("C#, Java or C++ (has Python)", match="no"), req("Git"), req("English B2")]), fnz,
+                   {"Python", "Git"})
+    assert result["counted"]["cap"] == 4  # Python is the note about the CV, not what the ad asks for
+    similar = score(answer([req("Django (has FastAPI)"), req("Python"), req("SQL")]), PY_AD, KNOWN)
+    assert similar["requirements"][0]["match"] == "similar"  # Django itself isn't in the CV
+
+
+def test_remote_is_no_location_blocker_for_who_works_remotely():
+    met = [req("Python"), req("SQL"), req("Docker", match="no")]
+    ad = replace(PY_AD, description=PY_AD.description + " Location: Fully Remote. Remote: Brazil only.")
+
+    def ceiling(evidence, s=S):
+        return score(answer(met, [blocker("location", evidence)]), ad, KNOWN, s)["counted"]["cap"]
+
+    assert ceiling("Location: Fully Remote") is None
+    assert ceiling("Remote: Brazil only") == 3
+    assert ceiling("Location: Fully Remote", replace(S, remote=False)) == 3  # an office in Praha is wanted

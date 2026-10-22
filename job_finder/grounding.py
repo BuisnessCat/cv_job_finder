@@ -6,7 +6,7 @@ import re
 
 from job_finder import insights, settings
 from job_finder.settings import LEVELS, Settings
-from job_finder.sources import Job
+from job_finder.sources import Job, juniorguru_place
 
 FAMILIES = [{"JavaScript", "TypeScript"}]  # in the main-language check one counts for the other
 LANGUAGES = set(settings.PROGRAMMING_LANGUAGES)
@@ -89,7 +89,9 @@ ABOVE = {"intern": r"senior|medior|mid-level|lead|principal|staff|head of|archit
          "junior": r"senior|medior|mid-level|lead|principal|staff|head of|architect",
          "mid": r"lead|principal|head of|director", "senior": r"director|vice president|executive|head of",
          "lead": r"director|vice president|executive"}
-FINE_PLACES = r"europe\w*|\beu\b|\bcet\b|\bcest\b|czech\w*|česk\w*|prague|praha|worldwide|anywhere|global\w*|emea"
+FINE_PLACES = r"europe\w*|\beu\b|\bcet\b|\bcest\b|czech\w*|česk\w*|worldwide|anywhere|global\w*|emea"
+PLACE_WORDS = (r"\b(?:location|remote\w*|fully|full|hybrid|work\w*|from|office|only|position|job|role|on-?site|based|"
+               r"in|the|time|zone|with|and|or)\b")
 RESIDENCY = r"citizen\w*|residen\w*|work permit|security clearance|green card|visa|občan\w*|pobyt\w*"
 SOFT_SKILLS = re.compile(
     r"communicat\w*|teamwork|team player|collaborat\w*|leadership|mentoring|responsib\w*|self[- ]?organi[sz]\w*|"
@@ -97,6 +99,11 @@ SOFT_SKILLS = re.compile(
     r"attention to detail|willing\w*|eager\w*|learn\w*\s+(?:ability|quickly|fast)|fast learn\w*|ambiguity|"
     r"independen\w*|sharing knowledge|interest in|passion\w*|attitude|flexib\w*|creativ\w*|soft skills|mindset",
     re.IGNORECASE)
+
+
+def _core(requirement: str) -> str:
+    """A requirement without the model's note about the CV: "Django (has FastAPI)" is about Django."""
+    return re.sub(r"\((?:has|you have|candidate has)\b[^)]*\)", " ", requirement, flags=re.IGNORECASE)
 
 
 def _level(text: str) -> int | None:
@@ -136,7 +143,14 @@ def _rules_out(blocker: dict, s: Settings) -> bool:
     if kind == "spoken language":
         return _speaks(evidence, s.languages) is False
     if kind == "location":
-        return not re.search(rf"{FINE_PLACES}|{re.escape(s.city)}", evidence, re.IGNORECASE)
+        if any(re.search(re.escape(city), evidence, re.IGNORECASE) for city in {s.city, juniorguru_place(s.city)}):
+            return False  # the candidate's own city
+        if not s.remote and re.search(r"remote", evidence, re.IGNORECASE):
+            return True  # an office is wanted
+        if re.search(FINE_PLACES, evidence, re.IGNORECASE):
+            return False
+        place = re.sub(PLACE_WORDS, " ", evidence, flags=re.IGNORECASE)  # "Location: Fully Remote" names no place
+        return bool(re.search(r"[^\W\d_]{3,}", place))
     if kind == "residency":
         return bool(re.search(RESIDENCY, evidence, re.IGNORECASE))
     return False
@@ -146,7 +160,7 @@ def _check(requirement: dict, named: set[str], known: set[str], mine: set[str], 
     """One requirement kept to what the ad, the CV and the settings say; None if it is not a requirement to count:
     it names only technologies the ad doesn't name, it is a soft skill, or years of experience (a blocker)."""
     text = requirement["requirement"]
-    found = technologies(text)
+    found = technologies(_core(text))
     speaks = _speaks(text, s.languages) if not found else None
     if (found and not found & named) or YEARS.search(text) or (speaks is None and not found
                                                                and SOFT_SKILLS.search(text)):
@@ -188,7 +202,8 @@ def score(answer: dict, job: Job, known: set[str], s: Settings) -> dict:
         caps.append(LANGUAGE_CAP)
         risks.append(f"Main language {_ordered(title_languages)} is not in your CV (score at most {LANGUAGE_CAP})")
     else:  # the ad's must-have programming languages, when the title names none of them
-        foreign = [technologies(item["requirement"]) & LANGUAGES for item in requirements if item["required"]]
+        foreign = [technologies(_core(item["requirement"])) & LANGUAGES for item in requirements
+                   if item["required"]]
         foreign = set().union(*(languages for languages in foreign if languages and not languages & mine))
         if mine and foreign:
             caps.append(MUST_LANGUAGE_CAP)
