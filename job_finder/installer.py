@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -15,6 +16,8 @@ APP_NAME = "Job Finder"
 EXE = "Job Finder.exe"
 LINKS = ("Job Finder.lnk", "Uninstall Job Finder.lnk")
 CSIDL_PROGRAMS, CSIDL_DESKTOP = 0x0002, 0x0010  # the Start menu's Programs folder, the desktop
+UPDATE_TRIES = 60  # seconds the setup run by the app's updater waits for the app to close
+sleep = time.sleep  # tests replace it
 QUOTES = "'" + chr(0x2018) + chr(0x2019) + chr(0x201A) + chr(0x201B)  # PowerShell takes all of these for '
 
 
@@ -119,14 +122,34 @@ def message(text: str, ask: bool = False, error: bool = False) -> bool:
     return ctypes.windll.user32.MessageBoxW(None, text, APP_NAME, flags) == 6  # IDYES
 
 
+def start_app(exe: Path) -> None:
+    subprocess.Popen([str(exe)], cwd=str(exe.parent))
+
+
+def _install_when_closed(archive: Path, target: Path, desktop: Path, programs: Path) -> Path:
+    """Install as soon as the app that started the update has closed (until then its files are in use)."""
+    for attempt in range(UPDATE_TRIES):
+        try:
+            return install(archive, target, desktop, programs)
+        except ShortcutError:
+            raise
+        except InstallError:
+            if attempt == UPDATE_TRIES - 1:
+                raise
+            sleep(1)
+    raise InstallError("Job Finder did not close")
+
+
 def setup_main(argv: list[str]) -> int:
-    """JobFinder-Setup.exe: install, then offer to open the app. --quiet: no questions (for checks)."""
-    quiet = "--quiet" in argv
+    """JobFinder-Setup.exe: install, then offer to open the app. --quiet: no questions (for checks). --update: run
+    by the app's updater: wait for the app to close, install without questions and open it again (--no-start: the
+    app was quit, keep it closed)."""
+    quiet, update = "--quiet" in argv, "--update" in argv
     archive = Path(getattr(sys, "_MEIPASS", ".")) / f"{APP_NAME}.zip"
     target = install_dir()
     desktop, programs = shortcut_dirs()
     try:
-        exe = install(archive, target, desktop, programs)
+        exe = (_install_when_closed if update else install)(archive, target, desktop, programs)
     except ShortcutError as error:
         if not quiet:
             message(f"Job Finder is installed in\n{target}\nbut a shortcut couldn't be made ({error}).\n\n"
@@ -134,11 +157,15 @@ def setup_main(argv: list[str]) -> int:
         return 1
     except (InstallError, OSError, zipfile.BadZipFile) as error:
         if not quiet:
-            message(f"Job Finder was not installed.\n\n{error}", error=True)
+            message(f"Job Finder was not {'updated' if update else 'installed'}.\n\n{error}", error=True)
         return 1
+    if update:
+        if "--no-start" not in argv:
+            start_app(exe)
+        return 0
     if not quiet and message("Job Finder is installed: its shortcut is on the desktop and in the Start menu.\n\n"
                              "Open Job Finder now?", ask=True):
-        subprocess.Popen([str(exe)], cwd=str(target))
+        start_app(exe)
     return 0
 
 

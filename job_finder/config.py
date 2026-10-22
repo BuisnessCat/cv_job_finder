@@ -37,6 +37,8 @@ ICON_PATH = APP_DIR / "job_finder" / "icon.ico"
 VERSION = "1.2.0"
 RELEASES_API = "https://api.github.com/repos/BuisnessCat/cv_job_finder/releases/latest"
 RELEASES_PAGE = "https://github.com/BuisnessCat/cv_job_finder/releases/latest"
+RELEASE_DOWNLOADS = "https://github.com/BuisnessCat/cv_job_finder/releases/download/"  # only setups from here
+UPDATE_DIR = DATA_DIR / "update"  # the downloaded setup of the next version, removed after the update
 
 # While the app runs (also hidden in the tray) it looks for new jobs this often
 AUTO_REFRESH_HOURS = 3

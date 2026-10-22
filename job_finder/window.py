@@ -1,6 +1,7 @@
 """Main window: found jobs and applications, a card with the selected job's analysis."""
 import time
 from datetime import date
+from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QIcon
@@ -222,10 +223,10 @@ class MainWindow(QMainWindow):
         self.model_button.setObjectName("primary")
         self.model_button.clicked.connect(self.open_getting_ready)
         self.model_button.hide()
-        self.update_button = QPushButton()  # "Update to 1.2.0", shown when a newer version is out
+        # "Restart to update" when a newer version is downloaded; "Update to 1.3.0" (the release page) if it couldn't be
+        self.update_button = QPushButton()
         self.update_button.setObjectName("primary")
-        self.update_button.setToolTip("Download the new setup, quit Job Finder from the tray and run the setup")
-        self.update_button.clicked.connect(self.open_releases)
+        self.update_button.clicked.connect(self.on_update_button)
         self.update_button.hide()
         top = QHBoxLayout()
         top.addWidget(self.refresh_button)
@@ -280,10 +281,12 @@ class MainWindow(QMainWindow):
         ready_window.downloader().done.connect(self.on_model_downloaded)
 
         self.jobs_message = False  # the last tray message was about new jobs (clicking it opens the window)
-        self.update_message = False  # the last tray message was about a new version (clicking it opens its page)
-        self.notified_version = ""  # a new version is told about once
+        self.update_message = False  # the last tray message was about a new version
+        self.notified_version = ""  # a new version is told about once (and once more when it is ready)
+        self.update_path = ""  # the downloaded setup of the newer version: installed on restart or Quit
         self.update_checker = updates.UpdateChecker()
-        self.update_checker.found.connect(self.on_update)
+        self.update_checker.available.connect(self.on_update)
+        self.update_checker.ready.connect(self.on_update_ready)
         self.refresh_action = None  # "Refresh now" in the tray menu
         self.quitting = False  # Quit from the tray: closing the window really closes the app
         self.tray_hint_shown = False
@@ -1071,15 +1074,17 @@ class MainWindow(QMainWindow):
         if self.jobs_message:  # not the "keeps running in the tray" hint: that window was just closed
             self.show_window()
         elif self.update_message:
-            self.open_releases()
+            self.on_update_button()
 
     def check_updates(self) -> None:
-        """Ask GitHub for the latest release in the background; on_update gets a newer version."""
+        """Ask GitHub for the latest release in the background and download it: on_update_ready gets the setup,
+        on_update a version that couldn't be downloaded."""
         if self.updates_on:
             updates.start_thread(self.update_checker.run)
 
     def on_update(self, version: str) -> None:
         self.update_button.setText(f"Update to {version}")
+        self.update_button.setToolTip("Download the new setup, quit Job Finder from the tray and run the setup")
         self.update_button.show()
         if version == self.notified_version:
             return
@@ -1088,6 +1093,35 @@ class MainWindow(QMainWindow):
             self.jobs_message, self.update_message = False, True
             self.tray.showMessage("Job Finder", f"Version {version} is out. Click here to download it.",
                                   QSystemTrayIcon.Information, 10000)
+
+    def on_update_ready(self, version: str, setup: str) -> None:
+        self.update_path = setup
+        self.update_button.setText("Restart to update")
+        self.update_button.setToolTip(f"Version {version} is downloaded: Job Finder closes, updates and opens again "
+                                      "in about 20 seconds. Or it updates when you quit it.")
+        self.update_button.show()
+        if self.notified_version == f"ready {version}":
+            return
+        self.notified_version = f"ready {version}"
+        if self.tray is not None and not self.isActiveWindow():
+            self.jobs_message, self.update_message = False, True
+            self.tray.showMessage("Job Finder", f"Version {version} is ready. Click here to restart and update.",
+                                  QSystemTrayIcon.Information, 10000)
+
+    def on_update_button(self) -> None:
+        if self.update_path:
+            self.restart_to_update()
+        else:
+            self.open_releases()
+
+    def restart_to_update(self) -> None:
+        """Close the app and let the downloaded setup install the new version and open it again."""
+        if self.refreshing and not self.confirm_close():
+            return
+        self.refreshing = False  # asked already: closing doesn't ask again
+        setup, self.update_path = self.update_path, ""
+        updates.apply(Path(setup))
+        self.quit_app()
 
     def open_getting_ready(self) -> None:
         """LM Studio and the model: what is missing, the download; the jobs are scored once they are there."""
@@ -1151,6 +1185,8 @@ class MainWindow(QMainWindow):
         if self.close():
             if self.tray is not None:
                 self.tray.hide()
+            if self.update_path:  # a downloaded update is installed now, the app stays closed
+                updates.apply(Path(self.update_path), restart=False)
             self.exit_app()
 
     def hide_to_tray(self) -> None:

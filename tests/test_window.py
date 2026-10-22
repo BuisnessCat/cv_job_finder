@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import sqlite3
 import time
 from datetime import date, timedelta
@@ -979,7 +980,7 @@ def test_gone_remote_job_hidden_when_remote_is_off(window):
 def test_update_button_opens_the_release_page(window, monkeypatch):
     monkeypatch.setattr(MainWindow, "updates_on", True)
     monkeypatch.setattr(updates, "start_thread", lambda target: target())  # no thread in tests
-    monkeypatch.setattr(updates, "check", lambda current=None: "9.0.0")
+    monkeypatch.setattr(updates, "check", lambda current=None: updates.Release("9.0.0"))  # no setup to download
     assert window.update_button.isHidden()
     window.check_updates()
     assert not window.update_button.isHidden()
@@ -1140,3 +1141,51 @@ def test_card_of_an_old_score_stays_as_it_was(window):
     assert window.detail_lists["have"][0].text() == "YOU HAVE · 1" and list_marks(window, "have") == ["✓"]
     assert window.detail_lists["risks"][0].text() == "RISKS"
     assert window.d_counted.isHidden()
+
+
+SETUP_PATH = str(Path("C:/Users/me/AppData/Local/Job Finder/update/JobFinder-Setup-9.0.0.exe"))
+
+
+@pytest.fixture
+def applied(monkeypatch):
+    calls = []
+    monkeypatch.setattr(updates, "apply", lambda setup, restart=True: calls.append((str(setup), restart)))
+    return calls
+
+
+def test_restart_to_update(tray_window, applied):
+    tray_window.on_update_ready("9.0.0", SETUP_PATH)  # downloaded in the background
+    assert not tray_window.update_button.isHidden()
+    assert tray_window.update_button.text() == "Restart to update"
+    tray_window.update_button.click()
+    assert applied == [(SETUP_PATH, True)] and tray_window.exits == [True]
+
+
+def test_restart_to_update_asks_while_scoring(tray_window, applied, monkeypatch):
+    tray_window.on_update_ready("9.0.0", SETUP_PATH)
+    tray_window.refreshing = True
+    monkeypatch.setattr(tray_window, "confirm_close", lambda: False)  # "Cancel"
+    tray_window.update_button.click()
+    assert applied == [] and tray_window.exits == []
+
+
+def test_quit_installs_a_downloaded_update(tray_window, applied):
+    tray_window.on_update_ready("9.0.0", SETUP_PATH)
+    tray_window.quit_app()
+    assert applied == [(SETUP_PATH, False)] and tray_window.exits == [True]  # installed, not opened again
+
+
+def test_quit_without_an_update_installs_nothing(tray_window, applied):
+    tray_window.quit_app()
+    assert applied == [] and tray_window.exits == [True]
+
+
+def test_ready_update_notified_once_from_the_tray(tray_window, applied, monkeypatch):
+    messages = []
+    monkeypatch.setattr(tray_window.tray, "showMessage", lambda *args: messages.append(args[1]))
+    monkeypatch.setattr(tray_window, "isActiveWindow", lambda: False)
+    tray_window.on_update_ready("9.0.0", SETUP_PATH)
+    tray_window.on_update_ready("9.0.0", SETUP_PATH)  # the next check finds it downloaded already
+    assert messages == ["Version 9.0.0 is ready. Click here to restart and update."]
+    tray_window.tray.messageClicked.emit()
+    assert applied == [(SETUP_PATH, True)]

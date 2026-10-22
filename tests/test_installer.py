@@ -95,3 +95,44 @@ def test_shortcut_failure_after_install_says_it_is_installed(tmp_path):
     with pytest.raises(installer.ShortcutError):
         installer.install(archive, tmp_path / "Job Finder", tmp_path / "D", tmp_path / "S", make_shortcut=broken)
     assert (tmp_path / "Job Finder" / "Job Finder.exe").exists()  # the app is there, only a shortcut is missing
+
+
+@pytest.fixture
+def update_setup(tmp_path, monkeypatch):
+    """setup_main run by the app's updater, with installing, waiting and starting the app faked."""
+    state = {"busy": 2, "installs": 0, "started": [], "messages": []}
+
+    def install(archive, target, desktop, programs):
+        state["installs"] += 1
+        if state["installs"] <= state["busy"]:  # the app is still closing: its files are in use
+            raise installer.InstallError("Job Finder is running")
+        return target / installer.EXE
+
+    monkeypatch.setattr(installer, "install", install)
+    monkeypatch.setattr(installer, "sleep", lambda seconds: None)
+    monkeypatch.setattr(installer, "start_app", lambda exe: state["started"].append(exe))
+    monkeypatch.setattr(installer, "message", lambda text, **kwargs: state["messages"].append(text))
+    monkeypatch.setenv("JOB_FINDER_INSTALL_DIR", str(tmp_path / "Job Finder"))
+    monkeypatch.setenv("JOB_FINDER_SHORTCUTS_DIR", str(tmp_path / "links"))
+    return state
+
+
+def test_update_waits_for_the_app_to_close_and_opens_it_again(update_setup, tmp_path):
+    assert installer.setup_main(["setup", "--update"]) == 0
+    assert update_setup["installs"] == 3  # two tries while the app was closing
+    assert update_setup["started"] == [tmp_path / "Job Finder" / installer.EXE]
+    assert update_setup["messages"] == []  # no questions
+
+
+def test_update_on_quit_doesnt_open_the_app(update_setup):
+    update_setup["busy"] = 0
+    assert installer.setup_main(["setup", "--update", "--no-start"]) == 0
+    assert update_setup["started"] == [] and update_setup["messages"] == []
+
+
+def test_update_that_cant_install_says_so(update_setup, monkeypatch):
+    update_setup["busy"] = 1000  # e.g. an antivirus holds the folder
+    monkeypatch.setattr(installer, "UPDATE_TRIES", 5)
+    assert installer.setup_main(["setup", "--update"]) == 1
+    assert update_setup["installs"] == 5 and update_setup["started"] == []
+    assert len(update_setup["messages"]) == 1 and "not updated" in update_setup["messages"][0]
