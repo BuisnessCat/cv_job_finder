@@ -84,3 +84,27 @@
 - [ ] `VERSION = "1.2.0"`; README (Getting ready as a setup step, Download model button); how-it-works (sections 5, 6, 12).
 - [ ] Run the sample with the new code, compare with the baseline, write the table for the author.
 - [ ] Commit.
+
+---
+
+## Part 2: transparent score (spec 20.4)
+
+### Task 7: The model lists requirements, the program counts
+
+**Files:** Modify `job_finder/llm.py`, `job_finder/grounding.py`, `job_finder/worker.py`; Test `tests/test_llm.py`, `tests/test_grounding.py`, `tests/test_worker.py`, `tests/helpers.py`
+
+**Interfaces:** `llm.SCHEMA` = summary, requirements[{requirement, required, match}], blockers[{kind, evidence}]; `llm.evaluate(...) -> dict` (that answer, no score). `grounding.score(answer, job, known) -> dict` with score, summary, requirements, blockers [{kind, evidence, cap}], counted {must: [points, count], nice: [points, count], base, cap}, have, missing, risks. Constants `WEIGHTS`, `MATCH`, `CAPS`, `FEW_REQUIREMENTS = 3`, `FEW_CAP = 7`, `NO_REQUIREMENTS_SCORE = 5`.
+
+- [ ] Tests: 3 of 4 must-haves yes + 2 nice no → round(1 + 9 × 6/10) = 6; one similar must-have counts 0.7 × 2; an experience blocker caps at 4 with its evidence in risks; title language cap 3; 2 requirements → at most 7; none → 5; requirement naming React not in the ad dropped; "C# yes" for a C++ CV → no; "Docker yes" without Docker in the CV → similar; have/missing derived. Rules: no scale bands, requirements/blockers wording. Worker tests use `helpers.model_answer(score)`.
+- [ ] Implement. Commit.
+
+### Task 8: The card shows the count
+
+**Files:** Modify `job_finder/window.py`, `job_finder/style.py`; Test `tests/test_window.py`
+
+- [ ] Tests: a new-format row shows "MUST-HAVE · 3 of 4", ≈ for similar, the counted line, "BLOCKERS" with the cap; an old-format row (application) still shows YOU HAVE / MISSING / RISKS.
+- [ ] Implement, render the real card, commit.
+
+### Task 9: Docs and before/after
+
+- [ ] README "A score for every job", how-it-works section 5; run the sample, compare with the baseline.
