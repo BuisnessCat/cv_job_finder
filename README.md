@@ -135,10 +135,11 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
   The technologies are checked against the ad, so C++ and C# are never mixed up.
 - **Games and the model share the video memory**, so the app pauses scoring while a full-screen game
   is running and picks it up later.
-- **Updating:** when a new version is out, a green **Update** button appears at the top of the window
-  (and a notification, if the app is in the tray). Click it, download the new `JobFinder-Setup.exe`, quit
-  Job Finder and run the setup. Your jobs, applications and settings stay: they live in
-  `%LOCALAPPDATA%\Job Finder`, apart from the app.
+- **Updating:** the app downloads a new version by itself and shows a green **Restart to update** button
+  (and a notification, if it's in the tray). Click it: Job Finder closes, updates and opens again in about
+  20 seconds. If you don't, the update is installed when you quit the app. Your jobs, applications and settings
+  stay: they live in `%LOCALAPPDATA%\Job Finder`, apart from the app. Versions before 1.3.0 can't do this yet:
+  update them once by hand, with the new `JobFinder-Setup.exe` from the latest release.
 - **Uninstalling:** Start menu → **Uninstall Job Finder** (it isn't listed in Windows Settings → Apps).
   Your data stays in
   `%LOCALAPPDATA%\Job Finder`: delete that folder too if you don't need it. The model can be deleted
