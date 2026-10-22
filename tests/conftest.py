@@ -16,3 +16,11 @@ def usual_model(monkeypatch):
     # Not this computer's graphics card: the model (and so every evaluation key) is the same on any machine
     from job_finder import config, hardware
     monkeypatch.setattr(hardware, "default_model", lambda: config.MODEL)
+
+
+@pytest.fixture(autouse=True)
+def own_downloader(monkeypatch):
+    # Every test gets its own model downloader: a window left from an earlier test never hears a later download
+    from job_finder import lmstudio, ready_window
+    monkeypatch.setattr(ready_window, "_downloader", None)
+    monkeypatch.setattr(lmstudio, "downloading", False)
