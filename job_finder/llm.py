@@ -9,89 +9,76 @@ import time
 
 import requests
 
-from job_finder import config, hardware
+from job_finder import config, grounding, hardware
 from job_finder.settings import LEVELS, Settings
 from job_finder.sources import Job
 
 log = logging.getLogger(__name__)
 
+# The model lists the ad's requirements and blockers; the program counts the score from them (grounding.score)
 SCHEMA = {
     "type": "object",
     "properties": {
-        "score": {"type": "integer", "minimum": 1, "maximum": 10},
+        "requirements": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"requirement": {"type": "string"}, "required": {"type": "boolean"},
+                           "match": {"type": "string", "enum": list(grounding.MATCH)}},
+            "required": ["requirement", "required", "match"],
+            "additionalProperties": False,
+        }},
+        "blockers": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"kind": {"type": "string", "enum": list(grounding.CAPS)}, "evidence": {"type": "string"}},
+            "required": ["kind", "evidence"],
+            "additionalProperties": False,
+        }},
         "summary": {"type": "string"},
-        "have": {"type": "array", "items": {"type": "string"}},
-        "missing": {"type": "array", "items": {"type": "string"}},
-        "risks": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["score", "summary", "have", "missing", "risks"],
+    "required": ["requirements", "blockers", "summary"],
     "additionalProperties": False,
 }
 
-RULES_TEMPLATE = """You help a candidate decide whether to apply for a job. Their CV is below.
-Rate from 1 to 10 the candidate's realistic chance of getting this job with this CV: getting through the hiring
-process and doing the job.
+RULES_TEMPLATE = """You help a candidate decide whether to apply for a job. Their CV is below. You do not give a
+score: you list what the ad asks for and whether the CV has it, and a program counts the score from that.
 Each ad ends with the technologies a program found in it and which of them are in the CV: rely on that list,
 it is reliable.
 
 About the candidate: {level_text} Languages: {languages}.
 
-How to rate:
-1. Identify the core of the role: what the person will do and the 2–4 truly required skills.
-   Job ads often list every technology the company uses — those are wishes, not requirements.
-   Do not lower the score for missing secondary tools (JIRA, a specific BI system, cloud,
-   CI, monitoring, etc.) or "nice to have" items.
-2. Count adjacent skills of the same programming language: a similar framework or database counts (e.g.
-   Django or Flask instead of FastAPI, MySQL instead of PostgreSQL, React instead of Vue, Spring instead of
-   Jakarta EE), any REST/HTTP API, any Git hosting. Another programming language never counts:
-   C, C++ and C# are three different languages, and Java is not JavaScript.
-3. {learn_text}
-4. Lower the score sharply only for real blockers: {experience_blocker}; the job's main programming
-   language or field differs from the candidate's main one in the CV; the job requires a language the
-   candidate does not speak at the required level; {location_blocker}; citizenship or residency of another
-   country is required.
-   These are NOT problems: {not_problems}.
-
-Scale:
-9–10 — {top_band}, the core stack matches, no blockers;
-7–8 — {top_band}, the core matches, some technologies are missing but can be learned;
-5–6 — adjacent role or a different framework, but worth a try;
-3–4 — serious gap: {gap_band}{below_band} or a noticeably different main stack;
-1–2 — not a fit: {misfit_band}, a different main language or field, or a hard blocker.
-
 Answer with a JSON object:
-- score — a score from 1 to 10;
-- summary — 1–2 sentences: why this score;
-- have — important requirements written in the ad that the candidate meets (counting adjacent skills);
-- missing — only significant requirements written in the ad that the candidate lacks;
-- risks — only real blockers from point 4; an empty list if there are none.
-Each list has at most 5 items, each item up to 10 words.
-In have and missing never list a technology the ad does not name. If the ad names few concrete requirements,
-judge it by the role, the level and the language of work, and do not invent requirements.
+- requirements — what the ad asks of the candidate, at most 8, the most important first: technologies, skills,
+  education, spoken languages. Each has:
+  - requirement — up to 8 words; when the candidate has a similar skill, add it: "Django (has FastAPI)";
+  - required — true if the ad says it is required or a must, or it is the core of the role; false for
+    "nice to have", "a plus", "an advantage" and long lists of every tool the company uses;
+  - match — "yes" if the CV shows it; "similar" if the CV has an adjacent skill of the same programming
+    language: a similar framework or database (Django or Flask for FastAPI, MySQL for PostgreSQL, React for
+    Vue, Spring for Jakarta EE), any REST/HTTP API, any Git hosting; otherwise "no". Another programming
+    language is never similar: C, C++ and C# are three different languages, and Java is not JavaScript.
+  Only requirements written in the ad: never add a technology the ad does not name. If the ad names few
+  concrete requirements, list only those and do not invent requirements. Experience, level, location and
+  residency are not requirements: they are blockers when they rule the candidate out.
+- blockers — only real hard stops, each with a kind and evidence (a short quote from the ad):
+  "experience" — {experience_blocker};
+  "spoken language" — the job requires a language the candidate does not speak at the required level;
+  "location" — {location_blocker};
+  "residency" — citizenship or residency of another country is required;
+  "field" — the role is in another field than the candidate's CV (e.g. sales or hardware design for a
+  software developer).
+  These are NOT blockers: {not_problems}. An empty list if there are none.
+- summary — 1–2 sentences: the main reasons for and against.
 Write all texts in English, as plain text without Markdown. Rely only on facts from the CV and the job ad.
 
 Candidate's CV:
 """
 
-# Words for each level: its name in "looking for … roles", the experience that is a blocker for it,
-# what is above it (a serious gap) and far above it (not a fit)
+# Words for each level: its name in "looking for … roles" and the experience that is a blocker for it
 LEVEL_WORDS = {
-    "intern": dict(name="internship", blocker="commercial experience is required", above="junior or higher level",
-                   far="mid or senior"),
-    "junior": dict(name="junior", blocker="2+ years of commercial experience or a mid/senior level is required",
-                   above="above junior level", far="senior"),
-    "mid": dict(name="mid-level", blocker="5+ years of experience or a senior/lead level is required",
-                above="senior level", far="lead/principal or 8+ years"),
-    "senior": dict(name="senior", blocker="a lead/principal level or 10+ years of experience is required",
-                   above="lead or principal level", far="director or executive"),
-    "lead": dict(name="lead", blocker="a director or executive level is required", above="director level",
-                 far="executive"),
-}
-LEARN_TEXT = {
-    True: "Junior positions and internships teach a lot on the job: if the basics of the candidate's stack match, "
-          "missing technologies are a reason to learn, not a reason to reject.",
-    False: "On roles at this level a missing secondary technology can be learned on the job; a missing core "
-           "technology of the role is a real gap.",
+    "intern": dict(name="internship", blocker="commercial experience is required"),
+    "junior": dict(name="junior", blocker="2+ years of commercial experience or a mid/senior level is required"),
+    "mid": dict(name="mid-level", blocker="5+ years of experience or a senior/lead level is required"),
+    "senior": dict(name="senior", blocker="a lead/principal level or 10+ years of experience is required"),
+    "lead": dict(name="lead", blocker="a director or executive level is required"),
 }
 
 
@@ -112,15 +99,14 @@ def render_rules(s: Settings) -> str:
         not_problems.append(f"{name} (native speaker)" if level == "Native"
                             else f"{name} {level} (unless a higher level is required)")
     levels = [level for level in LEVELS if level in s.levels]  # complete settings have at least one
-    highest = LEVEL_WORDS[levels[-1]]
     names = " or ".join(LEVEL_WORDS[level]["name"] for level in levels)
-    below_band = "" if levels[0] in ("intern", "junior") else f", a role clearly below {levels[0]} level"
+    experience = LEVEL_WORDS[levels[-1]]["blocker"]
+    if levels[0] not in ("intern", "junior"):
+        experience += f", or a role clearly below {levels[0]} level"
     return RULES_TEMPLATE.format(
         level_text=f"The candidate is looking for {names} roles.",
         languages=", ".join(_language(name, level) for name, level in s.languages.items()),
-        learn_text=LEARN_TEXT[levels[0] in ("intern", "junior")], experience_blocker=highest["blocker"],
-        location_blocker=location_blocker, not_problems=", ".join(not_problems), top_band=f"{names} role",
-        gap_band=highest["above"], below_band=below_band, misfit_band=highest["far"])
+        experience_blocker=experience, location_blocker=location_blocker, not_problems=", ".join(not_problems))
 
 
 def fingerprint(s: Settings) -> str:
@@ -219,7 +205,8 @@ def prepare(model: str) -> None:
 
 
 def evaluate(cv_text: str, job: Job, rules: str, facts: str = "") -> dict:
-    """Evaluate one job: score, summary, have, missing, risks. facts: what the program found in the ad, at its end."""
+    """The model's answer for one job: requirements, blockers, summary (grounding.score counts the score). facts:
+    what the program found in the ad, at its end."""
     vacancy = (
         f"Title: {job.title}\nCompany: {job.company}\nLocation: {job.city}\nSource: {job.source}\n\n"
         f"{job.description[:config.MAX_DESCRIPTION_CHARS]}"
@@ -235,7 +222,7 @@ def evaluate(cv_text: str, job: Job, rules: str, facts: str = "") -> dict:
                 {"role": "user", "content": vacancy},
             ],
             "temperature": 0,
-            "max_tokens": 700,
+            "max_tokens": 900,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "evaluation", "strict": True, "schema": SCHEMA},
@@ -249,9 +236,7 @@ def evaluate(cv_text: str, job: Job, rules: str, facts: str = "") -> dict:
     if data.get("model") != config.MODEL_ID:
         raise ModelLost(f"model {config.MODEL_ID} was unloaded (got an answer from {data.get('model')}), "
                         "evaluation stopped")
-    result = json.loads(data["choices"][0]["message"]["content"])
-    result["score"] = int(result["score"])
-    return result
+    return json.loads(data["choices"][0]["message"]["content"])
 
 
 def release(wait: bool = True) -> None:

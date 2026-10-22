@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from job_finder import config, hardware, llm
+from job_finder import config, grounding, hardware, llm
 from job_finder.settings import Settings
 from job_finder.sources import Job
 
@@ -22,7 +22,8 @@ class FakeResponse:
 
 def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
     sent = {}
-    answer = {"score": "7", "summary": "Good fit", "have": ["Python"], "missing": ["Django"], "risks": []}
+    answer = {"requirements": [{"requirement": "Python", "required": True, "match": "yes"}], "blockers": [],
+              "summary": "Good fit"}
 
     def fake_post(url, **kwargs):
         sent.update(url=url, **kwargs)
@@ -34,7 +35,7 @@ def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
 
     result = llm.evaluate("MY CV", job, "RULES-TEXT")
 
-    assert result == {**answer, "score": 7}
+    assert result == answer  # the program counts the score
     assert sent["url"] == f"{config.LM_URL}/chat/completions"
     body = sent["json"]
     assert body["model"] == config.MODEL_ID
@@ -48,7 +49,7 @@ def test_evaluate_sends_cv_and_truncated_vacancy(monkeypatch):
 
 def test_evaluate_rejects_answer_from_another_model(monkeypatch):
     # If our model was unloaded (e.g. from the LM Studio window), the server answers with another model
-    answer = {"score": 5, "summary": "", "have": [], "missing": [], "risks": []}
+    answer = {"requirements": [], "blockers": [], "summary": ""}
     monkeypatch.setattr(llm.requests, "post", lambda url, **kwargs: FakeResponse(
         {"model": "qwen/qwen3.8-27b", "choices": [{"message": {"content": json.dumps(answer)}}]}))
     job = Job(url="u", source="Jobicy", title="Python Dev", company="ACME", city="", published="2026-10-01",
@@ -155,7 +156,7 @@ def test_clean_output():
 
 def test_evaluate_ends_the_ad_with_the_programs_facts(monkeypatch):
     sent = {}
-    answer = {"score": 5, "summary": "", "have": [], "missing": [], "risks": []}
+    answer = {"requirements": [], "blockers": [], "summary": ""}
 
     def fake_post(url, **kwargs):
         sent.update(kwargs)
@@ -168,11 +169,12 @@ def test_evaluate_ends_the_ad_with_the_programs_facts(monkeypatch):
         "We use C#.\n\nTechnologies this ad names (found by a program, reliable): C#/.NET.")
 
 
-def test_rules_ask_for_an_objective_score():
+def test_rules_ask_for_requirements_not_a_score():
     rules = llm.render_rules(Settings(cv_path="a", skills=["C/C++"], main_skill="C/C++", levels=["junior"],
                                       languages={"English": "B2"}))
-    assert "realistic chance of getting this job with this CV" in rules
+    assert "You do not give a" in rules and "a program counts the score" in rules
     assert "C, C++ and C# are three different languages" in rules and "Java is not JavaScript" in rules
     assert "the technologies a program found in it" in rules and "rely on that list" in rules
-    assert "never list a technology the ad does not name" in rules
-    assert "do not invent requirements" in rules
+    assert "never add a technology the ad does not name" in rules and "do not invent requirements" in rules
+    assert "Scale:" not in rules  # no score bands any more
+    assert set(llm.SCHEMA["properties"]["blockers"]["items"]["properties"]["kind"]["enum"]) == set(grounding.CAPS)

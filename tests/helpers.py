@@ -24,3 +24,11 @@ def write_pdf(path: Path, text: str) -> None:
     painter = QPainter(writer)
     painter.drawText(100, 100, text)
     painter.end()
+
+
+def model_answer(score: int) -> dict:
+    """A model answer the program counts to this score: nine "nice to have" requirements without technologies,
+    score - 1 of them met (1 + 9 x met / 9)."""
+    return {"summary": "", "blockers": [],
+            "requirements": [{"requirement": f"skill {i}", "required": False, "match": "yes" if i < score - 1 else "no"}
+                             for i in range(9)]}

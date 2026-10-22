@@ -126,7 +126,7 @@ class Worker(QObject):
 
     def _evaluate(self, todo: list[sources.Job], cv_text: str, cv_hash: str, rules: str) -> int:
         """Evaluate jobs one by one; returns the number of failed evaluations. The model gets the technologies the
-        program found in each ad, and its answer is checked against them."""
+        program found in each ad and lists the ad's requirements; the program checks them and counts the score."""
         failed = 0
         known = grounding.cv_technologies(cv_text)
         self.progress.emit(0, len(todo))
@@ -136,7 +136,7 @@ class Worker(QObject):
                 break
             try:
                 answer = llm.evaluate(cv_text, job, rules, grounding.facts(job, known))
-                evaluation = grounding.check(answer, job, known)
+                evaluation = grounding.score(answer, job, known)
             except llm.ModelLost:
                 raise  # nothing left to evaluate with: stop the whole pass
             except Exception:

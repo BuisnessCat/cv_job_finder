@@ -6,8 +6,17 @@ CSHARP_AD = Job(url="u", source="junior.guru", title="Junior C# Developer", comp
 CPP_CV = "Junior developer. Skills: C++17, C, CMake, Git, Linux"
 
 
-def evaluation(score=8, have=(), missing=(), risks=()):
-    return {"score": score, "summary": "ok", "have": list(have), "missing": list(missing), "risks": list(risks)}
+def req(text, required=True, match="yes"):
+    return {"requirement": text, "required": required, "match": match}
+
+
+def answer(requirements=(), blockers=()):
+    return {"summary": "ok", "requirements": list(requirements), "blockers": list(blockers)}
+
+
+PY_AD = Job(url="p", source="Jobicy", title="Junior Python Developer", company="A", city="", published="",
+            description="Required: Python, SQL, Django, Docker. React and AWS are a plus. Teamwork.")
+KNOWN = {"Python", "SQL", "FastAPI", "Git"}
 
 
 def test_technologies_are_found_strictly():
@@ -33,39 +42,60 @@ def test_facts_when_the_ad_names_no_known_technology():
     assert "no known technologies" in grounding.facts(vague, {"Python"})
 
 
-def test_check_drops_technologies_the_ad_does_not_name():
-    python_ad = Job(url="p", source="Jobicy", title="Junior Python Developer", company="A", city="", published="",
-                    description="Python, SQL and teamwork.")
-    checked = grounding.check(evaluation(have=["Python", "Docker", "good communication"],
-                                         missing=["React", "SQL window functions", "team player"]),
-                              python_ad, {"Python"})
-    assert checked["have"] == ["Python", "good communication"]  # Docker: the ad doesn't name it
-    assert checked["missing"] == ["SQL window functions", "team player"]  # React: the ad doesn't name it
+def test_score_is_counted_from_the_requirements():
+    result = grounding.score(answer([req("Python"), req("SQL"), req("Django (has FastAPI)", match="similar"),
+                                     req("Docker", match="no"), req("React", False, "no"), req("AWS", False, "no")]),
+                             PY_AD, KNOWN)
+    # must-have 1 + 1 + 0.7 + 0 = 2.7 of 4, weight 2; nice to have 0 of 2, weight 1: 5.4 of 10 -> 1 + 9 x 0.54 = 5.9
+    assert result["score"] == 6
+    assert result["counted"] == {"must": [2.7, 4], "nice": [0.0, 2], "base": 6, "cap": None}
+    assert result["have"] == ["Python", "SQL", "Django (has FastAPI)"]
+    assert result["missing"] == ["Docker", "React", "AWS"] and result["risks"] == []
+    every = answer([req("Python"), req("SQL"), req("Django", match="no"), req("Docker")])
+    assert grounding.score(every, PY_AD, KNOWN | {"Docker"})["score"] == 8  # one of four must-haves missing
 
 
-def test_check_moves_another_language_from_have_to_missing():
-    checked = grounding.check(evaluation(score=4, have=["C# programming (similar to C++)", "Git"], missing=[".NET"]),
-                              CSHARP_AD, grounding.cv_technologies(CPP_CV))
-    assert checked["have"] == ["Git"]
-    assert checked["missing"] == [".NET"]  # C# is already there as .NET: not added twice
-    checked = grounding.check(evaluation(score=4, have=["C# programming"]), CSHARP_AD, {"C/C++"})
-    assert checked["missing"] == ["C# programming"]
+def test_blockers_cap_the_score():
+    result = grounding.score(answer([req("Python"), req("SQL")] + [req(f"skill {i}") for i in range(3)],
+                                    [{"kind": "experience", "evidence": "3+ years of commercial experience"}]),
+                             PY_AD, KNOWN)
+    assert result["score"] == 4 and result["counted"]["base"] == 10 and result["counted"]["cap"] == 4
+    assert result["blockers"] == [{"kind": "experience", "evidence": "3+ years of commercial experience", "cap": 4}]
+    assert result["risks"] == ["3+ years of commercial experience (score at most 4)"]
 
 
 def test_another_main_language_in_the_title_caps_the_score():
-    checked = grounding.check(evaluation(score=8), CSHARP_AD, {"C/C++", "Git"})
-    assert checked["score"] == 3
-    assert checked["risks"] == ["Main language: C#/.NET (not in your CV)"]
-    assert grounding.check(evaluation(score=2), CSHARP_AD, {"C/C++"})["score"] == 2  # lower stays lower
-    assert grounding.check(evaluation(score=8), CSHARP_AD, {"C#/.NET"})["score"] == 8
+    result = grounding.score(answer([req("Git"), req("SQL Server", False, "no"), req("teamwork")]), CSHARP_AD,
+                             {"C/C++", "Git"})
+    assert result["score"] == 3
+    assert result["risks"] == ["Main language C#/.NET is not in your CV (score at most 3)"]
+    assert grounding.score(answer([req("C#", match="no")] * 3), CSHARP_AD, {"C/C++"})["score"] == 1  # lower stays
+    js = Job(url="t", source="Jobicy", title="TypeScript Developer", company="A", city="", published="",
+             description="TypeScript, React, Git")
+    met = answer([req("TypeScript", match="similar"), req("React"), req("Git")])
+    assert grounding.score(met, js, {"JavaScript", "React", "Git"})["counted"]["cap"] is None  # one family
+    java = Job(url="j", source="Jobicy", title="Java Tester", company="A", city="", published="",
+               description="Testing, SQL, Jira")
+    tests = answer([req("Testing"), req("SQL"), req("Jira")])
+    assert grounding.score(tests, java, {"SQL", "Testing"})["counted"]["cap"] is None  # no languages in the CV
 
 
-def test_language_check_spares_families_and_cvs_without_languages():
-    ts = Job(url="t", source="Jobicy", title="TypeScript Developer", company="A", city="", published="",
-             description="TypeScript, React")
-    assert grounding.check(evaluation(score=7), ts, {"JavaScript"})["score"] == 7  # one family
-    java = Job(url="j", source="Jobicy", title="Java Tester", company="A", city="", published="", description="")
-    assert grounding.check(evaluation(score=6), java, {"SQL", "Testing"})["score"] == 6  # no languages in the CV
+def test_few_requirements_cap_the_score():
+    two = grounding.score(answer([req("Python"), req("SQL")]), PY_AD, KNOWN)
+    assert two["score"] == 7 and two["risks"] == ["The ad names few concrete requirements: read it before applying "
+                                                   "(score at most 7)"]
+    none = grounding.score(answer(), PY_AD, KNOWN)
+    assert none["score"] == 5 and none["counted"]["base"] == 5
+
+
+def test_requirements_are_checked_against_the_ad_and_the_cv():
+    result = grounding.score(answer([req("Python"), req("Vue.js", match="no"), req("Docker"), req("teamwork")]),
+                             PY_AD, KNOWN)
+    assert [r["requirement"] for r in result["requirements"]] == ["Python", "Docker", "teamwork"]  # no Vue in the ad
+    assert [r["match"] for r in result["requirements"]] == ["yes", "similar", "yes"]  # Docker isn't in the CV
+    cpp = grounding.score(answer([req("C# programming (similar to C++)"), req("Git"), req(".NET", False, "similar")]),
+                          CSHARP_AD, grounding.cv_technologies(CPP_CV))
+    assert [r["match"] for r in cpp["requirements"]] == ["no", "yes", "no"]  # C# is not C++
 
 
 def test_czech_word_forms_count():

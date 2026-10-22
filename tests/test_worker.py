@@ -3,7 +3,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 
 import pytest
-from helpers import use_settings
+from helpers import model_answer, use_settings
 
 from job_finder import config, db, llm, lmstudio, settings, sources, worker
 from job_finder.sources import Job
@@ -50,8 +50,7 @@ def test_model_lost_stops_evaluation(setup, monkeypatch):
 
 def test_summary_counts_suitable_and_evaluated(setup, monkeypatch):
     scores = {"u1": 7, "u2": 3, "u3": 6}
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": {
-        "score": scores[job.url], "summary": "", "have": [], "missing": [], "risks": []})
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": model_answer(scores[job.url]))
 
     assert worker.Worker()._refresh() == "Done: 2 matches out of 3 evaluated"
 
@@ -81,15 +80,13 @@ def test_key_changes_with_cv_and_scoring_settings(setup):
 
 def test_summary_uses_singular_for_one_match(setup, monkeypatch):
     scores = {"u1": 7, "u2": 3, "u3": 2}
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": {
-        "score": scores[job.url], "summary": "", "have": [], "missing": [], "risks": []})
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": model_answer(scores[job.url]))
 
     assert worker.Worker()._refresh() == "Done: 1 match out of 3 evaluated"
 
 
 def test_evaluated_rows_carry_first_seen(setup, monkeypatch):
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": {
-        "score": 7, "summary": "", "have": [], "missing": [], "risks": []})
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": model_answer(7))
     w = worker.Worker()
     rows = []
     w.evaluated.connect(rows.append)
@@ -113,8 +110,7 @@ def test_old_jobs_are_not_scored(setup, monkeypatch):
                                                        ("undated", "")]]
     monkeypatch.setattr(sources, "fetch_all", lambda s: ({"Jobicy": jobs}, {}))
     scored = []
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": scored.append(job.url) or {
-        "score": 6, "summary": "", "have": [], "missing": [], "risks": []})
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": scored.append(job.url) or model_answer(6))
     worker.Worker()._refresh()
     assert sorted(scored) == ["month", "undated"]
 
@@ -123,8 +119,7 @@ def test_scoring_pauses_while_windows_is_busy(setup, monkeypatch):
     answers = iter([False, True])  # a full-screen game starts after the first job
     monkeypatch.setattr(worker.Worker, "pause_check", staticmethod(lambda: next(answers)))
     scored = []
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": scored.append(job.url) or {
-        "score": 6, "summary": "", "have": [], "missing": [], "risks": []})
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": scored.append(job.url) or model_answer(6))
     w = worker.Worker()
     message = w._refresh()
     assert len(scored) == 1 and w.paused and message.startswith("Paused")
@@ -145,7 +140,6 @@ def test_no_model_no_loading(setup, monkeypatch):
     assert w._refresh() == "LM Studio isn't installed: click Get AI model"
     monkeypatch.setattr(lmstudio, "everything_ready", lambda model: True)
     monkeypatch.setattr(llm, "prepare", lambda model: None)
-    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": {
-        "score": 6, "summary": "", "have": [], "missing": [], "risks": []})
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": model_answer(6))
     assert w._refresh() == "Done: 3 matches out of 3 evaluated"
     assert not w.model_missing
