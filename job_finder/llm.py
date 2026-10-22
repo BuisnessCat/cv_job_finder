@@ -29,7 +29,10 @@ SCHEMA = {
 }
 
 RULES_TEMPLATE = """You help a candidate decide whether to apply for a job. Their CV is below.
-Rate from 1 to 10 how realistically the candidate can get through the hiring process and do the job.
+Rate from 1 to 10 the candidate's realistic chance of getting this job with this CV: getting through the hiring
+process and doing the job.
+Each ad ends with the technologies a program found in it and which of them are in the CV: rely on that list,
+it is reliable.
 
 About the candidate: {level_text} Languages: {languages}.
 
@@ -38,9 +41,10 @@ How to rate:
    Job ads often list every technology the company uses — those are wishes, not requirements.
    Do not lower the score for missing secondary tools (JIRA, a specific BI system, cloud,
    CI, monitoring, etc.) or "nice to have" items.
-2. Count adjacent skills: a similar framework or database counts (e.g. Django or Flask instead of FastAPI,
-   MySQL instead of PostgreSQL, React instead of Vue, Spring instead of Jakarta EE), any REST/HTTP API,
-   any Git hosting.
+2. Count adjacent skills of the same programming language: a similar framework or database counts (e.g.
+   Django or Flask instead of FastAPI, MySQL instead of PostgreSQL, React instead of Vue, Spring instead of
+   Jakarta EE), any REST/HTTP API, any Git hosting. Another programming language never counts:
+   C, C++ and C# are three different languages, and Java is not JavaScript.
 3. {learn_text}
 4. Lower the score sharply only for real blockers: {experience_blocker}; the job's main programming
    language or field differs from the candidate's main one in the CV; the job requires a language the
@@ -58,10 +62,12 @@ Scale:
 Answer with a JSON object:
 - score — a score from 1 to 10;
 - summary — 1–2 sentences: why this score;
-- have — important job requirements the candidate meets (counting adjacent skills);
-- missing — only significant requirements the candidate lacks;
+- have — important requirements written in the ad that the candidate meets (counting adjacent skills);
+- missing — only significant requirements written in the ad that the candidate lacks;
 - risks — only real blockers from point 4; an empty list if there are none.
 Each list has at most 5 items, each item up to 10 words.
+In have and missing never list a technology the ad does not name. If the ad names few concrete requirements,
+judge it by the role, the level and the language of work, and do not invent requirements.
 Write all texts in English, as plain text without Markdown. Rely only on facts from the CV and the job ad.
 
 Candidate's CV:
@@ -212,12 +218,14 @@ def prepare(model: str) -> None:
             raise RuntimeError(f"model failed to load: {clean_output(result.stderr or result.stdout)}")
 
 
-def evaluate(cv_text: str, job: Job, rules: str) -> dict:
-    """Evaluate one job: score, summary, have, missing, risks."""
+def evaluate(cv_text: str, job: Job, rules: str, facts: str = "") -> dict:
+    """Evaluate one job: score, summary, have, missing, risks. facts: what the program found in the ad, at its end."""
     vacancy = (
         f"Title: {job.title}\nCompany: {job.company}\nLocation: {job.city}\nSource: {job.source}\n\n"
         f"{job.description[:config.MAX_DESCRIPTION_CHARS]}"
     )
+    if facts:
+        vacancy += f"\n\n{facts}"
     response = requests.post(
         f"{config.LM_URL}/chat/completions",
         json={

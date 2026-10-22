@@ -151,3 +151,28 @@ def test_downloaded_models_reads_lms_output_from_a_file(monkeypatch):
 def test_clean_output():
     assert llm.clean_output("\x1b[31mError\x1b[0m: no model\n") == "Error: no model"
     assert llm.clean_output("x" * 500) == "x" * 300
+
+
+def test_evaluate_ends_the_ad_with_the_programs_facts(monkeypatch):
+    sent = {}
+    answer = {"score": 5, "summary": "", "have": [], "missing": [], "risks": []}
+
+    def fake_post(url, **kwargs):
+        sent.update(kwargs)
+        return FakeResponse({"model": config.MODEL_ID, "choices": [{"message": {"content": json.dumps(answer)}}]})
+
+    monkeypatch.setattr(llm.requests, "post", fake_post)
+    job = Job(url="u", source="Jobicy", title="Dev", company="A", city="", published="", description="We use C#.")
+    llm.evaluate("CV", job, "RULES", "Technologies this ad names (found by a program, reliable): C#/.NET.")
+    assert sent["json"]["messages"][1]["content"].endswith(
+        "We use C#.\n\nTechnologies this ad names (found by a program, reliable): C#/.NET.")
+
+
+def test_rules_ask_for_an_objective_score():
+    rules = llm.render_rules(Settings(cv_path="a", skills=["C/C++"], main_skill="C/C++", levels=["junior"],
+                                      languages={"English": "B2"}))
+    assert "realistic chance of getting this job with this CV" in rules
+    assert "C, C++ and C# are three different languages" in rules and "Java is not JavaScript" in rules
+    assert "the technologies a program found in it" in rules and "rely on that list" in rules
+    assert "never list a technology the ad does not name" in rules
+    assert "do not invent requirements" in rules

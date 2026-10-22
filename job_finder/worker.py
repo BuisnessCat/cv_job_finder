@@ -6,7 +6,7 @@ from datetime import date
 
 from PySide6.QtCore import QObject, Signal
 
-from job_finder import busy, config, db, freshness, llm, lmstudio, settings, skills, sources
+from job_finder import busy, config, db, freshness, grounding, llm, lmstudio, settings, skills, sources
 from job_finder.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -125,15 +125,18 @@ class Worker(QObject):
         return _join(f"Done: {suitable} {matches} out of {evaluated} evaluated", notes)
 
     def _evaluate(self, todo: list[sources.Job], cv_text: str, cv_hash: str, rules: str) -> int:
-        """Evaluate jobs one by one; returns the number of failed evaluations."""
+        """Evaluate jobs one by one; returns the number of failed evaluations. The model gets the technologies the
+        program found in each ad, and its answer is checked against them."""
         failed = 0
+        known = grounding.cv_technologies(cv_text)
         self.progress.emit(0, len(todo))
         for done, job in enumerate(todo, 1):
             if self.pause_check():
                 self.paused = True
                 break
             try:
-                evaluation = llm.evaluate(cv_text, job, rules)
+                answer = llm.evaluate(cv_text, job, rules, grounding.facts(job, known))
+                evaluation = grounding.check(answer, job, known)
             except llm.ModelLost:
                 raise  # nothing left to evaluate with: stop the whole pass
             except Exception:

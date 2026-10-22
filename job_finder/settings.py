@@ -28,7 +28,7 @@ NOT_SKILLS = {"Experience 2+ years", "Czech", "German", "Other languages", "Engl
 _WORD = r"(?<![\w#+.])(?:{})(?![\w#+])"
 CV_PATTERNS = {
     # A letter counts in a list: before , / ) | ; • or at the end of a line
-    "C/C++": re.compile(_WORD.format(r"C(?=\s*(?:[,/)|;•]|$))|C\+\+|c\+\+"), re.MULTILINE),
+    "C/C++": re.compile(_WORD.format(r"C(?=\s*(?:[,/)|;•]|$))|[Cc]\+\+(?:\d\d)?"), re.MULTILINE),  # also C++17
     "Go": re.compile(_WORD.format(r"Go(?!-)|Golang|golang")),
     "R": re.compile(_WORD.format(r"R(?=\s*(?:[,/)|;•]|$))|R programming|RStudio"), re.MULTILINE),
     "Spring": re.compile(_WORD.format(r"Spring(?!\s+(?:(?:19|20)\d\d|semester|term|break))|spring boot")),

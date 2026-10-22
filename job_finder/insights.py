@@ -11,7 +11,7 @@ REQUIREMENTS = {
     "Python": [r"python"],
     "Java": [r"java"],
     "C#/.NET": [r"c#", r"\.net", r"asp\.net", r"dotnet"],
-    "C/C++": [r"c", r"c\+\+"],
+    "C/C++": [r"c", r"c\+\+(?:\d\d)?"],  # also C++17
     "Go": [r"go(?!-)", r"golang"],
     "Rust": [r"rust"],
     "JavaScript": [r"javascript", r"js", r"es6\+?"],
