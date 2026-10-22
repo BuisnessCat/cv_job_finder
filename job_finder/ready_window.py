@@ -1,61 +1,18 @@
-"""The "Getting ready" window: is LM Studio installed and the AI model downloaded (spec section 18.3).
-Shown at start only when something is missing; a download starts only when the button is clicked."""
-import json
-import subprocess
+"""The "Getting ready" panel: is LM Studio installed and the AI model downloaded (spec sections 18.3, 20.1). It is a
+step of the setup wizard and, when the setup is done, a window at start; a download starts only when the button is
+clicked, and there is one download for the whole app."""
 import threading
-from pathlib import Path
 
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
-from job_finder import config, llm, style
+from job_finder import config, lmstudio, style
 from job_finder.hardware import vram_gb
 from job_finder.window import _label
 
 LM_STUDIO_URL = "https://lmstudio.ai"
 MODEL_INFO = {config.MODEL: ("Ministral 3 8B", "about 6 GB"), config.SMALL_MODEL: ("Ministral 3 3B", "about 3 GB")}
-MODEL_FILES = {config.MODEL: "ministral-3-8b", config.SMALL_MODEL: "ministral-3-3b"}  # how the model's file starts
-
-
-def lms_installed() -> bool:
-    """LM Studio's command-line tool appears after LM Studio has been opened once."""
-    return config.LMS_EXE.exists()
-
-
-def _downloads_folder() -> Path:
-    """LM Studio's downloads folder: from its settings (it can be moved), else the default one."""
-    try:
-        folder = json.loads((config.LMS_HOME / "settings.json").read_text(encoding="utf-8")).get("downloadsFolder")
-    except (OSError, ValueError, AttributeError):
-        folder = None
-    return Path(folder) if folder else config.LMS_HOME / "models"
-
-
-def model_file_present(model: str) -> bool:
-    """Whether the model's file is in LM Studio's downloads folder: a look on disk, LM Studio isn't started."""
-    start, folder = MODEL_FILES.get(model), _downloads_folder()
-    if not start or not folder.is_dir():
-        return False
-    return any(file.name.lower().startswith(start) for file in folder.rglob("*.gguf"))
-
-
-def have_model(model: str) -> bool:
-    """The file on disk is enough; only without it LM Studio itself is asked (which may start it)."""
-    return model_file_present(model) or model in llm.downloaded_models()
-
-
-def everything_ready(model: str) -> bool:
-    return lms_installed() and have_model(model)
-
-
-def download_model(model: str) -> int:
-    """Download the model with LM Studio; returns its exit code. Output is not captured: LM Studio's background
-    service started by the command would inherit our pipes and the call would never end."""
-    return subprocess.run(
-        [str(config.LMS_EXE), "get", model, "-y"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW,
-    ).returncode
 
 
 def start_thread(target) -> None:
@@ -69,29 +26,51 @@ def _text(name: str, text: str = "") -> QLabel:
 
 
 class Downloader(QObject):
-    done = Signal(int)
+    """The app's one model download: the wizard, the Getting ready window and the main window see the same one."""
+    done = Signal(int)  # LM Studio's exit code; emitted from the download's thread
 
-    def __init__(self, model: str):
+    def __init__(self):
         super().__init__()
-        self.model = model
+        self.running = False
+        self.model = ""
+
+    def start(self, model: str) -> None:
+        if self.running:
+            return
+        self.running, self.model = True, model
+        lmstudio.downloading = True
+        start_thread(self.run)
 
     def run(self) -> None:
         try:
-            code = download_model(self.model)
+            code = lmstudio.download_model(self.model)
         except OSError:
             code = -1
+        self.running = False
+        lmstudio.downloading = False
         self.done.emit(code)
 
 
-class ReadyDialog(QDialog):
-    def __init__(self, model: str, parent=None):
+_downloader: Downloader | None = None
+
+
+def downloader() -> Downloader:
+    global _downloader
+    if _downloader is None:
+        _downloader = Downloader()
+    return _downloader
+
+
+class ReadyPanel(QWidget):
+    """LM Studio and the model: what is there, what is missing, buttons to get it."""
+    changed = Signal()  # after every check: the model may have become ready
+
+    def __init__(self, model: str, title: str = "Getting ready", parent=None):
         super().__init__(parent)
+        self.setObjectName("details")
         self.model = model
         self.name, self.size = MODEL_INFO.get(model, (model, "a few GB"))
-        self.downloading = False
-        self.setWindowTitle("Job Finder — getting ready")
-        self.setStyleSheet(style.STYLESHEET)
-        self.resize(600, 360)
+        self.ready = False
 
         self.lms_status = _label()
         self.get_button = QPushButton("Get LM Studio")
@@ -106,10 +85,7 @@ class ReadyDialog(QDialog):
         self.download_note = _text("muted")
         self.check_button = QPushButton("Check again")
         self.check_button.clicked.connect(self.check)
-        self.continue_button = QPushButton("Continue")
-        self.continue_button.setObjectName("primary")
-        self.continue_button.clicked.connect(self.accept)
-        for button in (self.get_button, self.download_button, self.check_button, self.continue_button):
+        for button in (self.get_button, self.download_button, self.check_button):
             button.setAutoDefault(False)
 
         lms_row = QHBoxLayout()
@@ -118,14 +94,13 @@ class ReadyDialog(QDialog):
         model_row = QHBoxLayout()
         model_row.addWidget(self.model_status, 1)
         model_row.addWidget(self.download_button)
-        buttons = QHBoxLayout()
-        buttons.addWidget(self.check_button)
-        buttons.addStretch(1)
-        buttons.addWidget(self.continue_button)
+        check_row = QHBoxLayout()
+        check_row.addWidget(self.check_button)
+        check_row.addStretch(1)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 22, 28, 20)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        layout.addWidget(_text("h1", "Getting ready"))
+        layout.addWidget(_text("h1", title))
         layout.addWidget(_text("muted", "Job Finder scores jobs with an AI model that runs on your own computer, "
                                         "in LM Studio (free). Two things are needed:"))
         layout.addSpacing(8)
@@ -134,16 +109,18 @@ class ReadyDialog(QDialog):
         layout.addWidget(self.model_note)
         layout.addWidget(self.progress)
         layout.addWidget(self.download_note)
+        layout.addLayout(check_row)
         layout.addStretch(1)
-        layout.addLayout(buttons)
 
-        self.downloader = Downloader(model)
-        self.downloader.done.connect(self.on_download_done)
+        downloader().done.connect(self.on_download_done)
+        if downloader().running:
+            self._show_downloading()
         self.check()
 
     def check(self) -> None:
-        installed = lms_installed()
-        downloaded = installed and have_model(self.model)
+        installed = lmstudio.lms_installed()
+        downloaded = installed and lmstudio.have_model(self.model)
+        self.ready = downloaded
         self.lms_status.setText("✓ LM Studio is installed" if installed
                                 else "✕ LM Studio is not installed (or was never opened). Install it, open it "
                                      "once, then click Check again.")
@@ -156,27 +133,56 @@ class ReadyDialog(QDialog):
                                 "a bit." if self.model == config.SMALL_MODEL else "")
         self.model_note.setVisible(self.model == config.SMALL_MODEL)
         self.download_button.setVisible(not downloaded)
-        self.download_button.setEnabled(installed and not self.downloading)
-        self.continue_button.setText("Continue" if downloaded else "Continue anyway")
+        self.download_button.setEnabled(installed and not downloader().running)
+        self.changed.emit()
 
     def open_lm_studio(self) -> None:
         QDesktopServices.openUrl(QUrl(LM_STUDIO_URL))
 
-    def start_download(self) -> None:
-        self.downloading = True
+    def _show_downloading(self) -> None:
         self.download_button.setEnabled(False)
         self.progress.show()
-        self.download_note.setText(f"Downloading {self.name} ({self.size}). It can take a while; you can keep "
-                                   "this window open or continue (the download goes on: click Refresh in the app "
-                                   "when it has finished).")
-        start_thread(self.downloader.run)
+        self.download_note.setText(f"Downloading {self.name} ({self.size}). It can take a while; you can go on, "
+                                   "the download continues and the jobs are scored when it has finished.")
+
+    def start_download(self) -> None:
+        if downloader().running:
+            return
+        self._show_downloading()
+        downloader().start(self.model)
 
     def on_download_done(self, code: int) -> None:
-        self.downloading = False
         self.progress.hide()
         self.check()
-        if not have_model(self.model):
+        if not self.ready:
             self.download_note.setText("The download failed (no internet?). Try again, or download the model in "
                                        f"LM Studio: search for {self.name}.")
         else:
             self.download_note.setText("Done.")
+
+
+class ReadyDialog(QDialog):
+    """At start when the setup is done but LM Studio or the model is missing, and from the main window."""
+
+    def __init__(self, model: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Job Finder — getting ready")
+        self.setStyleSheet(style.STYLESHEET)
+        self.resize(600, 380)
+        self.panel = ReadyPanel(model)
+        self.continue_button = QPushButton("Continue")
+        self.continue_button.setObjectName("primary")
+        self.continue_button.setAutoDefault(False)
+        self.continue_button.clicked.connect(self.accept)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        buttons.addWidget(self.continue_button)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 22, 28, 20)
+        layout.addWidget(self.panel, 1)
+        layout.addLayout(buttons)
+        self.panel.changed.connect(self.update_continue)
+        self.update_continue()
+
+    def update_continue(self) -> None:
+        self.continue_button.setText("Continue" if self.panel.ready else "Continue anyway")

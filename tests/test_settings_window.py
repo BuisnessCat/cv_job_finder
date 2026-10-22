@@ -6,8 +6,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog
 
-from job_finder import config, db, settings
+from job_finder import config, db, llm, lmstudio, ready_window, settings
 from job_finder.cv_window import CvWindow
+from job_finder.ready_window import ReadyPanel
 from job_finder.settings import Settings
 from job_finder.settings_window import SettingsDialog, Wizard, first_run
 from job_finder.sources import Job
@@ -281,3 +282,27 @@ def test_windows_are_freed_when_closed(app, cv):
         ref = weakref.ref(window)
         del window
         assert ref() is None, make
+
+
+def test_wizard_asks_for_the_model_first(app, cv, monkeypatch):
+    monkeypatch.setattr(lmstudio, "lms_installed", lambda: True)
+    monkeypatch.setattr(lmstudio, "model_file_present", lambda model: False)
+    monkeypatch.setattr(llm, "downloaded_models", lambda: set())
+    monkeypatch.setattr(ready_window, "vram_gb", lambda: 12.0)
+    wizard = Wizard(settings.initial(cv), config.MODEL)  # LM Studio or the model is missing
+    assert len(wizard.steps) == 5 and wizard.step_label.text() == "Step 1 of 5"
+    wizard.next_button.click()
+    assert isinstance(wizard.pages.currentWidget(), ReadyPanel)
+    assert not wizard.pages.currentWidget().download_button.isHidden()
+    assert wizard.next_button.isEnabled()  # the setup goes on while the model downloads
+    wizard.next_button.click()
+    assert wizard.pages.currentIndex() == 2 and wizard.step_label.text() == "Step 3 of 5"  # Your CV
+    assert len(Wizard(settings.initial(cv)).steps) == 4  # everything is there: no model step
+
+
+def test_first_run_passes_the_model_to_the_wizard(app, cv, monkeypatch):
+    models = []
+    monkeypatch.setattr(Wizard, "exec", lambda wizard: models.append(len(wizard.steps)) or QDialog.Rejected)
+    first_run(cv, config.MODEL)
+    first_run(cv)
+    assert models == [5, 4]

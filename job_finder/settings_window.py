@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDialog, QFil
 
 from job_finder import db, settings, skills, style
 from job_finder.flow_layout import FlowLayout
+from job_finder.ready_window import ReadyPanel
 from job_finder.settings import Settings
 from job_finder.window import _label
 
@@ -353,18 +354,20 @@ class SettingsForm(QObject):
 
 
 class Wizard(QDialog):
-    """First run: Welcome, Your CV, What you're looking for, Languages; one column with a progress bar."""
+    """First run: Welcome, (AI model), Your CV, What you're looking for, Languages; one column with a progress bar.
+    model: LM Studio or this model is missing, so a step to get them comes after Welcome."""
 
-    def __init__(self, s: Settings, parent=None):
+    def __init__(self, s: Settings, model: str | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Job Finder — setup")
         self.setStyleSheet(style.STYLESHEET)
         self.resize(660, 600)
         self.step = 0
+        self.steps = [STEPS[0], *([("model", ())] if model else []), *STEPS[1:]]
         self.form = SettingsForm(self)
         self.step_label = _label("muted")
         self.bar = QProgressBar()
-        self.bar.setRange(0, len(STEPS))
+        self.bar.setRange(0, len(self.steps))
         self.bar.setTextVisible(False)
         welcome = QWidget()
         welcome.setObjectName("details")
@@ -377,6 +380,8 @@ class Wizard(QDialog):
         self.pages = QStackedWidget()
         self.pages.setObjectName("details")
         self.pages.addWidget(welcome)
+        if model:
+            self.pages.addWidget(ReadyPanel(model, "AI model"))
         for name, _ in STEPS[1:]:
             self.pages.addWidget(self.form.page(name))
         self.has_scores = db.has_evaluations()
@@ -410,9 +415,9 @@ class Wizard(QDialog):
 
     def show_step(self, step: int) -> None:
         self.step = step
-        last = step == len(STEPS) - 1
+        last = step == len(self.steps) - 1
         self.pages.setCurrentIndex(step)
-        self.step_label.setText(f"Step {step + 1} of {len(STEPS)}")
+        self.step_label.setText(f"Step {step + 1} of {len(self.steps)}")
         self.bar.setValue(step + 1)
         self.back_button.setVisible(step > 0)
         self.next_button.setText("Start search" if last else "Next")
@@ -420,13 +425,13 @@ class Wizard(QDialog):
         self.update_buttons()
 
     def update_buttons(self) -> None:
-        self.next_button.setEnabled(not set(STEPS[self.step][1]) & set(self.form.missing()))
+        self.next_button.setEnabled(not set(self.steps[self.step][1]) & set(self.form.missing()))
 
     def go_back(self) -> None:
         self.show_step(self.step - 1)
 
     def go_next(self) -> None:
-        if self.step == len(STEPS) - 1:
+        if self.step == len(self.steps) - 1:
             self.accept()
         else:
             self.show_step(self.step + 1)
@@ -504,12 +509,13 @@ class SettingsDialog(QDialog):
         return answer == QMessageBox.Save
 
 
-def first_run(cv: Path) -> bool:
-    """Show the wizard when settings are missing or incomplete; False if it was closed before the end."""
+def first_run(cv: Path, model: str | None = None) -> bool:
+    """Show the wizard when settings are missing or incomplete; False if it was closed before the end. model: LM
+    Studio or this model is missing, the wizard helps to get them."""
     saved = settings.load()
     if saved is not None and not settings.missing(saved):
         return True
-    wizard = Wizard(saved or settings.initial(cv))
+    wizard = Wizard(saved or settings.initial(cv), model)
     if wizard.exec() != QDialog.Accepted:
         return False
     settings.save(wizard.values())
