@@ -1029,3 +1029,23 @@ def test_update_notified_once_from_the_tray(tray_window, monkeypatch):
 
 def test_tray_tooltip_shows_the_version(tray_window):
     assert tray_window.tray.toolTip() == f"Job Finder {config.VERSION}"
+
+
+def test_status_stays_one_line(window):
+    window.resize(1200, 750)
+    window.show()
+
+    def shown():  # what is painted; text() is the whole status
+        return QLabel.text(window.status_label)
+
+    error = "LM Studio: model failed to load: " + "\n".join(f"line {i} of a long error from LM Studio" for i in range(60))
+    window.status_label.setText(error)
+    height = window.status_label.fontMetrics().height()
+    assert window.status_label.sizeHint().height() <= 2 * height
+    assert shown().endswith("…")
+    assert "\n" not in shown()
+    assert window.status_label.toolTip() == error
+    assert window.status_label.text() == error
+    window.status_label.setText("Done: 3 matches out of 10 evaluated")
+    assert shown() == "Done: 3 matches out of 10 evaluated"
+    assert window.status_label.toolTip() == ""

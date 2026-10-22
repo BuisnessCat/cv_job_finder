@@ -8,7 +8,7 @@ from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSplitter,
-    QStackedWidget, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QSizePolicy, QStackedWidget, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from job_finder import busy, config, db, freshness, insights, llm, settings, sources, style, updates
@@ -41,6 +41,35 @@ def _label(name: str = "") -> QLabel:
     label.setWordWrap(True)
     label.setTextInteractionFlags(Qt.TextSelectableByMouse)
     return label
+
+
+class ElidedLabel(QLabel):
+    """One line of plain text whatever it gets (e.g. a long error from LM Studio): a long text ends with "…" and
+    the whole of it is in the tooltip; text() gives the whole text."""
+
+    def __init__(self):
+        super().__init__()
+        self.full = ""
+        self.setTextFormat(Qt.PlainText)
+        self.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # a long text never widens the window
+
+    def setText(self, text: str) -> None:
+        self.full = text
+        self._elide()
+
+    def text(self) -> str:
+        return self.full
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._elide()
+
+    def _elide(self) -> None:
+        line = " ".join(self.full.split())
+        shown = self.fontMetrics().elidedText(line, Qt.ElideRight, max(self.width(), 1))
+        super().setText(shown)
+        self.setToolTip(self.full if shown != line else "")
 
 
 def _caption(text: str) -> QLabel:
@@ -175,7 +204,7 @@ class MainWindow(QMainWindow):
         tabs.addWidget(self.found_tab)
         tabs.addWidget(self.applied_tab)
         tabs.addWidget(self.insights_tab)
-        self.status_label = _label()
+        self.status_label = ElidedLabel()
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(250)
         self.progress.hide()

@@ -2,6 +2,7 @@
 prepare / evaluate / release: prepare and release become empty, evaluate calls the API."""
 import json
 import logging
+import re
 import subprocess
 import tempfile
 import time
@@ -130,6 +131,11 @@ class ModelLost(RuntimeError):
     """The answer came from another model: ours was unloaded from LM Studio mid-run (e.g. from its chat)."""
 
 
+def clean_output(text: str) -> str:
+    """LM Studio's console output for a status line: no colour codes, the last 300 characters."""
+    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text).strip()[-300:]
+
+
 def _lms(*args: str, timeout: int = 120) -> subprocess.CompletedProcess:
     return subprocess.run(
         [str(config.LMS_EXE), *args], stdin=subprocess.DEVNULL, capture_output=True,
@@ -203,7 +209,7 @@ def prepare(model: str) -> None:
             timeout=300,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"model failed to load: {(result.stderr or result.stdout).strip()[-300:]}")
+            raise RuntimeError(f"model failed to load: {clean_output(result.stderr or result.stdout)}")
 
 
 def evaluate(cv_text: str, job: Job, rules: str) -> dict:

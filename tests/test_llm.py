@@ -146,3 +146,8 @@ def test_downloaded_models_reads_lms_output_from_a_file(monkeypatch):
     monkeypatch.setattr(llm.subprocess, "run", fake_run)
     assert llm.downloaded_models() == {"mistralai/ministral-3-8b"}
     assert hasattr(seen["stdout"], "fileno") and seen["stdout"] is not subprocess.PIPE and "capture_output" not in seen
+
+
+def test_clean_output():
+    assert llm.clean_output("\x1b[31mError\x1b[0m: no model\n") == "Error: no model"
+    assert llm.clean_output("x" * 500) == "x" * 300
