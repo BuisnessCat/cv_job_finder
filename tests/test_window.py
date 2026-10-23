@@ -1286,3 +1286,51 @@ def test_saving_the_profile_recounts_the_verdicts(window, monkeypatch):
     window.settings_button.click()
     assert titles(window) == []  # Out of reach now, without the model
     assert db.list_jobs(key, 1)[0]["evaluation"]["reason"] == "Requires a Master's degree"
+
+
+def verdict_row(url, facts, title="Junior Backend Developer", description="Python"):
+    """A found job with the program's verdict (spec section 21), scored under the fixture's CV."""
+    s = settings.load() or use_settings(config.CV_PATH)
+    job = Job(url=url, source=f"src-{url}", title=title, company="ACME", city="Prague",
+              published=date.today().isoformat(), description=description)
+    db.save_jobs(job.source, [job])
+    evaluation = grounding.verdict(facts, job, set(), s)
+    db.save_evaluation(url, evaluation, worker.read_cv(s)[1])
+    db.mark_all_seen()
+    return evaluation
+
+
+def test_card_shows_the_verdict_band_conditions_and_skills(window):
+    verdict_row("a", {**model_answer(8), "about": "Builds the backend of a booking site."})
+    window.load_rows()
+    window.table.selectRow(0)
+    assert not window.verdict_box.isHidden() and window.old_analysis.isHidden() and window.badge.isHidden()
+    assert window.v_title.text() == "STRONG FIT · 8/10"
+    assert window.v_reason.text() == "2 of 2 must-haves · 0 of 1 nice-to-haves · all conditions met"
+    assert [(mark.text(), name.text()) for mark, name, _ in window.v_conditions] == [
+        ("✓", "Degree"), ("✓", "Experience"), ("✓", "Level"), ("✓", "Language"), ("✓", "Location"), ("✓", "Area")]
+    assert window.v_conditions[2][2].text() == "Junior"
+    assert window.v_must_caption.text() == "MUST-HAVE · 2 of 2"
+    assert [chip.accessibleName() for chip in window.v_must_chips] == ["✓ skill 0", "✓ skill 1"]
+    assert window.v_nice_caption.text() == "NICE TO HAVE · 0 of 1"
+    assert [chip.accessibleName() for chip in window.v_nice_chips] == ["✕ skill 0"]
+    assert window.v_about.text() == "Builds the backend of a booking site."
+
+
+def test_card_says_why_a_job_is_out_of_reach(window):
+    use_settings(config.CV_PATH, min_score=1)  # show everything, also what is out of reach
+    verdict_row("m", {**model_answer(10), "degree": "master"}, description="An MSc in Mathematics is required.")
+    window.load_rows()
+    window.table.selectRow(0)
+    assert window.v_title.text() == "OUT OF REACH · 2/10"
+    assert window.v_reason.text() == "Requires a Master's degree"
+    mark, name, detail = window.v_conditions[0]
+    assert (mark.text(), name.text(), detail.text()) == (
+        "✕", "Degree", "Master's degree required · you: studying, no degree yet")
+
+
+def test_older_scores_keep_their_card(window):
+    window.on_evaluated(row("old", 9))  # scored before the verdicts, e.g. an application
+    window.table.selectRow(0)
+    assert window.verdict_box.isHidden() and not window.old_analysis.isHidden() and not window.badge.isHidden()
+    assert window.detail_lists["have"][0].text() == "YOU HAVE · 1"

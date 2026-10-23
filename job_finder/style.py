@@ -23,6 +23,12 @@ GAP = 12  # one spacing: from the window edges and between blocks
 # Marker colors in the detail lists: ✓ you have, ✕ missing, ! risks
 LIST_COLORS = {"have": "#4ade80", "missing": "#f87171", "risks": "#fbbf24"}
 
+# Verdict band colors: (background, text) — spec section 21.5
+VERDICT_COLORS = {"Strong fit": ("#14532d", "#4ade80"), "Worth a try": ("#0c4a6e", "#7dd3fc"),
+                  "Stretch": ("#3a2f12", "#fcd34d"), "Out of reach": ("#4c1d1d", "#fca5a5"),
+                  "Other area": ("#2d3039", "#9ca3af")}
+MATCH_COLORS = {"yes": "#4ade80", "similar": "#fbbf24", "no": "#f87171"}
+
 # Application status colors: (pill background, text color) for waiting, accepted, rejected
 STATUS_COLORS = {"applied": ("#0c4a6e", "#7dd3fc"), "accepted": ("#14532d", "#4ade80"),
                  "rejected": ("#7f1d1d", "#fca5a5")}
@@ -83,6 +89,7 @@ QLineEdit, QComboBox, QSpinBox {{ background: {bg}; border: 1px solid {border}; 
     selection-background-color: {accent_soft}; }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border-color: {accent}; }}
 QFrame#chip {{ background: {alt}; border: 1px solid {border}; border-radius: 13px; }}
+QLabel#skillChip {{ background: {alt}; border: 1px solid {border}; border-radius: 9px; padding: 3px 10px; }}
 QToolButton#chipX {{ background: transparent; border: none; color: {muted}; font-size: 11pt; padding: 0 4px; }}
 QToolButton#chipX:hover, QToolButton#rowX:hover {{ color: {text}; }}
 QLineEdit#chipInput {{ background: transparent; border: 1px dashed {border}; border-radius: 13px; padding: 3px 10px; }}

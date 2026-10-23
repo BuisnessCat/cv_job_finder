@@ -1,4 +1,5 @@
 """Main window: found jobs and applications, a card with the selected job's analysis."""
+import html
 import time
 from datetime import date
 from pathlib import Path
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from job_finder import busy, config, db, freshness, insights, llm, settings, sources, style, updates
+from job_finder.flow_layout import FlowLayout
 from job_finder.settings import Settings
 from job_finder.worker import Worker, read_cv, recount
 
@@ -324,6 +326,95 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self.refresh_now if score_now else self.refresh)
         self.check_updates()
 
+    def _build_verdict(self) -> QWidget:
+        """The verdict (spec section 21.5): a colored band with the reason, the conditions, the skills as chips,
+        what the job is about."""
+        self.verdict_box = QWidget()
+        box = QVBoxLayout(self.verdict_box)
+        box.setContentsMargins(0, 14, 0, 0)
+        box.setSpacing(0)
+        self.v_band = QFrame()
+        self.v_band.setObjectName("verdictBand")
+        band = QVBoxLayout(self.v_band)
+        band.setContentsMargins(14, 10, 14, 10)
+        band.setSpacing(2)
+        self.v_title = _label()  # "STRONG FIT · 8/10"
+        self.v_reason = _label()  # "3 of 3 must-haves · all conditions met" or why it's out of reach
+        band.addWidget(self.v_title)
+        band.addWidget(self.v_reason)
+        box.addWidget(self.v_band)
+        box.addSpacing(16)
+        box.addWidget(_caption("CONDITIONS"))
+        box.addSpacing(8)
+        self.v_grid = QGridLayout()
+        self.v_grid.setHorizontalSpacing(10)
+        self.v_grid.setVerticalSpacing(6)
+        self.v_grid.setColumnStretch(2, 1)
+        box.addLayout(self.v_grid)
+        self.v_conditions: list[tuple[QLabel, QLabel, QLabel]] = []  # mark, name, detail
+        self.v_must_caption, self.v_must_flow, self.v_must_chips = self._chips_section(box)
+        self.v_nice_caption, self.v_nice_flow, self.v_nice_chips = self._chips_section(box)
+        box.addSpacing(16)
+        box.addWidget(_caption("ABOUT THE JOB"))
+        box.addSpacing(8)
+        self.v_about = _label()
+        box.addWidget(self.v_about)
+        self.verdict_box.hide()
+        return self.verdict_box
+
+    def _chips_section(self, box: QVBoxLayout) -> tuple[QLabel, "FlowLayout", list]:
+        caption = _caption("")
+        holder = QWidget()
+        flow = FlowLayout(holder)
+        box.addSpacing(16)
+        box.addWidget(caption)
+        box.addSpacing(8)
+        box.addWidget(holder)
+        return caption, flow, []
+
+    def _fill_verdict(self, evaluation: dict) -> None:
+        background, color = style.VERDICT_COLORS.get(evaluation["verdict"], style.VERDICT_COLORS["Stretch"])
+        self.v_band.setStyleSheet(f"QFrame#verdictBand {{ background: {background}; border-radius: 8px; }}")
+        self.v_title.setStyleSheet(f"background: transparent; color: {color}; font-size: 12pt; font-weight: 700;")
+        self.v_reason.setStyleSheet(f"background: transparent; color: {color};")
+        self.v_title.setText(f"{evaluation['verdict'].upper()} · {evaluation['score']}/10")
+        self.v_reason.setText(evaluation.get("reason", ""))
+        while self.v_grid.count():
+            self.v_grid.takeAt(0).widget().setParent(None)  # off the window now, not after deleteLater
+        self.v_conditions = []
+        for row, condition in enumerate(evaluation.get("conditions", [])):
+            mark = QLabel("✓" if condition["ok"] else "✕")
+            mark.setStyleSheet(f"color: {style.MATCH_COLORS['yes' if condition['ok'] else 'no']}; font-weight: 700;")
+            name = _label()
+            name.setText(condition["name"])
+            name.setStyleSheet("font-weight: 600;")
+            name.setWordWrap(False)
+            detail = _label("muted")
+            detail.setText(condition["detail"])
+            for column, widget in enumerate((mark, name, detail)):
+                self.v_grid.addWidget(widget, row, column, Qt.AlignTop)
+            self.v_conditions.append((mark, name, detail))
+        for caption, flow, chips, key, title in (
+                (self.v_must_caption, self.v_must_flow, self.v_must_chips, "must", "MUST-HAVE"),
+                (self.v_nice_caption, self.v_nice_flow, self.v_nice_chips, "nice", "NICE TO HAVE")):
+            items = evaluation.get(key, [])
+            met = sum(item["match"] != "no" for item in items)
+            caption.setText(f"{title} · {met} of {len(items)}" if items else title)
+            while flow.count():
+                flow.takeAt(0).widget().setParent(None)
+            chips.clear()
+            for item in items or [{"skill": "—", "match": ""}]:
+                chip = QLabel()
+                chip.setObjectName("skillChip")
+                mark = MATCH_MARKS.get(item["match"], ("", ""))[0]
+                chip.setText(f"<span style='color:{style.MATCH_COLORS.get(item['match'], style.COLORS['muted'])};"
+                             f" font-weight:700'>{mark}</span>&nbsp; {html.escape(item['skill'])}")
+                chip.setAccessibleName(f"{mark} {item['skill']}".strip())
+                flow.addWidget(chip)
+                if item["match"]:
+                    chips.append(chip)
+        self.v_about.setText(evaluation.get("about") or "—")
+
     def _build_details(self) -> QWidget:
         """Details card: header with the score, application pills, facts, "why", lists; buttons at the bottom."""
         self.d_title = _label("title")
@@ -403,27 +494,34 @@ class MainWindow(QMainWindow):
         box.addWidget(self.d_notice)
         box.addSpacing(14)
         box.addLayout(facts)
-        box.addSpacing(16)
-        box.addWidget(divider)
-        box.addSpacing(16)
-        box.addWidget(_caption("WHY THIS SCORE"))
-        box.addSpacing(8)
-        box.addWidget(self.d_summary)
+        box.addWidget(self._build_verdict())
+        # A score from before the verdicts (e.g. an application): "why this score" and the lists, as they were
+        self.old_analysis = QWidget()
+        old_box = QVBoxLayout(self.old_analysis)
+        old_box.setContentsMargins(0, 0, 0, 0)
+        old_box.setSpacing(0)
+        old_box.addSpacing(16)
+        old_box.addWidget(divider)
+        old_box.addSpacing(16)
+        old_box.addWidget(_caption("WHY THIS SCORE"))
+        old_box.addSpacing(8)
+        old_box.addWidget(self.d_summary)
         self.d_counted = _label("muted")  # "Counted: must-have 2.7 of 4 · nice to have 0 of 2 → 6/10"
         self.d_counted.setToolTip(COUNTED_HELP)
         self.d_counted.setContentsMargins(0, 8, 0, 0)
         self.d_counted.hide()
-        box.addWidget(self.d_counted)
+        old_box.addWidget(self.d_counted)
         self.detail_lists: dict[str, tuple[QLabel, str, QVBoxLayout]] = {}
         for key, caption, _ in LISTS:
             header = _caption(caption)
             rows = QVBoxLayout()
             rows.setSpacing(6)
-            box.addSpacing(18)
-            box.addWidget(header)
-            box.addSpacing(8)
-            box.addLayout(rows)
+            old_box.addSpacing(18)
+            old_box.addWidget(header)
+            old_box.addSpacing(8)
+            old_box.addLayout(rows)
             self.detail_lists[key] = (header, caption, rows)
+        box.addWidget(self.old_analysis)
         description_head = QHBoxLayout()
         description_head.addWidget(_caption("DESCRIPTION"))
         description_head.addStretch(1)
@@ -893,7 +991,14 @@ class MainWindow(QMainWindow):
         self.d_summary.setText(evaluation.get("summary") or "—")
         self.d_summary.setStyleSheet(f"background: {style.COLORS['alt']}; border-left: 3px solid {color};"
                                      " border-radius: 4px; padding: 10px 12px;")
-        self._fill_lists(evaluation)
+        verdict = "verdict" in evaluation  # the program's verdict (spec section 21) or an older score
+        self.verdict_box.setVisible(verdict)
+        self.old_analysis.setVisible(not verdict)
+        self.badge.setVisible(not verdict)
+        if verdict:
+            self._fill_verdict(evaluation)
+        else:
+            self._fill_lists(evaluation)
 
         is_application = "status" in row
         self.d_status.setVisible(is_application)
