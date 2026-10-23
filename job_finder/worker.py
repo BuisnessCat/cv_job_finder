@@ -28,6 +28,19 @@ def read_cv(s: Settings | None) -> tuple[str, str] | None:
     return text, cv_key(text, s)
 
 
+def recount(s: Settings) -> int:
+    """Give every job scored under the current CV its verdict again from the model's saved facts, without the
+    model (spec section 21.4): after Settings change. Older scores without facts stay. Returns how many."""
+    cv = read_cv(s)
+    if cv is None:
+        return 0
+    known = grounding.cv_technologies(cv[0])
+    new = [(job.url, grounding.verdict(evaluation["extraction"], job, known, s))
+           for job, evaluation in db.scored_jobs(cv[1]) if isinstance(evaluation.get("extraction"), dict)]
+    db.save_evaluations(new, cv[1])
+    return len(new)
+
+
 def too_old(job: sources.Job, today: date) -> bool:
     """Older than OLD_JOB_DAYS by the site's date: not worth the model's time. A job without a date is scored."""
     age = freshness.age_days(job.published, today)

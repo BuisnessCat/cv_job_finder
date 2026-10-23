@@ -205,3 +205,28 @@ def test_the_scoring_never_overwrites_settings_saved_meanwhile(setup):
     settings.save(replace(stale, city="Brno"))  # Save in Settings during the pass
     settings.sync_cv(stale)
     assert settings.load().city == "Brno" and settings.load().cv_stamp
+
+
+def test_recount_gives_new_verdicts_without_the_model(setup, monkeypatch):
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": model_answer(8))
+    worker.Worker()._refresh()
+    s = settings.load()
+    key = worker.read_cv(s)[1]
+    monkeypatch.setattr(llm, "evaluate", lambda *args: pytest.fail("Settings don't need the model"))
+    settings.save(replace(s, areas=["Frontend"]))  # Backend jobs are another area now
+    assert worker.recount(settings.load()) == 3
+    assert db.list_jobs(key, 1) and {row["score"] for row in db.list_jobs(key, 1)} == {3}
+    assert {row["evaluation"]["verdict"] for row in db.list_jobs(key, 1)} == {"Other area"}
+    settings.save(s)
+    worker.recount(settings.load())
+    assert {row["score"] for row in db.list_jobs(key, 1)} == {8}
+
+
+def test_recount_leaves_older_scores_alone(setup):
+    s = settings.load()
+    key = worker.read_cv(s)[1]
+    db.save_jobs("Jobicy", [Job(url="u1", source="Jobicy", title="Python dev", company="A", city="",
+                                published=days_ago(1), description="")])
+    db.save_evaluation("u1", {"score": 7, "summary": "", "have": [], "missing": [], "risks": []}, key)  # 1.1
+    assert worker.recount(s) == 0
+    assert db.list_jobs(key, 1)[0]["score"] == 7

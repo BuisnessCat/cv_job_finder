@@ -141,6 +141,22 @@ def save_evaluation(url: str, evaluation: dict, cv_hash: str) -> None:
         )
 
 
+def scored_jobs(cv_hash: str) -> list[tuple[Job, dict]]:
+    """Every job scored under the key, with its evaluation (for giving the verdicts again)."""
+    with _connect() as conn:
+        rows = conn.execute(f"SELECT {JOB_FIELDS}, evaluation FROM jobs WHERE cv_hash = ? AND evaluation IS NOT NULL",
+                            (cv_hash,)).fetchall()
+    return [(Job(*tuple(row)[:8]), json.loads(row["evaluation"])) for row in rows]
+
+
+def save_evaluations(evaluations: list[tuple[str, dict]], cv_hash: str) -> None:
+    """Save many (url, evaluation) at once."""
+    with _connect() as conn:
+        conn.executemany("UPDATE jobs SET score = ?, evaluation = ?, cv_hash = ? WHERE url = ?",
+                         [(evaluation["score"], json.dumps(evaluation, ensure_ascii=False), cv_hash, url)
+                          for url, evaluation in evaluations])
+
+
 def hide(url: str) -> None:
     with _connect() as conn:
         conn.execute("UPDATE jobs SET hidden = 1 WHERE url = ?", (url,))

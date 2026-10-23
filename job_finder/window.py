@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from job_finder import busy, config, db, freshness, insights, llm, settings, sources, style, updates
 from job_finder.settings import Settings
-from job_finder.worker import Worker, read_cv
+from job_finder.worker import Worker, read_cv, recount
 
 COLUMNS = ["Score", "Job", "Company", "Location", "Posted"]
 APPLIED_COLUMNS = ["Applied", "Job", "Company", "Status", "Days waiting", "Score"]
@@ -1038,6 +1038,9 @@ class MainWindow(QMainWindow):
         dialog.deleteLater()  # a child of the main window: otherwise every opened window stays in memory
         if not accepted:
             return
+        new = settings.load()
+        if old is not None and new is not None and not settings.scoring_changed(old, new):
+            recount(new)  # the profile, place or levels changed: new verdicts in an instant, without the model
         self.load_rows()
         if self.cv_window is not None and self.cv_window.isVisible():
             self.cv_window.reload()  # the CV file may have changed; a closed window is read when it opens

@@ -13,9 +13,9 @@ from PySide6.QtCore import QSize
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QSystemTrayIcon
 
-from helpers import use_settings
+from helpers import model_answer, use_settings
 
-from job_finder import busy, config, db, llm, settings, settings_window, style, updates, worker
+from job_finder import busy, config, db, grounding, llm, settings, settings_window, style, updates, worker
 from job_finder.__main__ import tell_running_instance
 from job_finder.sources import Job
 from job_finder.window import MainWindow, days_waiting, plural_days
@@ -1269,3 +1269,20 @@ def test_the_first_start_after_the_setup_scores_right_away(app, tmp_path, monkey
     assert [started.get(id(w.worker)) for w in windows] == [True, False]
     for w in windows:
         w.deleteLater()
+
+
+def test_saving_the_profile_recounts_the_verdicts(window, monkeypatch):
+    s = use_settings(config.CV_PATH)
+    key = worker.read_cv(s)[1]
+    job = Job(url="v", source="src-v", title="Junior Backend Developer", company="ACME", city="Prague",
+              published=date.today().isoformat(), description="Python. A Master's degree is required.")
+    db.save_jobs(job.source, [job])
+    facts = {**model_answer(10), "degree": "master"}
+    db.save_evaluation("v", grounding.verdict(facts, job, set(), replace(s, education="master")), key)
+    db.mark_all_seen()
+    window.load_rows()
+    assert titles(window) == ["Junior Backend Developer"]
+    saving_settings(monkeypatch, replace(s, education="studying"))  # the truth: no degree yet
+    window.settings_button.click()
+    assert titles(window) == []  # Out of reach now, without the model
+    assert db.list_jobs(key, 1)[0]["evaluation"]["reason"] == "Requires a Master's degree"
