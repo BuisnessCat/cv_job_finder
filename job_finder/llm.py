@@ -9,103 +9,80 @@ import time
 
 import requests
 
-from job_finder import config, grounding, hardware
-from job_finder.settings import LEVELS, Settings
+from job_finder import config, hardware
+from job_finder.settings import AREAS, LEVELS, Settings
 from job_finder.sources import Job
 
 log = logging.getLogger(__name__)
 
-# The model lists the ad's requirements and blockers; the program counts the score from them (grounding.score)
+_SKILLS = {"type": "array", "items": {
+    "type": "object",
+    "properties": {"skill": {"type": "string"}, "match": {"type": "string", "enum": ["yes", "similar", "no"]}},
+    "required": ["skill", "match"],
+    "additionalProperties": False,
+}}
+# The model takes the facts out of the ad; the program compares them with the profile (grounding.verdict)
 SCHEMA = {
     "type": "object",
     "properties": {
-        "requirements": {"type": "array", "items": {
+        "area": {"type": "string", "enum": [*AREAS, "Other IT", "Not IT"]},
+        "seniority": {"type": "string", "enum": [*LEVELS, "not stated"]},
+        "min_years": {"type": "integer"},
+        "degree": {"type": "string", "enum": ["none", "bachelor", "master", "phd"]},
+        "students_welcome": {"type": "boolean"},
+        "languages": {"type": "array", "items": {
             "type": "object",
-            "properties": {"requirement": {"type": "string"}, "required": {"type": "boolean"},
-                           "match": {"type": "string", "enum": list(grounding.MATCH)}},
-            "required": ["requirement", "required", "match"],
+            "properties": {"language": {"type": "string"},
+                           "level": {"type": "string",
+                                     "enum": ["A1", "A2", "B1", "B2", "C1", "C2", "native", "not stated"]}},
+            "required": ["language", "level"],
             "additionalProperties": False,
         }},
-        "blockers": {"type": "array", "items": {
-            "type": "object",
-            "properties": {"kind": {"type": "string", "enum": list(grounding.CAPS)}, "evidence": {"type": "string"}},
-            "required": ["kind", "evidence"],
-            "additionalProperties": False,
-        }},
-        "summary": {"type": "string"},
+        "workplace": {"type": "string", "enum": ["office", "hybrid", "remote", "not stated"]},
+        "place": {"type": "string"},
+        "must_have": _SKILLS,
+        "nice_to_have": _SKILLS,
+        "about": {"type": "string"},
     },
-    "required": ["requirements", "blockers", "summary"],
+    "required": ["area", "seniority", "min_years", "degree", "students_welcome", "languages", "workplace", "place",
+                 "must_have", "nice_to_have", "about"],
     "additionalProperties": False,
 }
 
-RULES_TEMPLATE = """You help a candidate decide whether to apply for a job. Their CV is below. You do not give a
-score: you list what the ad asks for and whether the CV has it, and a program counts the score from that.
+RULES = """You read a job ad for a candidate whose CV is below. You do not judge whether the candidate fits:
+you take the facts out of the ad, and a program compares them with the candidate.
 Each ad ends with the technologies a program found in it and which of them are in the CV: rely on that list,
 it is reliable.
 
-About the candidate: {level_text} Languages: {languages}.
-
 Answer with a JSON object:
-- requirements — what the ad asks of the candidate, at most 8, the most important first: technologies, skills,
-  education, spoken languages. Each has:
-  - requirement — up to 8 words; when the candidate has a similar skill, add it: "Django (has FastAPI)";
-  - required — true if the ad says it is required or a must, or it is the core of the role; false for
-    "nice to have", "a plus", "an advantage" and long lists of every tool the company uses;
-  - match — "yes" if the CV shows it; "similar" if the CV has an adjacent skill of the same programming
-    language: a similar framework or database (Django or Flask for FastAPI, MySQL for PostgreSQL, React for
-    Vue, Spring for Jakarta EE), any REST/HTTP API, any Git hosting; otherwise "no". Another programming
-    language is never similar: C, C++ and C# are three different languages, and Java is not JavaScript.
-  Only requirements written in the ad: never add a technology the ad does not name. If the ad names few
-  concrete requirements, list only those and do not invent requirements. Experience, level, location and
-  residency are not requirements: they are blockers when they rule the candidate out. Soft skills (teamwork,
-  communication, curiosity) are not requirements either. A degree the candidate is studying for is "similar".
-- blockers — only real hard stops, each with a kind and evidence (a short quote from the ad):
-  "experience" — {experience_blocker};
-  "spoken language" — the job requires a language the candidate does not speak at the required level;
-  "location" — {location_blocker};
-  "residency" — citizenship or residency of another country is required.
-  These are NOT blockers: {not_problems}. An empty list if there are none.
-- summary — 1–2 sentences: the main reasons for and against.
-Write all texts in English, as plain text without Markdown. Rely only on facts from the CV and the job ad.
+- area — the kind of work: one of {areas}; "Other IT" if none of them fits,
+  "Not IT" if it is not an IT job;
+- seniority — the level the ad asks for: intern, junior, mid, senior, lead, or "not stated";
+- min_years — the minimum years of work experience the ad requires; 0 if it doesn't say;
+- degree — the minimum degree the ad requires: none, bachelor, master or phd; "none" if a degree is only
+  preferred or not mentioned;
+- students_welcome — true if the ad welcomes students or fresh graduates;
+- languages — the spoken languages the ad requires, each with its level (A1 to C2, native, or "not stated");
+- workplace — office, hybrid, remote, or "not stated";
+- place — the city of the office, or the countries or regions a remote job is open to; "" if not stated;
+- must_have — the skills and technologies the ad requires, at most 6, the core of the role first;
+- nice_to_have — the ones it only welcomes ("a plus", "an advantage", "nice to have"), at most 6;
+  for each skill, match: "yes" if the CV shows it; "similar" if the CV has an adjacent skill of the same
+  programming language (Django or Flask for FastAPI, MySQL for PostgreSQL, React for Vue, Spring for
+  Jakarta EE), any REST/HTTP API, any Git hosting; otherwise "no". Another programming language is never
+  similar: C, C++ and C# are three different languages, and Java is not JavaScript.
+  Only skills written in the ad: never add a technology the ad does not name. Soft skills, years of experience,
+  degrees and spoken languages are not skills here.
+- about — one sentence: what the person will do in this job.
+Write all texts in English, as plain text without Markdown.
 
 Candidate's CV:
-"""
-
-# Words for each level: its name in "looking for … roles" and the experience that is a blocker for it
-LEVEL_WORDS = {
-    "intern": dict(name="internship", blocker="commercial experience is required"),
-    "junior": dict(name="junior", blocker="2+ years of commercial experience or a mid/senior level is required"),
-    "mid": dict(name="mid-level", blocker="5+ years of experience or a senior/lead level is required"),
-    "senior": dict(name="senior", blocker="a lead/principal level or 10+ years of experience is required"),
-    "lead": dict(name="lead", blocker="a director or executive level is required"),
-}
-
-
-def _language(name: str, level: str) -> str:
-    return f"{name} native" if level == "Native" else f"{name} {level}"
+""".format(areas=", ".join(AREAS))
 
 
 def render_rules(s: Settings) -> str:
-    """The scoring rules for this candidate: levels, languages and location come from the settings."""
-    if s.remote:
-        location_blocker = f"an office outside {s.city} with no remote option"
-        not_problems = [f"an office or hybrid in {s.city}", "remote work from Czechia or the EU"]
-    else:
-        location_blocker = (f"an office outside {s.city}, or a remote-only job (the candidate wants office or "
-                            f"hybrid work in {s.city}; remote-only jobs are not a fit)")
-        not_problems = [f"an office or hybrid in {s.city}"]
-    for name, level in s.languages.items():
-        not_problems.append(f"{name} (native speaker)" if level == "Native"
-                            else f"{name} {level} (unless a higher level is required)")
-    levels = [level for level in LEVELS if level in s.levels]  # complete settings have at least one
-    names = " or ".join(LEVEL_WORDS[level]["name"] for level in levels)
-    experience = LEVEL_WORDS[levels[-1]]["blocker"]
-    if levels[0] not in ("intern", "junior"):
-        experience += f", or a role clearly below {levels[0]} level"
-    return RULES_TEMPLATE.format(
-        level_text=f"The candidate is looking for {names} roles.",
-        languages=", ".join(_language(name, level) for name, level in s.languages.items()),
-        experience_blocker=experience, location_blocker=location_blocker, not_problems=", ".join(not_problems))
+    """The rules for the model: the same for everyone, the profile is the program's part (spec section 21.2)."""
+    return RULES
 
 
 def fingerprint(s: Settings) -> str:
@@ -204,8 +181,8 @@ def prepare(model: str) -> None:
 
 
 def evaluate(cv_text: str, job: Job, rules: str, facts: str = "") -> dict:
-    """The model's answer for one job: requirements, blockers, summary (grounding.score counts the score). facts:
-    what the program found in the ad, at its end."""
+    """The model's facts about one job (grounding.verdict decides). facts: what the program found in the ad, at its
+    end."""
     vacancy = (
         f"Title: {job.title}\nCompany: {job.company}\nLocation: {job.city}\nSource: {job.source}\n\n"
         f"{job.description[:config.MAX_DESCRIPTION_CHARS]}"

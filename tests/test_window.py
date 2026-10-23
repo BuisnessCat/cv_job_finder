@@ -970,7 +970,7 @@ def test_gone_remote_job_hidden_when_remote_is_off(window):
                                    published=date.today().isoformat(), description="")])
     db.save_evaluation("r", row("r", 8)["evaluation"], key)
     settings.save(replace(s, remote=False))
-    db.save_jobs("Remote OK", [])  # not fetched with remote off: not "gone", just not searched for
+    db.save_jobs("Remote OK", [], fetched=False)  # not fetched with remote off: not "gone", just not searched for
     window.load_rows()
     assert window.rows == []
 

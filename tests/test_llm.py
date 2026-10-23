@@ -81,27 +81,21 @@ def test_prepare_starts_server_without_capturing_output(tmp_path, monkeypatch):
     assert ps_args == ["ps", "--json"]
 
 
-def test_rules_follow_settings():
-    s = Settings(cv_path="a", skills=["Java"], main_skill="Java", city="Brno", remote=False,
+def test_the_rules_are_the_same_for_everyone():
+    s = Settings(cv_path="a", skills=["Kotlin"], main_skill="Kotlin", city="Brno", remote=False,
                  levels=["intern", "junior"], languages={"English": "C1", "Russian": "Native"})
     rules = llm.render_rules(s)
-    assert "Brno" in rules and "remote-only jobs are not a fit" in rules
-    assert "internship or junior roles" in rules and "2+ years" in rules  # the blocker of the highest level
-    assert "English C1" in rules and "Russian native" in rules
-    assert "permit" not in rules.lower()
-    assert "student" not in rules.lower() and "(Java, C#" not in rules  # nothing assumes a Python student
-    senior = llm.render_rules(replace(s, levels=["senior"]))
-    assert "10+ years" in senior and "clearly below senior level" in senior
-    mid = llm.render_rules(replace(s, levels=["mid", "senior"]))
-    assert "clearly below mid level" in mid and "level level" not in mid
+    # The profile is the program's part: the model only takes the facts out of the ad
+    assert rules == llm.render_rules(replace(s, city="Praha", levels=["senior"], languages={"English": "B2"},
+                                             education="master", areas=["Frontend"]))
+    assert "Brno" not in rules and "Kotlin" not in rules and "Russian" not in rules
     assert "Write all texts in English" in rules and rules.endswith("Candidate's CV:" + chr(10))
 
 
-def test_fingerprint_ignores_skills_and_main_skill():
+def test_fingerprint_ignores_the_profile():
     s = Settings(cv_path="a", skills=["Python"], main_skill="Python", languages={"English": "B2"})
-    assert llm.fingerprint(s) == llm.fingerprint(replace(s, skills=["Go"], main_skill="Go", min_score=7))
-    assert llm.fingerprint(s) != llm.fingerprint(replace(s, levels=["mid"]))
-    assert llm.fingerprint(s) != llm.fingerprint(replace(s, languages={"English": "C1"}))
+    assert llm.fingerprint(s) == llm.fingerprint(replace(s, skills=["Go"], main_skill="Go", min_score=7,
+                                                         levels=["mid"], languages={"English": "C1"}))
 
 
 def test_fingerprint_uses_model(monkeypatch):
@@ -169,12 +163,14 @@ def test_evaluate_ends_the_ad_with_the_programs_facts(monkeypatch):
         "We use C#.\n\nTechnologies this ad names (found by a program, reliable): C#/.NET.")
 
 
-def test_rules_ask_for_requirements_not_a_score():
-    rules = llm.render_rules(Settings(cv_path="a", skills=["C/C++"], main_skill="C/C++", levels=["junior"],
-                                      languages={"English": "B2"}))
-    assert "You do not give a" in rules and "a program counts the score" in rules
+def test_the_rules_ask_for_facts_not_a_judgement():
+    rules = llm.render_rules(Settings())
+    assert "You do not judge" in rules and "a program compares them" in rules
     assert "C, C++ and C# are three different languages" in rules and "Java is not JavaScript" in rules
     assert "the technologies a program found in it" in rules and "rely on that list" in rules
-    assert "never add a technology the ad does not name" in rules and "do not invent requirements" in rules
-    assert "Scale:" not in rules  # no score bands any more
-    assert set(llm.SCHEMA["properties"]["blockers"]["items"]["properties"]["kind"]["enum"]) == set(grounding.CAPS)
+    assert "never add a technology the ad does not name" in rules
+    assert "Machine learning / AI" in rules and '"Not IT"' in rules  # the areas to choose from
+    properties = llm.SCHEMA["properties"]
+    assert properties["area"]["enum"][:2] == ["Backend", "Frontend"] and "Not IT" in properties["area"]["enum"]
+    assert properties["degree"]["enum"] == list(grounding.DEGREES)
+    assert set(llm.SCHEMA["required"]) == set(properties)

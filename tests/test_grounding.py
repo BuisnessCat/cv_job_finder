@@ -5,28 +5,39 @@ from job_finder.settings import Settings
 from job_finder.sources import Job
 
 S = Settings(cv_path="cv.md", skills=["Python"], main_skill="Python", city="Praha", remote=True,
-             levels=["intern", "junior"], languages={"English": "B2", "Czech": "B1"})
-
-
-def score(a, job, known, s=S):
-    return grounding.score(a, job, known, s)
-
+             levels=["intern", "junior"], languages={"English": "B2", "Czech": "B1"}, education="studying",
+             experience="none", areas=["Backend", "Data / analytics"])
+KNOWN = {"Python", "SQL", "FastAPI", "Git"}
+CPP_CV = "Junior developer. Skills: C++17, C, CMake, Git, Linux"
+AD = Job(url="p", source="Jobicy", title="Junior Python Developer", company="A", city="Prague", published="",
+         description="Required: Python, SQL. Docker is a plus. English B2. Hybrid, Prague office.")
 CSHARP_AD = Job(url="u", source="junior.guru", title="Junior C# Developer", company="A", city="Prague",
                 published="2026-10-20", description="We build web apps in C# and .NET with SQL Server. Git is a plus.")
-CPP_CV = "Junior developer. Skills: C++17, C, CMake, Git, Linux"
 
 
-def req(text, required=True, match="yes"):
-    return {"requirement": text, "required": required, "match": match}
+def skill(name, match="yes"):
+    return {"skill": name, "match": match}
 
 
-def answer(requirements=(), blockers=()):
-    return {"summary": "ok", "requirements": list(requirements), "blockers": list(blockers)}
+def facts(**overrides):
+    """What the model takes out of an ad (spec section 21.2)."""
+    base = {"area": "Backend", "seniority": "junior", "min_years": 0, "degree": "none", "students_welcome": False,
+            "languages": [{"language": "English", "level": "B2"}], "workplace": "hybrid", "place": "Prague",
+            "must_have": [skill("Python"), skill("SQL")], "nice_to_have": [skill("Docker", "no")],
+            "about": "Backend services in Python."}
+    return {**base, **overrides}
 
 
-PY_AD = Job(url="p", source="Jobicy", title="Junior Python Developer", company="A", city="", published="",
-            description="Required: Python, SQL, Django, Docker. React and AWS are a plus. Teamwork.")
-KNOWN = {"Python", "SQL", "FastAPI", "Git"}
+def verdict(extraction, job=AD, known=KNOWN, s=S):
+    return grounding.verdict(extraction, job, known, s)
+
+
+def condition(result, name):
+    return next(c for c in result["conditions"] if c["name"] == name)
+
+
+def with_text(text, job=AD):
+    return replace(job, description=f"{job.description} {text}")
 
 
 def test_technologies_are_found_strictly():
@@ -40,121 +51,16 @@ def test_technologies_are_found_strictly():
 def test_facts_tell_the_model_what_the_ad_names():
     known = grounding.cv_technologies(CPP_CV)
     assert "C/C++" in known and "C#/.NET" not in known
-    facts = grounding.facts(CSHARP_AD, known)
-    assert "C#/.NET" in facts.split("Not in the CV:")[1]
-    assert "Git" in facts.split("Not in the CV:")[0].split("in the candidate's CV:")[1]
-    assert "C/C++" not in facts  # the CV's own languages are not "named in the ad"
+    text = grounding.facts(CSHARP_AD, known)
+    assert "C#/.NET" in text.split("Not in the CV:")[1]
+    assert "Git" in text.split("Not in the CV:")[0].split("in the candidate's CV:")[1]
+    assert "C/C++" not in text  # the CV's own languages are not "named in the ad"
 
 
 def test_facts_when_the_ad_names_no_known_technology():
     vague = Job(url="v", source="Jobicy", title="Junior Developer", company="A", city="", published="",
                 description="Join our friendly team and grow with us.")
     assert "no known technologies" in grounding.facts(vague, {"Python"})
-
-
-def test_score_is_counted_from_the_requirements():
-    result = score(answer([req("Python"), req("SQL"), req("Django (has FastAPI)", match="similar"),
-                                     req("Docker", match="no"), req("React", False, "no"), req("AWS", False, "no")]),
-                             PY_AD, KNOWN)
-    # must-have 1 + 1 + 0.7 + 0 = 2.7 of 4, weight 2; nice to have 0 of 2, weight 1: 5.4 of 10 -> 1 + 9 x 0.54 = 5.9
-    assert result["score"] == 6
-    assert result["counted"] == {"must": [2.7, 4], "nice": [0.0, 2], "base": 6, "cap": None}
-    assert result["have"] == ["Python", "SQL", "Django (has FastAPI)"]
-    assert result["missing"] == ["Docker", "React", "AWS"] and result["risks"] == []
-    every = answer([req("Python"), req("SQL"), req("Django", match="no"), req("Docker")])
-    assert score(every, PY_AD, KNOWN | {"Docker"})["score"] == 8  # one of four must-haves missing
-
-
-def test_blockers_cap_the_score():
-    result = score(answer([req("Python"), req("SQL")] + [req(f"skill {i}") for i in range(3)],
-                                    [{"kind": "experience", "evidence": "3+ years of commercial experience"}]),
-                             replace(PY_AD, description=PY_AD.description + " 3+ years of commercial experience."), KNOWN)
-    assert result["score"] == 4 and result["counted"]["base"] == 10 and result["counted"]["cap"] == 4
-    assert result["blockers"] == [{"kind": "experience", "evidence": "3+ years of commercial experience", "cap": 4}]
-    assert result["risks"] == ["3+ years of commercial experience (score at most 4)"]
-
-
-def test_another_main_language_in_the_title_caps_the_score():
-    result = score(answer([req("Git"), req("SQL Server", False, "no"), req("Bachelor's degree")]), CSHARP_AD,
-                             {"C/C++", "Git"})
-    assert result["score"] == 3
-    assert result["risks"] == ["Main language C#/.NET is not in your CV (score at most 3)"]
-    assert score(answer([req("C#", match="no")] * 3), CSHARP_AD, {"C/C++"})["score"] == 1  # lower stays
-    js = Job(url="t", source="Jobicy", title="TypeScript Developer", company="A", city="", published="",
-             description="TypeScript, React, Git")
-    met = answer([req("TypeScript", match="similar"), req("React"), req("Git")])
-    assert score(met, js, {"JavaScript", "React", "Git"})["counted"]["cap"] is None  # one family
-    java = Job(url="j", source="Jobicy", title="Java Tester", company="A", city="", published="",
-               description="Testing, SQL, Jira")
-    tests = answer([req("Testing"), req("SQL"), req("Jira")])
-    assert score(tests, java, {"SQL", "Testing"})["counted"]["cap"] is None  # no languages in the CV
-
-
-def test_few_requirements_cap_the_score():
-    two = score(answer([req("Python"), req("SQL")]), PY_AD, KNOWN)
-    assert two["score"] == 7 and two["risks"] == ["The ad names few concrete requirements: read it before applying "
-                                                   "(score at most 7)"]
-    none = score(answer(), PY_AD, KNOWN)
-    assert none["score"] == 5 and none["counted"]["base"] == 5
-
-
-def test_requirements_are_checked_against_the_ad_and_the_cv():
-    result = score(answer([req("Python"), req("Vue.js", match="no"), req("Docker"), req("teamwork")]),
-                             PY_AD, KNOWN)
-    assert [r["requirement"] for r in result["requirements"]] == ["Python", "Docker"]  # no Vue in the ad
-    assert [r["match"] for r in result["requirements"]] == ["yes", "similar"]  # Docker isn't in the CV
-    cpp = score(answer([req("C# programming (similar to C++)"), req("Git"), req(".NET", False, "similar")]),
-                          CSHARP_AD, grounding.cv_technologies(CPP_CV))
-    assert [r["match"] for r in cpp["requirements"]] == ["no", "yes", "no"]  # C# is not C++
-
-
-def blocker(kind, evidence):
-    return {"kind": kind, "evidence": evidence}
-
-
-def test_blockers_count_only_when_the_program_confirms_them():
-    met = [req("Python"), req("SQL"), req("Django"), req("Docker")]
-
-    def ceiling(kind, evidence):  # the ad says it: the quote test is its own
-        ad = replace(PY_AD, description=f"{PY_AD.description} {evidence}")
-        return score(answer(met, [blocker(kind, evidence)]), ad, KNOWN | {"Django", "Docker"})["counted"]["cap"]
-
-    assert ceiling("experience", "We are not looking for a finished expert") is None
-    assert ceiling("experience", "0-3 years of experience, graduates welcome") is None
-    assert ceiling("experience", "minimálně 3 roky praxe") == 4
-    assert ceiling("experience", "Senior Backend Developer") == 4
-    assert ceiling("spoken language", "Angličtina minimálně na úrovni B2") is None  # the settings say B2
-    assert ceiling("spoken language", "Czech or Slovak – advanced level") == 5  # Czech B1 in the settings
-    assert ceiling("spoken language", "Fluent German") == 5
-    assert ceiling("location", "Time zone: CET (+/- 3 hours)") is None
-    assert ceiling("location", "Office in Praha 7") is None
-    assert ceiling("location", "Remote: Brazil only") == 3
-    assert ceiling("residency", "EU citizenship required") == 2
-    assert ceiling("residency", "Must love dogs") is None
-
-
-def test_soft_skills_and_years_are_not_requirements():
-    result = score(answer([req("Python"), req("teamwork and communication", match="no"),
-                           req("Self-organization", match="no"), req("3+ years of experience", match="no"),
-                           req("SQL"), req("English communication (B2)", match="no")]), PY_AD, KNOWN)
-    assert [r["requirement"] for r in result["requirements"]] == ["Python", "SQL", "English communication (B2)"]
-
-
-def test_spoken_language_requirements_follow_the_settings():
-    result = score(answer([req("English intermediate", match="no"), req("Czech advanced", False, "yes"),
-                           req("Python"), req("German", False, "yes")]), PY_AD, KNOWN)
-    assert [r["match"] for r in result["requirements"]] == ["yes", "no", "yes", "no"]
-
-
-def test_a_must_have_language_not_in_the_cv_caps_the_score():
-    prusa = Job(url="i", source="junior.guru", title="Integrační vývojář", company="P", city="Praha", published="",
-                description="Must-have: Znalost programování v Pythonu, Git. Linux, C.")
-    result = score(answer([req("Python programming", match="no"), req("Git"), req("Linux", False)]), prusa,
-                   {"C/C++", "Git", "Linux"})
-    assert result["counted"]["cap"] == 4
-    assert result["risks"] == ["Must-have language Python is not in your CV (score at most 4)"]
-    nice = score(answer([req("Python", False, "no"), req("Git"), req("Linux")]), prusa, {"C/C++", "Git", "Linux"})
-    assert nice["counted"]["cap"] is None  # a nice-to-have language doesn't cap
 
 
 def test_czech_word_forms_count():
@@ -165,40 +71,131 @@ def test_czech_word_forms_count():
     assert grounding.technologies("Pracujeme s daty a reporty.") == set()  # ordinary Czech words stay words
 
 
-def test_a_blocker_must_quote_the_ad():
-    ad = Job(url="q", source="Jobicy", title="Junior Developer", company="A", city="", published="",
-             description="Python, SQL, Git. We need at least 3 years of commercial experience. English B2.")
-    met = [req("Python"), req("SQL"), req("Git")]
-    quoted = score(answer(met, [blocker("experience", "at least 3 years of commercial experience")]), ad, KNOWN)
-    assert quoted["counted"]["cap"] == 4
-    guessed = score(answer(met, [blocker("spoken language", "No explicit English requirement, but the context "
-                                                            "implies native or fluent proficiency")]), ad, KNOWN)
-    assert guessed["counted"]["cap"] is None and guessed["blockers"] == []  # the model's guess, not the ad's words
+def test_a_strong_fit():
+    result = verdict(facts())
+    # must-have 2 of 2 (weight 2), nice-to-have 0 of 1 (weight 1): 4 of 5 = 0.8
+    assert (result["verdict"], result["score"]) == ("Strong fit", 8)
+    assert result["reason"] == "2 of 2 must-haves · 0 of 1 nice-to-haves · all conditions met"
+    assert all(c["ok"] for c in result["conditions"])
+    assert [c["name"] for c in result["conditions"]] == ["Degree", "Experience", "Level", "Language", "Location",
+                                                         "Area"]
+    assert (result["have"], result["missing"], result["risks"]) == (["Python", "SQL"], ["Docker"], [])
+    assert result["extraction"] == facts() and result["about"] == "Backend services in Python."
 
 
-def test_the_models_has_note_is_not_part_of_the_requirement():
-    fnz = Job(url="f", source="Úřad práce", title="Graduate Analyst Developer", company="F", city="Praha",
-              published="", description="Znalost C#, Java nebo C++. Angličtina B2. Git.")
-    result = score(answer([req("C#, Java or C++ (has Python)", match="no"), req("Git"), req("English B2")]), fnz,
-                   {"Python", "Git"})
-    assert result["counted"]["cap"] == 4  # Python is the note about the CV, not what the ad asks for
-    similar = score(answer([req("Django (has FastAPI)"), req("Python"), req("SQL")]), PY_AD, KNOWN)
-    assert similar["requirements"][0]["match"] == "similar"  # Django itself isn't in the CV
+def test_skills_set_the_band():
+    assert verdict(facts(nice_to_have=[skill("Docker")]), known=KNOWN | {"Docker"})["score"] == 10
+    assert verdict(facts(nice_to_have=[skill("Docker")]))["score"] == 9  # not in the CV: at best similar
+    half = verdict(facts(must_have=[skill("Python"), skill("Django", "no")], nice_to_have=[]), with_text("Django"))
+    assert (half["verdict"], half["score"]) == ("Worth a try", 6)  # 2 of 4
+    few = facts(must_have=[skill("Python"), skill("Django", "no"), skill("Kubernetes", "no"), skill("Go", "no")],
+                nice_to_have=[])
+    result = verdict(few, with_text("Django, Kubernetes, Go"))
+    assert (result["verdict"], result["score"], result["reason"]) == ("Stretch", 4, "1 of 4 must-haves")
 
 
-def test_remote_is_no_location_blocker_for_who_works_remotely():
-    met = [req("Python"), req("SQL"), req("Docker", match="no")]
-    ad = replace(PY_AD, description=PY_AD.description + " Location: Fully Remote. Remote: Brazil only.")
-
-    def ceiling(evidence, s=S):
-        return score(answer(met, [blocker("location", evidence)]), ad, KNOWN, s)["counted"]["cap"]
-
-    assert ceiling("Location: Fully Remote") is None
-    assert ceiling("Remote: Brazil only") == 3
-    assert ceiling("Location: Fully Remote", replace(S, remote=False)) == 3  # an office in Praha is wanted
+def test_no_concrete_requirements():
+    result = verdict(facts(must_have=[], nice_to_have=[]))
+    assert (result["verdict"], result["score"]) == ("Worth a try", 6)
+    assert result["reason"] == "The ad names few concrete requirements: read it before applying"
 
 
-def test_markdown_is_taken_out_of_the_summary():
-    a = answer([req("Python"), req("SQL"), req("Docker", match="no")])
-    a["summary"] = "The candidate has **Python and SQL**, but no `Docker`."
-    assert score(a, PY_AD, KNOWN)["summary"] == "The candidate has Python and SQL, but no Docker."
+def test_a_required_degree_rules_out():
+    master = facts(degree="master")
+    result = verdict(master, with_text("An MSc in Mathematics is required."))
+    assert (result["verdict"], result["score"], result["reason"]) == ("Out of reach", 2, "Requires a Master's degree")
+    assert condition(result, "Degree") == {"name": "Degree", "ok": False, "reason": "Requires a Master's degree",
+                                           "detail": "Master's degree required · you: studying, no degree yet"}
+    assert condition(verdict(master), "Degree")["ok"]  # the ad never says it: the model's guess
+    assert condition(verdict(master, with_text("Vyžadujeme Ing. titul.")), "Degree")["ok"] is False  # Czech master
+    bachelor = facts(degree="bachelor")
+    assert not condition(verdict(bachelor, with_text("VŠ vzdělání")), "Degree")["ok"]
+    welcome = facts(degree="bachelor", students_welcome=True)
+    assert condition(verdict(welcome, with_text("A university degree, students welcome")), "Degree")["ok"]
+    assert condition(verdict(master, with_text("MSc required"), s=replace(S, education="master")), "Degree")["ok"]
+
+
+def test_years_of_experience():
+    three = facts(min_years=3)
+    result = verdict(three, with_text("3+ years of commercial experience"))
+    assert (result["verdict"], result["reason"]) == ("Out of reach", "Requires 3+ years of experience")
+    assert condition(result, "Experience")["detail"] == "3+ years · you: none"
+    assert condition(verdict(three), "Experience")["ok"]  # no years in the ad: the model's guess
+    assert condition(verdict(three, with_text("praxe 3 roky")), "Experience")["ok"] is False  # Czech
+    two_years = replace(S, experience="1-2")
+    assert condition(verdict(three, with_text("3+ years"), s=two_years), "Experience")["ok"]  # one year short is ok
+    assert condition(verdict(facts(min_years=1), with_text("1 year")), "Experience")["ok"]
+
+
+def test_the_level_of_the_role():
+    untitled = replace(AD, title="Python Developer")  # the title names no level: the model's word counts
+    assert not condition(verdict(facts(seniority="senior"), untitled), "Level")["ok"]
+    assert condition(verdict(facts(seniority="mid"), untitled), "Level")["ok"]  # one step up is worth a try
+    director = replace(AD, title="Engineering Director - Business Data")
+    result = verdict(facts(seniority="junior"), director)
+    assert (result["verdict"], result["reason"]) == ("Out of reach", "Lead role")
+    assert condition(result, "Level")["detail"] == "Lead · you: intern, junior"
+    senior = replace(AD, title="Senior Backend Developer (.NET)")
+    assert not condition(verdict(facts(), senior), "Level")["ok"]
+    welcome = replace(AD, title="Junior Developer (Mid/Senior welcome)")
+    assert condition(verdict(facts(seniority="senior"), welcome), "Level")["ok"]  # the title says junior
+    students = replace(AD, title="Product Integration Specialist (pro studenty VŠ)")
+    assert condition(verdict(facts(seniority="not stated"), students), "Level")["detail"] == "Not stated"
+
+
+def test_spoken_languages():
+    czech = facts(languages=[{"language": "Czech", "level": "C1"}])
+    result = verdict(czech)
+    assert (result["verdict"], result["reason"]) == ("Out of reach", "Requires Czech C1")
+    assert condition(result, "Language")["detail"] == "Czech C1 · you: B1"
+    assert condition(verdict(facts(languages=[{"language": "english", "level": "not stated"}])), "Language")["ok"]
+    german = verdict(facts(languages=[{"language": "German", "level": "not stated"}]))
+    assert condition(german, "Language")["detail"] == "German · you: not listed"
+    assert condition(verdict(facts(languages=[])), "Language")["detail"] == "Not asked"
+
+
+def test_the_place_of_work():
+    assert condition(verdict(facts(workplace="remote", place="Europe")), "Location")["ok"]
+    us = verdict(facts(workplace="remote", place="the US"))
+    assert (us["verdict"], us["reason"]) == ("Out of reach", "Remote only for the US")
+    assert not condition(verdict(facts(workplace="office", place="Brno")), "Location")["ok"]
+    assert condition(verdict(facts(workplace="office", place="Praha 7")), "Location")["ok"]
+    office_wanted = replace(S, remote=False)
+    assert not condition(verdict(facts(workplace="remote", place=""), s=office_wanted), "Location")["ok"]
+    assert condition(verdict(facts(workplace="not stated", place="")), "Location")["detail"] == "Not stated"
+
+
+def test_another_area_is_kept_aside():
+    qa = verdict(facts(area="QA / testing"))
+    assert (qa["verdict"], qa["score"], qa["reason"]) == ("Other area", 3, "QA / testing isn't one of your areas")
+    assert condition(verdict(facts(area="Other IT")), "Area")["ok"]
+    assert verdict(facts(area="Not IT"))["reason"] == "Not an IT job"
+    assert condition(verdict(facts(area="Full-stack")), "Area")["ok"]  # Backend covers it
+    frontend = replace(S, areas=["Full-stack"])
+    assert condition(verdict(facts(area="Frontend"), s=frontend), "Area")["ok"]
+    both = verdict(facts(area="QA / testing", degree="phd"), with_text("PhD required"))
+    assert (both["verdict"], both["score"]) == ("Out of reach", 2)  # a rule-out comes first
+    two = verdict(facts(degree="phd", seniority="senior"), replace(with_text("PhD required"), title="Developer"))
+    assert two["score"] == 1
+
+
+def test_another_main_language_is_a_stretch():
+    known = grounding.cv_technologies(CPP_CV)
+    result = verdict(facts(must_have=[skill("C#", "no"), skill("Git")], nice_to_have=[]), CSHARP_AD, known)
+    assert (result["verdict"], result["score"]) == ("Stretch", 4)
+    assert result["reason"] == "Main language C#/.NET isn't in your CV"
+
+
+def test_skills_are_checked_against_the_ad_and_the_cv():
+    result = verdict(facts(must_have=[skill("Python"), skill("Vue.js"), skill("teamwork"), skill("3+ years Python"),
+                                      skill("Django (has FastAPI)")], nice_to_have=[]), with_text("Django"))
+    assert [(s["skill"], s["match"]) for s in result["must"]] == [("Python", "yes"),
+                                                                  ("Django (has FastAPI)", "similar")]
+    known = grounding.cv_technologies(CPP_CV)
+    cpp = verdict(facts(must_have=[skill("C# programming (similar to C++)"), skill("Git")]), CSHARP_AD, known)
+    assert [s["match"] for s in cpp["must"]] == ["no", "yes"]  # C# is not C++
+
+
+def test_markdown_is_taken_out_of_the_about_line():
+    assert verdict(facts(about="Builds **Python** services with `FastAPI`."))["about"] == \
+        "Builds Python services with FastAPI."

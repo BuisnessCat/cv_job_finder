@@ -27,8 +27,17 @@ def write_pdf(path: Path, text: str) -> None:
 
 
 def model_answer(score: int) -> dict:
-    """A model answer the program counts to this score: nine "nice to have" requirements without technologies,
-    score - 1 of them met (1 + 9 x met / 9)."""
-    return {"summary": "", "blockers": [],
-            "requirements": [{"requirement": f"skill {i}", "required": False, "match": "yes" if i < score - 1 else "no"}
-                             for i in range(9)]}
+    """The model's facts about a job that the program turns into this score, for a profile like use_settings's
+    (Backend, junior, Praha): skills without technologies, so the ad's text doesn't matter."""
+    def skills(yes, no):
+        return [{"skill": f"skill {i}", "match": "yes" if i < yes else "no"} for i in range(yes + no)]
+
+    facts = {"area": "Backend", "seniority": "junior", "min_years": 0, "degree": "none", "students_welcome": False,
+             "languages": [], "workplace": "not stated", "place": "", "must_have": skills(2, 0), "nice_to_have": [],
+             "about": "A job."}
+    shapes = {10: dict(), 9: dict(must_have=skills(5, 0), nice_to_have=skills(0, 1)),
+              8: dict(nice_to_have=skills(0, 1)), 7: dict(nice_to_have=skills(0, 2)), 6: dict(must_have=skills(1, 1)),
+              5: dict(must_have=skills(1, 2)), 4: dict(must_have=skills(1, 3)), 3: dict(area="QA / testing"),
+              2: dict(workplace="office", place="Brno"),
+              1: dict(workplace="office", place="Brno", languages=[{"language": "German", "level": "C1"}])}
+    return {**facts, **shapes[score]}

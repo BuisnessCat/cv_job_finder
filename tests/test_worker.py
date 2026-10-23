@@ -68,10 +68,11 @@ def test_unreadable_cv_stops_before_evaluation(setup, monkeypatch):
     assert worker.Worker()._refresh().startswith("Can't read your CV")
 
 
-def test_key_changes_with_cv_and_scoring_settings(setup):
+def test_key_changes_with_the_cv_only(setup):
     s = settings.load()
     key = worker.read_cv(s)[1]
-    assert worker.read_cv(replace(s, city="Brno"))[1] != key
+    # The profile is compared by the program again in an instant: the model's facts stay valid
+    assert worker.read_cv(replace(s, city="Brno", levels=["mid"], education="master", areas=["Frontend"]))[1] == key
     assert worker.read_cv(replace(s, main_skill="Go", skills=["Go"]))[1] == key
     Path(s.cv_path).write_text("Senior SQL developer", encoding="utf-8")  # temporary CV from the fixture
     assert worker.read_cv(s)[1] != key

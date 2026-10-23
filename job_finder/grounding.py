@@ -1,29 +1,43 @@
-"""Technologies an ad really names, found by the program (the skills dictionary, strict patterns), not by the model:
-facts given to the model with the ad; then the score, counted by the program from the model's list of requirements
-and checked against the ad and the CV (spec sections 20.3, 20.4)."""
-import math
+"""Facts and verdicts (spec sections 20.3, 21). The program finds the technologies an ad names (the skills
+dictionary, strict patterns) and hands them to the model with the ad; the model takes the facts out of the ad; the
+program compares them with the candidate's profile and decides: Strong fit, Worth a try, Stretch, Out of reach or
+Other area. The model doesn't judge: a small local model reads well and judges badly."""
 import re
 
 from job_finder import insights, settings
-from job_finder.settings import LEVELS, Settings
+from job_finder.settings import EDUCATION, EXPERIENCE, LEVELS, Settings
 from job_finder.sources import Job, juniorguru_place
 
 FAMILIES = [{"JavaScript", "TypeScript"}]  # in the main-language check one counts for the other
 LANGUAGES = set(settings.PROGRAMMING_LANGUAGES)
 
-# How the score is counted (spec section 20.4)
+STRONG, WORTH, STRETCH, OUT, OTHER = "Strong fit", "Worth a try", "Stretch", "Out of reach", "Other area"
+MATCH = {"yes": 1.0, "similar": 0.7, "no": 0.0}  # the share of a skill's weight the candidate gets
 WEIGHTS = {True: 2, False: 1}  # a must-have, a nice-to-have
-MATCH = {"yes": 1.0, "similar": 0.7, "no": 0.0}  # the share of the weight the candidate gets
-# Ceilings of blockers, when the program confirms them: years of experience above the level, a spoken language
-# above the settings (5: still in the list, it can be worth a try), an office or remote region out of reach,
-# citizenship or residency
-CAPS = {"experience": 4, "spoken language": 5, "location": 3, "residency": 2}
-LANGUAGE_CAP = 3  # the title names a programming language the CV doesn't have
-MUST_LANGUAGE_CAP = 4  # a must-have programming language the CV doesn't have
-QUOTE_SHARE = 0.6  # of a blocker's longer words that must be in the ad
-FEW_REQUIREMENTS, FEW_CAP = 3, 7  # fewer requirements than this: too little to be sure of a high score
-NO_REQUIREMENTS_SCORE = 5
-
+DEGREES = ["none", "bachelor", "master", "phd"]  # the lowest first
+DEGREE_NAMES = {"bachelor": "Bachelor's degree", "master": "Master's degree", "phd": "PhD"}
+EDUCATION_RANK = {"none": 0, "studying": 0.5, "bachelor": 1, "master": 2, "phd": 3}
+# A degree counts only if the ad itself names one of its level: the model may add one the ad doesn't ask for
+DEGREE_WORDS = {
+    "phd": r"ph\.?\s?d|doctor\w*|doktor\w*",
+    "master": r"master\w*|\bmsc\b|m\.sc|\bms\b|\bm\.s\.|magist\w*|\bing\.|inženýr\w*|postgraduate|graduate degree",
+    "bachelor": r"bachelor\w*|\bbsc\b|b\.sc|\bbs\b|bakal\w*|degree|universit\w*|college|vysokoškol\w*|\bvš\b",
+}
+EXPERIENCE_YEARS = {"none": 0, "under1": 0.5, "1-2": 2, "3-5": 5, "5plus": 10}
+LEVEL_RANK = {level: rank for rank, level in enumerate(LEVELS)}  # intern 0 … lead 4
+# The level a title names, outside its parentheses ("Junior Developer (Mid/Senior welcome)" is junior)
+TITLE_LEVELS = [(r"intern\w*|trainee|praktikant\w*|stáž\w*|student\w*", 0), (r"junior|jr", 1),
+                (r"medior|mid-level|mid|regular", 2), (r"senior|sr", 3),
+                (r"lead|principal|staff|head of|director|architect|vice president|vp|chief", 4)]
+RANKS = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6, "NATIVE": 7}
+FINE_PLACES = r"europe\w*|\beu\b|\bcet\b|\bcest\b|czech\w*|česk\w*|worldwide|anywhere|global\w*|emea"
+YEARS = re.compile(r"(\d+)\s*\+?\s*(?:[-–]\s*\d+\s*)?(?:years?|yrs|let\b|roky|roků|rok\b)", re.IGNORECASE)
+SOFT_SKILLS = re.compile(
+    r"communicat\w*|teamwork|team player|collaborat\w*|leadership|mentoring|responsib\w*|self[- ]?organi[sz]\w*|"
+    r"proactiv\w*|curio\w*|motivat\w*|problem[- ]solving|analytical\s+(?:thinking|mindset|skills)|detail[- ]oriented|"
+    r"attention to detail|willing\w*|eager\w*|learn\w*\s+(?:ability|quickly|fast)|fast learn\w*|ambiguity|"
+    r"independen\w*|sharing knowledge|interest in|passion\w*|attitude|flexib\w*|creativ\w*|soft skills|mindset",
+    re.IGNORECASE)
 
 # Czech puts endings on technology names ("v Pythonu", "s Gitem", "Linuxovým shellem"), and the dictionary looks
 # for whole words: such forms are turned back into the name first
@@ -62,8 +76,8 @@ def facts(job: Job, known: set[str]) -> str:
     """What the program found in the ad, for the model: named technologies, which are in the CV and which not."""
     named = technologies(f"{job.title}\n{job.description}")
     if not named:
-        return ("Technologies this ad names (found by a program): no known technologies. Judge the ad by its role, "
-                "level and language of work; do not add technologies it does not name.")
+        return ("Technologies this ad names (found by a program): no known technologies. Do not add technologies "
+                "it does not name.")
     return (f"Technologies this ad names (found by a program, reliable): {_ordered(named)}.\n"
             f"Of them in the candidate's CV: {_ordered(named & known)}. Not in the CV: {_ordered(named - known)}.")
 
@@ -72,155 +86,193 @@ def _with_families(names: set[str]) -> set[str]:
     return names.union(*(family for family in FAMILIES if family & names))
 
 
-# Spoken languages and their levels, as an ad or the model writes them (English and Czech words)
-SPOKEN = {"English": r"english|angli\w*", "Czech": r"czech(?!\s+republic)|češtin\w*|česk\w+\s+jazyk\w*",
-          "Slovak": r"slovak|slovenštin\w*", "German": r"german|deutsch|němčin\w*|německ\w+\s+jazyk\w*",
-          "Polish": r"polish|polštin\w*", "Russian": r"russian|ruštin\w*", "Ukrainian": r"ukrainian|ukrajinštin\w*",
-          "French": r"french|francouzštin\w*", "Spanish": r"spanish|španělštin\w*", "Italian": r"italian|italštin\w*"}
-RANKS = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6, "Native": 7}
-LEVEL_WORDS = [  # checked in order: "středně pokročilá" (intermediate) before "pokročilá" (advanced)
-    (r"native|mother tongue|rodil\w*", 7), (r"\bc2\b", 6), (r"\bb2\b|upper[- ]intermediate", 4),
-    (r"\bb1\b|(?<!upper )(?<!upper-)intermediate|středně\s+pokročil\w*|komunikativn\w*|communicative|conversational", 3),
-    (r"\bc1\b|fluent\w*|advanced|proficien\w*|plynul\w*|pokročil\w*", 5), (r"\ba2\b|basic|elementary|základ\w*", 2),
-    (r"\ba1\b", 1)]
-YEARS = re.compile(r"(\d+)\s*\+?\s*(?:[-–]\s*\d+\s*)?(?:years?|yrs|let\b|roky|roků|rok\b)", re.IGNORECASE)
-MIN_YEARS = {"intern": 1, "junior": 2, "mid": 5, "senior": 10, "lead": 99}  # of experience that rule a level out
-ABOVE = {"intern": r"senior|medior|mid-level|lead|principal|staff|head of|architect",  # seniority above a level
-         "junior": r"senior|medior|mid-level|lead|principal|staff|head of|architect",
-         "mid": r"lead|principal|head of|director", "senior": r"director|vice president|executive|head of",
-         "lead": r"director|vice president|executive"}
-FINE_PLACES = r"europe\w*|\beu\b|\bcet\b|\bcest\b|czech\w*|česk\w*|worldwide|anywhere|global\w*|emea"
-PLACE_WORDS = (r"\b(?:location|remote\w*|fully|full|hybrid|work\w*|from|office|only|position|job|role|on-?site|based|"
-               r"in|the|time|zone|with|and|or)\b")
-RESIDENCY = r"citizen\w*|residen\w*|work permit|security clearance|green card|visa|občan\w*|pobyt\w*"
-SOFT_SKILLS = re.compile(
-    r"communicat\w*|teamwork|team player|collaborat\w*|leadership|mentoring|responsib\w*|self[- ]?organi[sz]\w*|"
-    r"proactiv\w*|curio\w*|motivat\w*|problem[- ]solving|analytical\s+(?:thinking|mindset|skills)|detail[- ]oriented|"
-    r"attention to detail|willing\w*|eager\w*|learn\w*\s+(?:ability|quickly|fast)|fast learn\w*|ambiguity|"
-    r"independen\w*|sharing knowledge|interest in|passion\w*|attitude|flexib\w*|creativ\w*|soft skills|mindset",
-    re.IGNORECASE)
+def _core(skill: str) -> str:
+    """A skill without the model's note about the CV: "Django (has FastAPI)" is about Django."""
+    return re.sub(r"\((?:has|you have|candidate has)\b[^)]*\)", " ", skill, flags=re.IGNORECASE)
 
 
-def _core(requirement: str) -> str:
-    """A requirement without the model's note about the CV: "Django (has FastAPI)" is about Django."""
-    return re.sub(r"\((?:has|you have|candidate has)\b[^)]*\)", " ", requirement, flags=re.IGNORECASE)
+def _clean(text) -> str:
+    return re.sub(r"\*\*|__|`", "", str(text or "")).strip()  # the model sometimes writes Markdown
 
 
-def _level(text: str) -> int | None:
-    """The lowest language level a text names ("B2 minimum, native preferred" → B2), None if it names none."""
-    found = [rank for pattern, rank in LEVEL_WORDS if re.search(pattern, text, re.IGNORECASE)]
-    return min(found) if found else None
+def _skills(items, required: bool, named: set[str], known: set[str], mine: set[str]) -> list[dict]:
+    """The model's skills kept to what the ad and the CV say: one naming only technologies the ad doesn't name, a
+    soft skill or years of experience is dropped; another programming language is never had (C# is not C++); a
+    technology the CV doesn't show is at best similar."""
+    kept = []
+    for item in items if isinstance(items, list) else []:
+        text = _clean(item.get("skill")) if isinstance(item, dict) else ""
+        if not text:
+            continue
+        found = technologies(_core(text))
+        if (found and not found & named) or YEARS.search(text) or (not found and SOFT_SKILLS.search(text)):
+            continue
+        match = item.get("match") if item.get("match") in MATCH else "no"
+        if match != "no" and (found & LANGUAGES & named) - mine:
+            match = "no"
+        elif match == "yes" and found and not found & known:
+            match = "similar"
+        kept.append({"skill": text, "required": required, "match": match})
+    return kept
 
 
-def _speaks(text: str, languages: dict[str, str]) -> bool | None:
-    """Whether the candidate speaks a language the text asks for ("Czech or Slovak": either), at the level it asks
-    for; None if the text names no spoken language."""
-    names = [name for name, pattern in SPOKEN.items() if re.search(pattern, text, re.IGNORECASE)]
-    if not names:
-        return None
-    have = [RANKS.get(languages[name], 0) for name in names if name in languages]
-    need = _level(text)
-    return bool(have) and (need is None or max(have) >= need)
+def _condition(name: str, ok: bool, detail: str, reason: str = "") -> dict:
+    return {"name": name, "ok": ok, "detail": detail, "reason": reason}
 
 
-def _quotes(evidence: str, ad: str) -> bool:
-    """Whether a blocker's evidence is the ad's own words (most of its longer words are in the ad), not the
-    model's guess about it."""
-    words = re.findall(r"\w{4,}", evidence.lower())
-    text = ad.lower()
-    return bool(words) and sum(word in text for word in words) >= QUOTE_SHARE * len(words)
+def _degree(extraction: dict, ad: str, s: Settings) -> dict:
+    need = extraction.get("degree") if extraction.get("degree") in DEGREES else "none"
+    while need != "none" and not re.search(DEGREE_WORDS[need], ad, re.IGNORECASE):
+        need = DEGREES[DEGREES.index(need) - 1]  # not in the ad: at most the level it does name
+    if need == "none":
+        return _condition("Degree", True, "Not asked")
+    name = DEGREE_NAMES[need]
+    welcome = bool(extraction.get("students_welcome"))
+    if EDUCATION_RANK.get(s.education, 0) >= DEGREES.index(need) or (
+            welcome and need == "bachelor" and s.education == "studying"):
+        return _condition("Degree", True, f"{name}, students welcome" if welcome else name)
+    return _condition("Degree", False, f"{name} required · you: {EDUCATION.get(s.education, '').lower()}",
+                      f"Requires a {name}")
 
 
-def _rules_out(blocker: dict, s: Settings) -> bool:
-    """Whether the program can confirm a blocker the model found: the model sees blockers where there are none
-    ("we don't expect an expert" as experience, "English B2" for a B2 candidate), and a blocker caps the score."""
-    evidence, kind = blocker["evidence"], blocker["kind"]
-    if kind == "experience":
-        top = [level for level in LEVELS if level in s.levels][-1]
-        years = [int(found.group(1)) for found in YEARS.finditer(evidence)]
-        return (bool(years) and min(years) >= MIN_YEARS[top]) or bool(re.search(rf"\b(?:{ABOVE[top]})\b", evidence,
-                                                                                  re.IGNORECASE))
-    if kind == "spoken language":
-        return _speaks(evidence, s.languages) is False
-    if kind == "location":
-        if any(re.search(re.escape(city), evidence, re.IGNORECASE) for city in {s.city, juniorguru_place(s.city)}):
-            return False  # the candidate's own city
-        if not s.remote and re.search(r"remote", evidence, re.IGNORECASE):
-            return True  # an office is wanted
-        if re.search(FINE_PLACES, evidence, re.IGNORECASE):
-            return False
-        place = re.sub(PLACE_WORDS, " ", evidence, flags=re.IGNORECASE)  # "Location: Fully Remote" names no place
-        return bool(re.search(r"[^\W\d_]{3,}", place))
-    if kind == "residency":
-        return bool(re.search(RESIDENCY, evidence, re.IGNORECASE))
-    return False
+def _experience(extraction: dict, ad: str, s: Settings) -> dict:
+    try:
+        need = max(0, min(int(extraction.get("min_years") or 0), 30))
+    except (TypeError, ValueError):
+        need = 0
+    if need and not YEARS.search(ad):
+        need = 0  # no years written in the ad: the model's guess
+    if not need:
+        return _condition("Experience", True, "Not asked")
+    if need <= EXPERIENCE_YEARS.get(s.experience, 0) + 1:  # a year short is still worth a try
+        return _condition("Experience", True, f"{need}+ years")
+    return _condition("Experience", False, f"{need}+ years · you: {EXPERIENCE.get(s.experience, '').lower()}",
+                      f"Requires {need}+ years of experience")
 
 
-def _check(requirement: dict, named: set[str], known: set[str], mine: set[str], s: Settings) -> dict | None:
-    """One requirement kept to what the ad, the CV and the settings say; None if it is not a requirement to count:
-    it names only technologies the ad doesn't name, it is a soft skill, or years of experience (a blocker)."""
-    text = requirement["requirement"]
-    found = technologies(_core(text))
-    speaks = _speaks(text, s.languages) if not found else None
-    if (found and not found & named) or YEARS.search(text) or (speaks is None and not found
-                                                               and SOFT_SKILLS.search(text)):
-        return None
-    match = requirement["match"] if requirement["match"] in MATCH else "no"
-    if speaks is not None:  # a spoken language: the settings say it, not the model
-        match = "yes" if speaks else "no"
-    elif match != "no" and (found & LANGUAGES & named) - mine:  # "C# (similar to C++)" for a C++ CV
-        match = "no"
-    elif match == "yes" and found and not found & known:  # the CV doesn't show it: at best an adjacent skill
-        match = "similar"
-    return {"requirement": text, "required": bool(requirement["required"]), "match": match}
+def _title_rank(title: str) -> int | None:
+    plain = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", title)
+    ranks = [rank for pattern, rank in TITLE_LEVELS if re.search(rf"\b(?:{pattern})\b", plain, re.IGNORECASE)]
+    return min(ranks) if ranks else None
 
 
-def score(answer: dict, job: Job, known: set[str], s: Settings) -> dict:
-    """The score the program counts from the model's list of requirements (spec section 20.4): a must-have weighs
-    2, a nice-to-have 1; "yes" gives the whole weight, "similar" 70 %, "no" nothing; score = 1 + 9 x the share.
-    Blockers the program can confirm, another main language and an ad with few requirements set a ceiling."""
-    named = technologies(f"{job.title}\n{job.description}")
+def _level(extraction: dict, job: Job, s: Settings) -> dict:
+    title = _title_rank(job.title)
+    rank = title if title is not None else LEVEL_RANK.get(extraction.get("seniority"))  # the title is the ad's word
+    if rank is None:
+        return _condition("Level", True, "Not stated")
+    levels = [level for level in LEVELS if level in s.levels] or ["junior"]
+    label = LEVELS[rank].capitalize()
+    if rank <= LEVEL_RANK[levels[-1]] + 1:  # one step up is worth a try
+        return _condition("Level", True, label)
+    return _condition("Level", False, f"{label} · you: {', '.join(levels)}", f"{label} role")
+
+
+def _language(extraction: dict, s: Settings) -> dict:
+    required = [item for item in extraction.get("languages") or [] if isinstance(item, dict) and item.get("language")]
+    if not required:
+        return _condition("Language", True, "Not asked")
+    texts, missing = [], []
+    for item in required:
+        name = settings.language_name(str(item["language"]))
+        level = str(item.get("level") or "").strip()
+        need = RANKS.get(level.upper())
+        text = f"{name} {level}" if need else name
+        have = next((lvl for known, lvl in s.languages.items() if known.lower() == name.lower()), None)
+        texts.append(text)
+        if have is None or (need and RANKS.get(have.upper(), 0) < need):
+            missing.append((text, have))
+    if not missing:
+        return _condition("Language", True, ", ".join(texts))
+    text, have = missing[0]
+    return _condition("Language", False, f"{text} · you: {have or 'not listed'}", f"Requires {text}")
+
+
+def _location(extraction: dict, s: Settings) -> dict:
+    workplace = extraction.get("workplace")
+    place = _clean(extraction.get("place"))
+    own = any(re.search(re.escape(city), place, re.IGNORECASE) for city in {s.city, juniorguru_place(s.city)})
+    fine = own or not place or re.search(FINE_PLACES, place, re.IGNORECASE)
+    if workplace == "remote":
+        if not s.remote:
+            return _condition("Location", False, f"Remote · you want to work in {s.city}", "A remote-only job")
+        if not fine:
+            return _condition("Location", False, f"Remote, {place}", f"Remote only for {place}")
+        return _condition("Location", True, f"Remote, {place}" if place else "Remote")
+    if workplace in ("office", "hybrid"):
+        if not fine:
+            return _condition("Location", False, f"{place}, {workplace}", f"An office in {place}")
+        return _condition("Location", True, f"{place}, {workplace}" if place else workplace.capitalize())
+    return _condition("Location", True, place or "Not stated")
+
+
+def _area(extraction: dict, s: Settings) -> dict:
+    area = extraction.get("area") or "Other IT"
+    if area == "Not IT":
+        return _condition("Area", False, "Not an IT job", "Not an IT job")
+    wanted = set(s.areas)
+    if "Full-stack" in wanted:
+        wanted |= {"Backend", "Frontend"}
+    if wanted & {"Backend", "Frontend"}:
+        wanted.add("Full-stack")
+    if area == "Other IT" or area in wanted:
+        return _condition("Area", True, area)
+    return _condition("Area", False, f"{area} · not one of your areas", f"{area} isn't one of your areas")
+
+
+def _foreign_languages(must: list[dict], job: Job, mine: set[str]) -> set[str]:
+    """The job's main programming languages when the CV has none of them (and has some language)."""
+    if not mine:
+        return set()
+    title = technologies(job.title) & LANGUAGES
+    if title:
+        return set() if title & mine else title
+    foreign = set()
+    for item in must:
+        languages = technologies(_core(item["skill"])) & LANGUAGES
+        if languages and not languages & mine:
+            foreign |= languages
+    return foreign
+
+
+def verdict(extraction: dict, job: Job, known: set[str], s: Settings) -> dict:
+    """The program's verdict on one job (spec section 21.3) from the model's facts, the ad and the profile."""
+    ad = f"{job.title}\n{job.description}"
+    named = technologies(ad)
     mine = _with_families(known & LANGUAGES)
-    requirements = [kept for item in answer["requirements"] if (kept := _check(item, named, known, mine, s))]
-    counted = {}
-    for key, required in (("must", True), ("nice", False)):
-        group = [item for item in requirements if item["required"] == required]
-        counted[key] = [round(sum(MATCH[item["match"]] for item in group), 1), len(group)]
-    total = sum(WEIGHTS[required] * counted[key][1] for key, required in (("must", True), ("nice", False)))
-    points = sum(WEIGHTS[required] * counted[key][0] for key, required in (("must", True), ("nice", False)))
-    base = math.floor(1 + 9 * points / total + 0.5) if total else NO_REQUIREMENTS_SCORE
-    risks, caps = [], []
-    blockers = [{"kind": item["kind"], "evidence": item["evidence"], "cap": CAPS[item["kind"]]}
-                for item in answer["blockers"]
-                if item.get("kind") in CAPS and _quotes(item["evidence"], f"{job.title}\n{job.description}")
-                and _rules_out(item, s)]
-    for item in blockers:
-        caps.append(item["cap"])
-        risks.append(f"{item['evidence']} (score at most {item['cap']})")
-    title_languages = technologies(job.title) & LANGUAGES
-    if mine and title_languages and not title_languages & mine:
-        caps.append(LANGUAGE_CAP)
-        risks.append(f"Main language {_ordered(title_languages)} is not in your CV (score at most {LANGUAGE_CAP})")
-    else:  # the ad's must-have programming languages, when the title names none of them
-        foreign = [technologies(_core(item["requirement"])) & LANGUAGES for item in requirements
-                   if item["required"]]
-        foreign = set().union(*(languages for languages in foreign if languages and not languages & mine))
-        if mine and foreign:
-            caps.append(MUST_LANGUAGE_CAP)
-            risks.append(f"Must-have language {_ordered(foreign)} is not in your CV "
-                         f"(score at most {MUST_LANGUAGE_CAP})")
-    if not requirements:
-        risks.append("The ad names no concrete requirements: read it before applying")
-    elif len(requirements) < FEW_REQUIREMENTS:
-        caps.append(FEW_CAP)
-        risks.append(f"The ad names few concrete requirements: read it before applying (score at most {FEW_CAP})")
-    cap = min(caps) if caps and min(caps) < base else None
+    must = _skills(extraction.get("must_have"), True, named, known, mine)
+    nice = _skills(extraction.get("nice_to_have"), False, named, known, mine)
+    conditions = [_degree(extraction, ad, s), _experience(extraction, ad, s), _level(extraction, job, s),
+                  _language(extraction, s), _location(extraction, s), _area(extraction, s)]
+    failed = [c for c in conditions[:-1] if not c["ok"]]
+    points = sum(WEIGHTS[True] * MATCH[i["match"]] for i in must) + sum(MATCH[i["match"]] for i in nice)
+    total = WEIGHTS[True] * len(must) + len(nice)
+    share = points / total if total else 0.0
+    must_share = sum(MATCH[i["match"]] for i in must) / len(must) if must else 0.0
+    count = f"{sum(i['match'] != 'no' for i in must)} of {len(must)} must-haves"
+    if nice:
+        count += f" · {sum(i['match'] != 'no' for i in nice)} of {len(nice)} nice-to-haves"
+    foreign = _foreign_languages(must, job, mine)
+    if failed:
+        name, score, reason = OUT, 2 if len(failed) == 1 else 1, failed[0]["reason"]
+    elif not conditions[-1]["ok"]:
+        name, score, reason = OTHER, 3, conditions[-1]["reason"]
+    elif foreign:
+        name, score, reason = STRETCH, 4, f"Main language {_ordered(foreign)} isn't in your CV"
+    elif not must:
+        name, score, reason = WORTH, 6, "The ad names few concrete requirements: read it before applying"
+    elif share >= 0.8 and must_share >= 0.75:
+        name, score, reason = STRONG, 10 if share >= 1 else 9 if share >= 0.9 else 8, f"{count} · all conditions met"
+    elif share >= 0.5:
+        name, score, reason = WORTH, 7 if share >= 0.65 else 6, count
+    else:
+        name, score, reason = STRETCH, 5 if share >= 0.3 else 4, count
+    about = _clean(extraction.get("about"))
     return {
-        "score": min(base, cap) if cap else base,
-        "summary": re.sub(r"\*\*|__|`", "", answer.get("summary", "")),  # the model sometimes writes Markdown
-        "requirements": requirements, "blockers": blockers, "counted": {**counted, "base": base, "cap": cap},
-        # The lists the Insights tab and older parts of the app read
-        "have": [item["requirement"] for item in requirements if item["match"] != "no"],
-        "missing": [item["requirement"] for item in requirements if item["match"] == "no"],
-        "risks": risks,
+        "verdict": name, "score": score, "reason": reason, "conditions": conditions, "must": must, "nice": nice,
+        "about": about, "extraction": extraction,
+        # What the Insights tab and older parts of the app read
+        "summary": about, "have": [i["skill"] for i in must + nice if i["match"] != "no"],
+        "missing": [i["skill"] for i in must + nice if i["match"] == "no"],
+        "risks": [c["reason"] for c in conditions if not c["ok"]],
     }
