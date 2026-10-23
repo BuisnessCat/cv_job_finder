@@ -41,6 +41,13 @@ def add_skill(form, name):
 def to_last_step(wizard):
     for _ in range(3):
         wizard.next_button.click()
+    fill_about_you(wizard.form)
+
+
+def fill_about_you(form):
+    """The last page's education and experience (the languages are each test's own)."""
+    form.education_box.setCurrentIndex(form.education_box.findData("studying"))
+    form.experience_box.setCurrentIndex(form.experience_box.findData("none"))
 
 
 def test_wizard_next_waits_for_required_fields(app, cv):
@@ -115,14 +122,17 @@ def test_wizard_finishes_with_values(app, cv):
     wizard.next_button.click()
     wizard.form.set_cv(str(cv))
     wizard.next_button.click()
-    assert wizard.step_label.text() == "Step 3 of 4" and wizard.next_button.isEnabled()  # junior by default
+    # Junior by default; Backend guessed from the CV's Python
+    assert wizard.step_label.text() == "Step 3 of 4" and wizard.next_button.isEnabled()
     wizard.form.city_box.setCurrentText("Brno")
     wizard.next_button.click()
+    fill_about_you(wizard.form)
     wizard.form.language_rows[0].level_box.setCurrentText("B2")
     wizard.next_button.click()
     assert wizard.result() == QDialog.Accepted
     assert wizard.values() == Settings(cv_path=str(cv), skills=["Python", "Docker"], main_skill="Python",
-                                       city="Brno", languages={"English": "B2"})
+                                       city="Brno", languages={"English": "B2"}, education="studying",
+                                       experience="none", areas=["Backend"])
 
 
 def test_wizard_last_step_warns_when_jobs_were_scored(app, cv):
@@ -152,7 +162,8 @@ def test_first_run_shows_wizard_only_for_missing_settings(app, cv, monkeypatch):
                      "english": "B2"})  # saved by the first version
     assert first_run(cv) is False
     assert (shown[1].skills, shown[1].city, shown[1].main_skill) == (["Docker"], "Brno", "Docker")
-    done = Settings(cv_path=str(cv), skills=["Docker"], main_skill="Docker", languages={"English": "B2"})
+    done = Settings(cv_path=str(cv), skills=["Docker"], main_skill="Docker", languages={"English": "B2"},
+                    education="none", experience="none", areas=["DevOps / cloud"])
     monkeypatch.setattr(Wizard, "exec", lambda wizard: QDialog.Accepted)
     monkeypatch.setattr(Wizard, "values", lambda wizard: done)
     assert first_run(cv) is True and replace(settings.load(), cv_stamp="") == done  # + which file was copied
@@ -163,7 +174,7 @@ def test_first_run_shows_wizard_only_for_missing_settings(app, cv, monkeypatch):
 def test_settings_still_needed_and_pages(app, cv):
     dialog = SettingsDialog(use_settings(cv))
     assert [dialog.nav.item(i).text() for i in range(dialog.nav.count())] == [
-        "Your CV", "What you're looking for", "Languages"]
+        "Your CV", "What you're looking for", "About you"]
     assert dialog.save_button.isEnabled() and dialog.missing_label.text() == ""
     dialog.form.language_rows[0].level_box.setCurrentIndex(-1)
     assert not dialog.save_button.isEnabled() and dialog.missing_label.text() == "Still needed: language levels"
@@ -179,36 +190,30 @@ def test_settings_cancel_changes_nothing(app, cv):
     assert settings.load() == s
 
 
-def test_rescore_question_only_for_scoring_fields(app, cv, monkeypatch):
+def test_rescore_question_only_for_a_new_cv(app, cv, monkeypatch, tmp_path):
     use_settings(cv)
     asked = []
     dialog = SettingsDialog(settings.load())
     monkeypatch.setattr(dialog, "confirm_rescore", lambda jobs: asked.append(jobs) or False)
     add_skill(dialog.form, "SQL")
     dialog.form.main_skill_box.setCurrentText("SQL")
-    dialog.save_button.click()
-    assert asked == [] and (settings.load().skills, settings.load().main_skill) == (["Python", "SQL"], "SQL")
+    dialog.form.city_box.setCurrentText("Brno")
+    dialog.form.education_box.setCurrentIndex(dialog.form.education_box.findData("bachelor"))
+    dialog.form.language_rows[0].level_box.setCurrentText("C1")
+    dialog.save_button.click()  # the program compares the jobs with these again in an instant
+    s = settings.load()
+    assert asked == [] and (s.skills, s.city, s.education, s.languages) == (
+        ["Python", "SQL"], "Brno", "bachelor", {"English": "C1"})
+    other = tmp_path / "other.md"
+    other.write_text("Python and SQL developer", encoding="utf-8")
     dialog = SettingsDialog(settings.load())
     monkeypatch.setattr(dialog, "confirm_rescore", lambda jobs: asked.append(jobs) or False)
-    dialog.form.city_box.setCurrentText("Brno")
+    dialog.form.set_cv(str(other))
     dialog.save_button.click()
-    assert len(asked) == 1 and settings.load().city == "Praha"  # "Cancel" on the question saves nothing
+    assert len(asked) == 1 and settings.load().cv_path == str(cv)  # "Cancel" on the question saves nothing
     monkeypatch.setattr(dialog, "confirm_rescore", lambda jobs: True)
     dialog.save_button.click()
-    assert settings.load().city == "Brno"
-
-
-def test_rescore_question_when_a_language_is_added_again(app, cv, monkeypatch):
-    use_settings(cv, languages={"English": "B2", "Czech": "B1"})
-    asked = []
-    dialog = SettingsDialog(settings.load())
-    monkeypatch.setattr(dialog, "confirm_rescore", lambda jobs: asked.append(jobs) or True)
-    dialog.form.language_rows[0].remove_button.click()
-    dialog.form.add_language_button.click()
-    dialog.form.language_rows[-1].name_box.setCurrentText("English")
-    dialog.form.language_rows[-1].level_box.setCurrentText("B2")
-    dialog.save_button.click()  # same languages, another order: the rules text and the key change
-    assert len(asked) == 1 and list(settings.load().languages) == ["Czech", "English"]
+    assert settings.load().cv_path == str(other)
 
 
 def test_save_keeps_hidden_thresholds(app, cv):
@@ -310,7 +315,8 @@ def test_first_run_passes_the_model_to_the_wizard(app, cv, monkeypatch):
 
 
 def test_a_gone_cv_file_with_a_copy_still_saves(app, cv):
-    s = Settings(cv_path=str(cv), skills=["Python"], main_skill="Python", languages={"English": "B2"})
+    s = Settings(cv_path=str(cv), skills=["Python"], main_skill="Python", languages={"English": "B2"},
+                 education="studying", experience="none", areas=["Backend"])
     settings.save(settings.store_cv(s, cv.read_text(encoding="utf-8")))
     cv.unlink()
     dialog = SettingsDialog(settings.load())
@@ -319,7 +325,8 @@ def test_a_gone_cv_file_with_a_copy_still_saves(app, cv):
 
 
 def test_the_chosen_cv_is_copied_when_the_setup_is_saved(app, cv, monkeypatch):
-    done = Settings(cv_path=str(cv), skills=["Python"], main_skill="Python", languages={"English": "B2"})
+    done = Settings(cv_path=str(cv), skills=["Python"], main_skill="Python", languages={"English": "B2"},
+                    education="studying", experience="none", areas=["Backend"])
     monkeypatch.setattr(Wizard, "exec", lambda wizard: QDialog.Accepted)
     monkeypatch.setattr(Wizard, "values", lambda wizard: done)
     assert first_run(cv)
@@ -329,3 +336,33 @@ def test_the_chosen_cv_is_copied_when_the_setup_is_saved(app, cv, monkeypatch):
     dialog = SettingsDialog(settings.load())
     dialog.save()  # the file was read again when the dialog opened
     assert config.CV_COPY.read_text(encoding="utf-8") == "Python, Docker and SQL developer"
+
+
+def test_the_profile_in_the_wizard(app, cv):
+    wizard = Wizard(settings.initial(cv))  # Python and Docker in the CV: Backend is guessed
+    form = wizard.form
+    wizard.next_button.click()  # Your CV
+    wizard.next_button.click()  # What you're looking for
+    backend = form.area_buttons.button(settings.AREAS.index("Backend"))
+    assert backend.isChecked()
+    backend.click()
+    assert not wizard.next_button.isEnabled()  # at least one area
+    form.area_buttons.button(settings.AREAS.index("Data / analytics")).click()
+    wizard.next_button.click()  # About you
+    assert wizard.step_label.text() == "Step 4 of 4" and not wizard.next_button.isEnabled()
+    fill_about_you(form)
+    form.language_rows[0].level_box.setCurrentText("B2")
+    assert wizard.next_button.isEnabled()
+    values = wizard.values()
+    assert (values.education, values.experience, values.areas) == ("studying", "none", ["Data / analytics"])
+
+
+def test_settings_show_the_saved_profile(app, cv):
+    s = Settings(cv_path=str(cv), skills=["Python"], main_skill="Python", languages={"English": "B2"},
+                 education="bachelor", experience="1-2", areas=["Backend", "QA / testing"])
+    dialog = SettingsDialog(s)
+    assert dialog.form.education_box.currentData() == "bachelor"
+    assert dialog.form.experience_box.currentData() == "1-2"
+    assert dialog.form.values().areas == ["Backend", "QA / testing"]
+    assert [dialog.nav.item(i).text() for i in range(dialog.nav.count())] == [
+        "Your CV", "What you're looking for", "About you"]

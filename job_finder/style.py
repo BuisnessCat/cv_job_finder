@@ -51,6 +51,8 @@ QPushButton:disabled {{ color: {muted}; }}
 QPushButton#primary {{ background: {accent}; color: white; border: none; font-weight: 600; }}
 QPushButton#primary:hover {{ background: {accent_hover}; }}
 QPushButton#primary:disabled {{ background: {border}; color: {muted}; }}
+QPushButton#toggleChip {{ border-radius: 12px; padding: 4px 12px; color: {muted}; }}
+QPushButton#toggleChip:checked {{ background: {accent_soft}; border-color: {accent}; color: {text}; }}
 QPushButton#segmentLeft, QPushButton#segmentMiddle, QPushButton#segmentRight {{ background: {panel}; color: {muted};
     font-weight: 600; border: 1px solid {border}; padding: 6px 14px; }}
 QPushButton#segmentLeft {{ border-radius: 0; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }}

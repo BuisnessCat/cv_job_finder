@@ -34,9 +34,13 @@ TRAY_HINT = (f"Job Finder keeps running in the tray and looks for new jobs every
              "To close it, right-click the icon and choose Quit.")
 
 
+SEARCH_FIELDS = ("city", "remote", "levels", "main_skill", "skills")  # what is downloaded and filtered
+
+
 def _search_changed(old: Settings, new: Settings) -> bool:
-    """What is downloaded, filtered or how it is scored changed, not only a threshold: a new search is needed."""
-    return settings.scoring_changed(old, new) or (old.main_skill, old.skills) != (new.main_skill, new.skills)
+    """A new CV or another search (city, remote, levels, skills): a new pass is needed, not only new verdicts."""
+    return settings.scoring_changed(old, new) or any(getattr(old, name) != getattr(new, name)
+                                                     for name in SEARCH_FIELDS)
 
 
 def _label(name: str = "") -> QLabel:

@@ -12,8 +12,8 @@ def use_settings(cv: Path, text: str = "Python developer", **overrides) -> Setti
     """Write the CV file if it is missing, save complete settings pointing at it and return them."""
     if not cv.exists():
         cv.write_text(text, encoding="utf-8")
-    s = replace(Settings(cv_path=str(cv), skills=["Python"], main_skill="Python", languages={"English": "B2"}),
-                **overrides)
+    s = replace(Settings(cv_path=str(cv), skills=["Python"], main_skill="Python", languages={"English": "B2"},
+                         education="studying", experience="none", areas=["Backend"]), **overrides)
     settings.save(s)
     return s
 

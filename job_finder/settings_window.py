@@ -16,16 +16,29 @@ from job_finder.window import _label
 
 PAGES = {  # page: title, one-line hint
     "cv": ("Your CV", "The file the AI compares jobs with, and the skills a job must mention to be scored."),
-    "search": ("What you're looking for", "Where you want to work and at what level."),
-    "languages": ("Languages", "The AI checks the language requirements of each job against these."),
+    "search": ("What you're looking for", "The kind of work you want, where and at what level."),
+    "languages": ("About you", "Jobs that ask for a degree, years of experience or a language level you don't "
+                               "have are marked Out of reach."),
 }
 WELCOME = ("Job Finder collects fresh jobs from several sites, keeps the ones that mention your skills and has a "
            "local AI model score each of them against your CV.\n\n"
            "Answer a few questions, it takes about a minute. You can change everything later in Settings.")
 # Wizard steps after Welcome: the page and the required fields that keep "Next" disabled until filled
-STEPS = [("", ()), ("cv", ("cv_path", "skills", "main_skill")), ("search", ("levels",)), ("languages", ("languages",))]
-MISSING_TEXT = {"cv_path": "a CV file", "skills": "skills", "main_skill": "the main skill", "levels": "a level",
+STEPS = [("", ()), ("cv", ("cv_path", "skills", "main_skill")), ("search", ("areas", "levels")),
+         ("languages", ("education", "experience", "languages"))]
+MISSING_TEXT = {"cv_path": "a CV file", "skills": "skills", "main_skill": "the main skill", "areas": "an area",
+                "levels": "a level", "education": "your education", "experience": "your experience",
                 "languages": "a language"}
+
+
+def _choice(options: dict[str, str]) -> QComboBox:
+    """A drop-down of options (key: label) that starts with "Choose…" until one is picked."""
+    box = QComboBox()
+    box.addItem("Choose…", "")
+    for key, label in options.items():
+        box.addItem(label, key)
+    box.setFixedWidth(240)
+    return box
 
 
 def _text(name: str, text: str) -> QLabel:
@@ -138,6 +151,22 @@ class SettingsForm(QObject):
         level_row = _row(*self.level_buttons.buttons())
         level_row.layout().setSpacing(0)
 
+        self.area_buttons = QButtonGroup(self)
+        self.area_buttons.setExclusive(False)  # several areas at once
+        self.areas_box = QWidget()
+        areas_flow = FlowLayout(self.areas_box)
+        for index, area in enumerate(settings.AREAS):
+            button = QPushButton(area)
+            button.setCheckable(True)
+            button.setObjectName("toggleChip")
+            self.area_buttons.addButton(button, index)
+            areas_flow.addWidget(button)
+        self.area_buttons.buttonToggled.connect(self._area_toggled)
+        self.education_box = _choice(settings.EDUCATION)
+        self.education_box.currentIndexChanged.connect(self._profile_changed)
+        self.experience_box = _choice(settings.EXPERIENCE)
+        self.experience_box.currentIndexChanged.connect(self._profile_changed)
+
         self.language_rows: list[LanguageRow] = []
         self.languages_box = QWidget()
         languages_layout = QVBoxLayout(self.languages_box)
@@ -154,9 +183,11 @@ class SettingsForm(QObject):
         self.rows = {  # page: (caption, widget) rows on its grid
             "cv": [("File", self.file_box), ("Skills", self.chips_box), ("Main skill", self.main_skill_box),
                    ("", _text("muted", "Searched for on the remote job sites"))],
-            "search": [("City", self.city_box), ("", self.remote_check), ("Level", level_row),
+            "search": [("Areas", self.areas_box), ("", _text("muted", "Jobs in other areas are kept aside")),
+                       ("City", self.city_box), ("", self.remote_check), ("Level", level_row),
                        ("", _text("muted", "You can pick several"))],
-            "languages": [("Spoken", self.languages_box)],
+            "languages": [("Education", self.education_box), ("Experience", self.experience_box),
+                          ("", _text("muted", "Commercial work experience")), ("Spoken", self.languages_box)],
         }
 
     def page(self, name: str) -> QWidget:
@@ -177,7 +208,7 @@ class SettingsForm(QObject):
         grid.setColumnStretch(1, 1)
         for row, (caption, widget) in enumerate(self.rows[name]):
             label = _text("metaKey", caption)
-            if widget in (self.file_box, self.chips_box, self.languages_box):  # may grow: line up with the top line
+            if widget in (self.file_box, self.chips_box, self.languages_box, self.areas_box):  # may grow: top line
                 label.setContentsMargins(0, 7, 0, 0)
                 grid.addWidget(label, row, 0, Qt.AlignTop)
             else:
@@ -200,6 +231,14 @@ class SettingsForm(QObject):
         for index, level in enumerate(settings.LEVELS):
             self.level_buttons.button(index).setChecked(level in s.levels)
         self.level_buttons.blockSignals(False)
+        self.area_buttons.blockSignals(True)
+        for index, area in enumerate(settings.AREAS):
+            self.area_buttons.button(index).setChecked(area in s.areas)
+        self.area_buttons.blockSignals(False)
+        for box, value in ((self.education_box, s.education), (self.experience_box, s.experience)):
+            box.blockSignals(True)
+            box.setCurrentIndex(max(box.findData(value), 0))
+            box.blockSignals(False)
         for row in list(self.language_rows):
             self.remove_language(row)
         for name, level in s.languages.items():
@@ -215,7 +254,10 @@ class SettingsForm(QObject):
                        city=self.city_box.currentText(), remote=self.remote_check.isChecked(),
                        levels=[level for index, level in enumerate(settings.LEVELS)
                                if self.level_buttons.button(index).isChecked()],
-                       languages=languages)
+                       languages=languages, education=self.education_box.currentData() or "",
+                       experience=self.experience_box.currentData() or "",
+                       areas=[area for index, area in enumerate(settings.AREAS)
+                              if self.area_buttons.button(index).isChecked()])
 
     def missing(self) -> list[str]:
         """Required fields still empty; a CV file that can't be read counts as not chosen."""
@@ -242,6 +284,11 @@ class SettingsForm(QObject):
             # Edited skills are not thrown away silently, e.g. when a moved CV is picked again
             if found and set(found) != set(self._skills) and (not self._skills or self.confirm_replace_skills()):
                 self._set_skills(found, self.main_skill_box.currentText())
+            if not any(button.isChecked() for button in self.area_buttons.buttons()):  # a first guess to correct
+                self.area_buttons.blockSignals(True)
+                for area in settings.guess_areas(found):
+                    self.area_buttons.button(settings.AREAS.index(area)).setChecked(True)
+                self.area_buttons.blockSignals(False)
         self.changed.emit()
 
     def _read_cv(self) -> bool:
@@ -337,6 +384,12 @@ class SettingsForm(QObject):
         return chip
 
     # What you're looking for
+
+    def _area_toggled(self, button: QPushButton, checked: bool) -> None:
+        self.changed.emit()
+
+    def _profile_changed(self, index: int) -> None:
+        self.changed.emit()
 
     def _level_toggled(self, button: QPushButton, checked: bool) -> None:
         if not checked and not any(b.isChecked() for b in self.level_buttons.buttons()):

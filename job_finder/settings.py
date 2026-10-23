@@ -18,7 +18,28 @@ LANGUAGES = ["English", "Czech", "Slovak", "German", "Polish", "Russian", "Ukrai
 PROGRAMMING_LANGUAGES = ["Python", "Java", "C#/.NET", "C/C++", "Go", "Rust", "JavaScript", "TypeScript", "PHP",
                          "Ruby", "Kotlin", "Swift", "Scala", "R"]
 # Changing any of these changes the scoring rules or the CV, so every job is scored again
-SCORING_FIELDS = ("cv_path", "city", "remote", "levels", "languages")
+# The model only reads the ads against the CV; the program compares its facts with everything else (spec 21.4)
+SCORING_FIELDS = ("cv_path",)
+# The profile: what rules a job out (spec 21.1)
+EDUCATION = {"none": "No degree", "studying": "Studying, no degree yet", "bachelor": "Bachelor's",
+             "master": "Master's", "phd": "PhD"}
+EXPERIENCE = {"none": "None", "under1": "Under 1 year", "1-2": "1–2 years", "3-5": "3–5 years",
+              "5plus": "More than 5 years"}
+AREAS = ["Backend", "Frontend", "Full-stack", "Mobile", "Data / analytics", "Machine learning / AI", "DevOps / cloud",
+         "QA / testing", "Embedded / hardware", "Security", "IT support / admin"]
+# Skills that suggest an area for the wizard's first guess
+AREA_SKILLS = {
+    "Backend": {"Python", "Java", "C#/.NET", "Go", "PHP", "Ruby", "Django", "Flask", "FastAPI", "Spring", "Node.js",
+                "Microservices", "GraphQL", "ORM"},
+    "Frontend": {"JavaScript", "TypeScript", "React", "Vue", "Angular", "HTML/CSS", "Frontend (any)"},
+    "Mobile": {"Mobile", "Swift", "Kotlin"},
+    "Data / analytics": {"R", "Pandas/NumPy", "Data analysis", "Statistics", "Excel", "Spark/Hadoop", "Airflow", "dbt",
+                         "Snowflake", "Databricks", "ETL/data pipelines"},
+    "Machine learning / AI": {"Machine learning", "LLM/AI"},
+    "DevOps / cloud": {"Kubernetes", "Terraform/IaC", "AWS", "Azure", "GCP", "Cloud (any)", "Virtualization"},
+    "Embedded / hardware": {"Embedded", "C/C++"},
+    "Security": {"Security"},
+}
 # Dictionary groups that are not skills you list in a CV's skills
 NOT_SKILLS = {"Experience 2+ years", "Czech", "German", "Other languages", "English C1+", "Degree",
               "Domain knowledge", "Soft skills", "Project management"}
@@ -48,6 +69,9 @@ class Settings:
     levels: list[str] = field(default_factory=lambda: ["junior"])  # one or more of LEVELS
     # language -> one of LANGUAGE_LEVELS; "" = the level is not chosen yet
     languages: dict[str, str] = field(default_factory=lambda: {"English": ""})
+    education: str = ""  # one of EDUCATION; "" = not chosen yet
+    experience: str = ""  # one of EXPERIENCE: commercial work experience
+    areas: list[str] = field(default_factory=list)  # of AREAS: the kinds of work wanted
     model: str = ""  # the AI model; "" = the one that fits the graphics card (hardware.default_model)
     min_score: int = 5
     stale_days: int = 14
@@ -78,7 +102,10 @@ def missing(s: Settings) -> list[str]:
         "cv_path": not s.cv_path,
         "skills": not s.skills,
         "main_skill": s.main_skill not in s.skills,
+        "areas": not s.areas or any(area not in AREAS for area in s.areas),
         "levels": not s.levels or any(level not in LEVELS for level in s.levels),
+        "education": s.education not in EDUCATION,
+        "experience": s.experience not in EXPERIENCE,
         "languages": not s.languages or any(not name.strip() or level not in LANGUAGE_LEVELS
                                             for name, level in s.languages.items()),
     }
@@ -199,6 +226,11 @@ def detect_skills(text: str) -> list[str]:
     return [name for name in insights.REQUIREMENTS if name not in NOT_SKILLS and _cv_mentions(name, text)]
 
 
+def guess_areas(skills: list[str]) -> list[str]:
+    """The areas the skills suggest, for the wizard's first guess."""
+    return [area for area in AREAS if AREA_SKILLS.get(area, set()) & set(skills)]
+
+
 def skill_name(name: str) -> str:
     """A typed skill as the dictionary writes it ("python" -> "Python"); any other skill as typed."""
     name = name.strip()
@@ -228,4 +260,5 @@ def initial(cv: Path) -> Settings:
     except CvError:
         return Settings(cv_path=str(cv))
     skills = detect_skills(text)
-    return Settings(cv_path=str(cv), skills=skills, main_skill=guess_main_skill(skills, text))
+    return Settings(cv_path=str(cv), skills=skills, main_skill=guess_main_skill(skills, text),
+                    areas=guess_areas(skills))

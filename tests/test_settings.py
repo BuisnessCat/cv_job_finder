@@ -20,7 +20,8 @@ def app():
 
 
 def filled(**overrides):
-    values = dict(cv_path="cv.md", skills=["Python"], main_skill="Python", languages={"English": "B2"})
+    values = dict(cv_path="cv.md", skills=["Python"], main_skill="Python", languages={"English": "B2"},
+                  education="studying", experience="none", areas=["Backend"])
     return Settings(**{**values, **overrides})
 
 
@@ -32,7 +33,8 @@ def test_no_settings_until_saved():
 
 
 def test_missing_lists_required_fields_in_order():
-    assert settings.missing(Settings()) == ["cv_path", "skills", "main_skill", "languages"]  # junior by default
+    assert settings.missing(Settings()) == ["cv_path", "skills", "main_skill", "areas", "education", "experience",
+                                            "languages"]  # junior by default
     assert settings.missing(filled()) == []
     assert settings.missing(filled(main_skill="Java")) == ["main_skill"]  # not one of the skills
     assert settings.missing(filled(levels=[])) == ["levels"]
@@ -48,7 +50,7 @@ def test_old_settings_load_without_errors():
                      "needs_permit": False, "min_score": 5, "stale_days": 14, "stale_job_days": 21})
     s = settings.load()
     assert (s.cv_path, s.skills, s.city, s.remote) == ("cv.md", ["Python"], "Brno", False)
-    assert settings.missing(s) == ["main_skill", "languages"]
+    assert settings.missing(s) == ["main_skill", "areas", "education", "experience", "languages"]
 
 
 def test_guess_main_skill():
@@ -58,18 +60,34 @@ def test_guess_main_skill():
     assert settings.guess_main_skill([], text) == ""
 
 
-def test_scoring_changed_only_for_scoring_fields():
+def test_only_a_new_cv_needs_the_model_again():
     base = filled()
-    assert not settings.scoring_changed(base, replace(base, skills=["Python", "SQL"], main_skill="SQL", min_score=6))
-    assert settings.scoring_changed(base, replace(base, city="Brno"))
-    assert settings.scoring_changed(base, replace(base, levels=["junior", "mid"]))
-    assert settings.scoring_changed(base, replace(base, languages={"English": "C1"}))
-
-
-def test_scoring_changed_sees_language_order_but_not_path_spelling():
-    base = filled(languages={"English": "B2", "Czech": "B1"})
-    assert settings.scoring_changed(base, replace(base, languages={"Czech": "B1", "English": "B2"}))  # rules list them in order
+    # The model only takes facts out of the ads; the program compares them with the rest again in an instant
+    assert not settings.scoring_changed(base, replace(base, skills=["Python", "SQL"], main_skill="SQL", min_score=6,
+                                                     city="Brno", levels=["junior", "mid"],
+                                                     languages={"English": "C1"}, education="master",
+                                                     experience="3-5", areas=["Data / analytics"]))
+    assert settings.scoring_changed(base, replace(base, cv_path="other.md"))
     assert not settings.scoring_changed(base, replace(base, cv_path="./cv.md"))  # the same file
+
+
+def test_the_profile_is_required():
+    assert settings.missing(filled()) == []
+    assert settings.missing(filled(education="", experience="", areas=[])) == ["areas", "education", "experience"]
+    assert settings.missing(filled(education="college", areas=["Gardening"])) == ["areas", "education"]
+
+
+def test_areas_are_guessed_from_the_skills():
+    assert settings.guess_areas(["Python", "FastAPI", "SQL", "Docker", "Git"]) == ["Backend"]
+    assert settings.guess_areas(["React", "TypeScript", "Pandas/NumPy"]) == ["Frontend", "Data / analytics"]
+    assert settings.guess_areas(["C/C++", "Embedded", "Linux"]) == ["Embedded / hardware"]
+    assert settings.guess_areas(["Git", "Agile/Scrum"]) == []
+
+
+def test_the_wizard_prefill_guesses_areas(tmp_path):
+    cv = tmp_path / "cv.md"
+    cv.write_text("Python and FastAPI developer", encoding="utf-8")
+    assert settings.initial(cv).areas == ["Backend"]
 
 
 def test_detect_skills_ignores_everyday_words():
@@ -116,7 +134,8 @@ def test_detect_skills_skips_non_technical_groups():
 def test_initial_prefills_cv_skills_and_main_skill(tmp_path):
     cv = tmp_path / "master_cv.md"
     cv.write_text("Docker and Python", encoding="utf-8")
-    assert settings.initial(cv) == Settings(cv_path=str(cv), skills=["Python", "Docker"], main_skill="Python")
+    assert settings.initial(cv) == Settings(cv_path=str(cv), skills=["Python", "Docker"], main_skill="Python",
+                                            areas=["Backend"])
     assert settings.initial(tmp_path / "none.md") == Settings()
 
 
