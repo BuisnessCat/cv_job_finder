@@ -34,9 +34,9 @@ region of Czechia and remote jobs open to it.
 </td>
 <td width="50%" valign="top">
 
-🤖 **A score you can check**<br>
-The AI lists what the ad asks for and marks what your CV has; the app counts the score from that list and
-shows the whole count in the card.
+🤖 **A clear verdict**<br>
+Strong fit, Worth a try, Stretch or Out of reach, with the reason: "Requires a Master's degree", "3 of 4
+must-haves". The AI reads the ad, the app decides.
 
 </td>
 </tr>
@@ -117,8 +117,9 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
 1. **AI model.** If LM Studio or the AI model is missing, the setup starts with them. The model downloads
    with one click: about 6 GB, or 3 GB for the smaller one. You can go on while it downloads.
 2. **Setup.** Pick your CV, check the skills the app found in it and choose your main skill, like
-   Python or Java. Then your city, whether remote is fine, your level (you can pick several, like
-   Intern and Junior) and the languages you speak.
+   Python or Java. Then the kinds of work you want (Backend, Data, QA…), your city, whether remote is fine and
+   your level (you can pick several, like Intern and Junior). Last, your education, work experience and the
+   languages you speak.
 3. **Start search.** The first scoring takes a while: about 8 seconds per job, so 20–40 minutes on an
    RTX 3060. Jobs appear as they're scored, so you can start reading right away. Later only new jobs
    are scored.
@@ -136,10 +137,12 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
 - **Settings**, at the top of the window, changes anything from the setup, also while jobs are being scored.
   If a change affects the scores, the app says how long scoring everything again will take and asks first; then
   it stops the scoring that runs and starts again with the new settings.
-- **How the score is counted:** the AI lists up to 8 requirements of the ad and marks each one ✓ (you have it),
-  ≈ (a similar skill) or ✕. A must-have counts 2, a nice-to-have 1, a similar skill 70 %, and the score is
-  1 + 9 × the share you get. A blocker such as "3+ years of experience" doesn't subtract, it sets a ceiling.
-  The technologies are checked against the ad, so C++ and C# are never mixed up.
+- **How a job gets its verdict:** the AI only reads the ad: the degree, years of experience, level, languages
+  and place it asks for, and its skills, each marked ✓ (in your CV), ≈ (a similar skill) or ✕. The app then
+  checks six conditions against your profile: degree, experience, level, language, location and area. One that
+  you don't meet makes the job **Out of reach**, and the card says which; another area keeps it aside. Otherwise
+  the skills decide: **Strong fit**, **Worth a try** or **Stretch**. Change your profile in Settings and the
+  verdicts follow at once, without scoring again.
 - **Games and the model share the video memory**, so the app pauses scoring while a full-screen game
   is running and picks it up later.
 - **Updating:** the app downloads a new version by itself and shows a green **Restart to update** button
