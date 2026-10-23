@@ -221,7 +221,7 @@ def test_languages_only_welcomed_still_are_the_jobs_languages():
     result = verdict(facts(must_have=[], nice_to_have=[skill("C#", "no"), skill("Java", "no"), skill("C++", "no")]),
                      fnz)
     assert (result["verdict"], result["score"]) == ("Stretch", 4)
-    assert result["reason"] == "Main language Java, C#/.NET, C/C++ isn't in your CV"
+    assert result["reason"] == "None of the job's languages is in your CV: Java, C#/.NET, C/C++"
 
 
 def test_markdown_is_taken_out_of_the_about_line():
@@ -237,7 +237,7 @@ def test_the_ads_languages_count_even_when_the_model_lists_cv_skills():
     result = verdict(facts(must_have=[skill("Git"), skill("Networking (TCP/IP sockets)", "similar")],
                            nice_to_have=[]), emetlab, known)
     assert (result["verdict"], result["score"]) == ("Stretch", 4)
-    assert result["reason"] == "Main language Python, C#/.NET, JavaScript, TypeScript isn't in your CV"
+    assert result["reason"] == "None of the job's languages is in your CV: Python, C#/.NET, JavaScript, TypeScript"
     assert verdict(facts(), emetlab)["verdict"] != "Stretch"  # Python is in this CV
 
 

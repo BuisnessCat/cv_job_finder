@@ -1329,6 +1329,17 @@ def test_card_says_why_a_job_is_out_of_reach(window):
         "✕", "Degree", "Master's degree required · you: studying, no degree yet")
 
 
+def test_a_long_skill_is_shortened_on_its_chip(window):
+    long = "Mathematics (applied mathematics, numerical analysis, optimization, probability)"
+    use_settings(config.CV_PATH, min_score=1)
+    verdict_row("l", {**model_answer(10), "must_have": [{"skill": long, "match": "no"}]})
+    window.load_rows()
+    window.table.selectRow(0)
+    chip = window.v_must_chips[0]
+    assert "Mathematics (applied mathematics, numer…" in chip.text() and "probability" not in chip.text()
+    assert chip.toolTip() == long and chip.accessibleName() == f"✕ {long}"
+
+
 def test_older_scores_keep_their_card(window):
     window.on_evaluated(row("old", 9))  # scored before the verdicts, e.g. an application
     window.table.selectRow(0)

@@ -23,6 +23,7 @@ APPLIED_COLUMNS = ["Applied", "Job", "Company", "Status", "Days waiting", "Score
 LISTS = [("have", "YOU HAVE", "✓"), ("missing", "MISSING", "✕"), ("risks", "RISKS", "!")]  # a score from the model
 # A counted score: the same three places show must-haves, nice-to-haves and blockers; marks by the match
 MATCH_MARKS = {"yes": ("✓", "have"), "similar": ("≈", "risks"), "no": ("✕", "missing")}
+CHIP_CHARS = 40  # a longer skill (the model sometimes explains it) is shortened on its chip, whole in the tooltip
 COUNTED_HELP = ("How the score is counted: a must-have counts 2, a nice-to-have 1; you get the whole of it for ✓, "
                 "70 % for ≈ (a similar skill) and nothing for ✕. Score = 1 + 9 × the share you get. A blocker, "
                 "another main language or an ad with few requirements sets a ceiling.")
@@ -407,8 +408,12 @@ class MainWindow(QMainWindow):
                 chip = QLabel()
                 chip.setObjectName("skillChip")
                 mark = MATCH_MARKS.get(item["match"], ("", ""))[0]
+                text = item["skill"]
+                if len(text) > CHIP_CHARS:
+                    chip.setToolTip(text)
+                    text = text[:CHIP_CHARS - 1].rstrip() + "…"
                 chip.setText(f"<span style='color:{style.MATCH_COLORS.get(item['match'], style.COLORS['muted'])};"
-                             f" font-weight:700'>{mark}</span>&nbsp; {html.escape(item['skill'])}")
+                             f" font-weight:700'>{mark}</span>&nbsp; {html.escape(text)}")
                 chip.setAccessibleName(f"{mark} {item['skill']}".strip())
                 flow.addWidget(chip)
                 if item["match"]:

@@ -264,7 +264,9 @@ def verdict(extraction: dict, job: Job, known: set[str], s: Settings) -> dict:
     elif not conditions[-1]["ok"]:
         name, score, reason = OTHER, 3, conditions[-1]["reason"]
     elif foreign:
-        name, score, reason = STRETCH, 4, f"Main language {_ordered(foreign)} isn't in your CV"
+        reason = (f"Main language {_ordered(foreign)} isn't in your CV" if len(foreign) == 1
+                  else f"None of the job's languages is in your CV: {_ordered(foreign)}")
+        name, score = STRETCH, 4
     elif not must:
         name, score, reason = WORTH, 6, "The ad names few concrete requirements: read it before applying"
     elif share >= 0.8 and must_share >= 0.75:
