@@ -73,9 +73,10 @@ def main() -> None:
     ready = lmstudio.everything_ready(model)
     if not ready and saved is not None and not settings.missing(saved):
         ready_window.ReadyDialog(model).exec()  # the setup is done, LM Studio or the model is missing
+    setup = saved is None or bool(settings.missing(saved))
     if not first_run(config.CV_PATH, None if ready else model):  # the wizard's first step gets them
         os._exit(0)  # the wizard was closed: nothing is saved, the next start shows it again
-    window = MainWindow()
+    window = MainWindow(score_now=setup)  # after Start search the first scoring starts right away
     window.listen_for_launches(SERVER_NAME)
     window.show()
     code = app.exec()

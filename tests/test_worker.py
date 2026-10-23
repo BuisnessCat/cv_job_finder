@@ -154,3 +154,53 @@ def test_scoring_goes_on_with_the_copy_when_the_cv_file_is_gone(setup, monkeypat
     message = worker.Worker()._refresh()
     assert "the saved copy is used" in message
     assert worker.read_cv(settings.load())[1] == key  # same key: nothing is scored again
+
+
+def test_a_big_scoring_waits_unless_asked(setup, monkeypatch):
+    monkeypatch.setattr(config, "BIG_PASS_JOBS", 2)
+    monkeypatch.setattr(llm, "evaluate", lambda *args: pytest.fail("a big pass waits for the user"))
+    w = worker.Worker()
+    assert w._refresh() == "3 jobs to score (about 1 min): click Start scoring"
+    assert w.waiting == 3
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": model_answer(7))
+    w.manual = True  # the button, the setup's Start search, or Save in Settings
+    assert w._refresh() == "Done: 3 matches out of 3 evaluated" and w.waiting == 0
+
+
+def test_cancel_stops_after_the_current_job(setup, monkeypatch):
+    w = worker.Worker()
+    calls = []
+
+    def evaluate(cv_text, job, rules, facts=""):
+        calls.append(job.url)
+        w.cancel()  # Save in Settings while this job is scored
+        return model_answer(7)
+
+    monkeypatch.setattr(llm, "evaluate", evaluate)
+    assert w._refresh().startswith("Stopped: the settings changed")
+    assert len(calls) == 1 and setup == [True]  # the model is released
+
+
+def test_an_edited_cv_file_starts_over(setup, monkeypatch):
+    w = worker.Worker()
+    calls = []
+
+    def evaluate(cv_text, job, rules, facts=""):
+        calls.append(job.url)
+        cv = Path(settings.load().cv_path)
+        stat = cv.stat()
+        cv.write_text("Python and SQL developer", encoding="utf-8")  # saved in its own program
+        import os
+        os.utime(cv, ns=(stat.st_mtime_ns + 10**9, stat.st_mtime_ns + 10**9))
+        return model_answer(7)
+
+    monkeypatch.setattr(llm, "evaluate", evaluate)
+    assert w._refresh().startswith("Your CV changed")
+    assert len(calls) == 1 and w.cv_changed
+
+
+def test_the_scoring_never_overwrites_settings_saved_meanwhile(setup):
+    stale = settings.load()  # what the pass read at its start
+    settings.save(replace(stale, city="Brno"))  # Save in Settings during the pass
+    settings.sync_cv(stale)
+    assert settings.load().city == "Brno" and settings.load().cv_stamp

@@ -30,7 +30,7 @@ def app():
 def window(app, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "jobs.db")
     monkeypatch.setattr(config, "CV_PATH", tmp_path / "master_cv.md")  # no CV, so the list is empty
-    monkeypatch.setattr(worker.Worker, "start", lambda self: None)
+    monkeypatch.setattr(worker.Worker, "start", lambda self, manual=False: None)
     monkeypatch.setattr(MainWindow, "tray_available", staticmethod(lambda: False))  # the tray has its own tests
     db.init()
     w = MainWindow()
@@ -43,7 +43,7 @@ def window(app, tmp_path, monkeypatch):
 def tray_window(app, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "jobs.db")
     monkeypatch.setattr(config, "CV_PATH", tmp_path / "master_cv.md")
-    monkeypatch.setattr(worker.Worker, "start", lambda self: None)
+    monkeypatch.setattr(worker.Worker, "start", lambda self, manual=False: None)
     monkeypatch.setattr(MainWindow, "tray_available", staticmethod(lambda: True))
     db.init()
     w = MainWindow()
@@ -176,7 +176,7 @@ def test_settings_button_reloads_and_refreshes_on_city_change(window, monkeypatc
     s = use_settings(config.CV_PATH)  # temporary CV from the fixture
     window.load_rows()
     refreshed = []
-    monkeypatch.setattr(window, "refresh", lambda: refreshed.append(True))
+    monkeypatch.setattr(window, "refresh", lambda manual=False: refreshed.append(True))
     new = replace(s, min_score=8)
 
     class FakeDialog:  # "Save" in the Settings window writes the settings and closes it
@@ -198,12 +198,10 @@ def test_settings_button_reloads_and_refreshes_on_city_change(window, monkeypatc
     assert window.settings.city == "Brno" and refreshed == [True]  # where to search changed: a new search
 
 
-def test_settings_unavailable_while_refreshing(window):
-    assert window.settings_button.text() == "Settings" and window.settings_button.isEnabled()
+def test_settings_open_while_scoring(window):
     window.refresh()
-    assert not window.settings_button.isEnabled()  # the running pass uses the old settings
+    assert window.settings_button.isEnabled()  # a long first scoring doesn't lock them for half an hour
     window.on_finished()
-    assert window.settings_button.isEnabled()
 
 
 def test_thresholds_come_from_settings(window):
@@ -705,7 +703,7 @@ def test_settings_save_reloads_open_cv_window(window, monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr(settings_window, "SettingsDialog", FakeDialog)
-    monkeypatch.setattr(window, "refresh", lambda: None)
+    monkeypatch.setattr(window, "refresh", lambda manual=False: None)
     window.settings_button.click()
     assert "Second CV" in window.cv_window.body.toPlainText()
     window.cv_window.close()
@@ -800,7 +798,7 @@ def test_quit_closes_for_real(tray_window, monkeypatch):
 def test_auto_refresh_skips_busy_and_running(tray_window, monkeypatch):
     assert tray_window.auto_timer.isActive() and tray_window.auto_timer.interval() == 3 * 3600 * 1000
     started = []
-    monkeypatch.setattr(worker.Worker, "start", lambda self: started.append(True))
+    monkeypatch.setattr(worker.Worker, "start", lambda self, manual=False: started.append(True))
     monkeypatch.setattr(busy, "windows_busy", lambda: True)  # a full-screen game shares the graphics card
     tray_window.auto_refresh()
     assert started == [] and tray_window.retry_timer.isActive()
@@ -884,7 +882,7 @@ def test_second_launch_opens_the_running_window(tray_window, monkeypatch):
 
 def test_refresh_never_runs_twice(tray_window, monkeypatch):
     starts = []
-    monkeypatch.setattr(worker.Worker, "start", lambda self: starts.append(True))
+    monkeypatch.setattr(worker.Worker, "start", lambda self, manual=False: starts.append(True))
     s = use_settings(config.CV_PATH)
     tray_window.load_rows()
     tray_window.refresh()
@@ -1059,9 +1057,9 @@ def test_get_model_button_and_refresh_after_the_download(window, monkeypatch):
     window.on_finished()
     assert not window.model_button.isHidden()
     refreshed = []
-    monkeypatch.setattr(MainWindow, "refresh", lambda self: refreshed.append(self))
+    monkeypatch.setattr(MainWindow, "refresh", lambda self, manual=False: refreshed.append((self, manual)))
     ready_window.downloader().done.emit(0)  # the download from the wizard or the button has finished
-    assert refreshed.count(window) == 1
+    assert refreshed.count((window, True)) == 1  # downloaded to score: a big first scoring starts too
     window.worker.model_missing = False
     window.on_finished()
     assert window.model_button.isHidden()
@@ -1074,9 +1072,9 @@ def test_get_model_button_opens_getting_ready(window, monkeypatch):
     monkeypatch.setattr(ready_window, "vram_gb", lambda: 12.0)
     shown, refreshed = [], []
     monkeypatch.setattr(ready_window.ReadyDialog, "exec", lambda dialog: shown.append(dialog.panel.model) or 0)
-    monkeypatch.setattr(MainWindow, "refresh", lambda self: refreshed.append(self))
+    monkeypatch.setattr(MainWindow, "refresh", lambda self, manual=False: refreshed.append((self, manual)))
     window.model_button.click()
-    assert shown == [config.MODEL] and refreshed == [window]
+    assert shown == [config.MODEL] and refreshed == [(window, True)]
 
 
 def test_card_names_the_site_behind_junior_guru(window):
@@ -1209,3 +1207,65 @@ def test_empty_applications_explain_themselves(window):
     assert window.applied_pages.currentIndex() == 1
     assert "I applied" in window.applied_empty.text()
     window.found_tab.click()
+
+
+def saving_settings(monkeypatch, new):
+    """The Settings window replaced by one whose Save writes new."""
+    class FakeDialog:
+        def __init__(self, current, parent):
+            pass
+
+        def exec(self):
+            settings.save(new)
+            return QDialog.Accepted
+
+        def deleteLater(self):
+            pass
+
+    monkeypatch.setattr(settings_window, "SettingsDialog", FakeDialog)
+
+
+def test_saving_new_settings_restarts_the_scoring(window, monkeypatch):
+    s = use_settings(config.CV_PATH)
+    window.load_rows()
+    cancelled, passes = [], []
+    monkeypatch.setattr(window.worker, "cancel", lambda: cancelled.append(True))
+    window.refresh()
+    saving_settings(monkeypatch, replace(s, city="Brno"))
+    window.settings_button.click()
+    assert cancelled == [True]  # stops after the job it is scoring
+    monkeypatch.setattr(worker.Worker, "start", lambda self, manual=False: passes.append(manual))
+    window.on_finished()
+    assert passes == [True]  # a new pass with the new settings, big or not: the user agreed to it
+
+
+def test_a_big_scoring_waits_for_a_click(tray_window, monkeypatch):
+    messages, passes = [], []
+    monkeypatch.setattr(tray_window.tray, "showMessage", lambda *args: messages.append(args[1]))
+    monkeypatch.setattr(tray_window, "isActiveWindow", lambda: False)
+    tray_window.refresh()
+    tray_window.worker.waiting = 212  # e.g. after an update: every job needs a new score
+    tray_window.on_finished()
+    assert tray_window.refresh_button.text() == "Start scoring (about 28 min)"
+    assert messages == ["212 jobs need scoring (about 28 min). Click here to start."]
+    monkeypatch.setattr(worker.Worker, "start", lambda self, manual=False: passes.append(manual))
+    tray_window.tray.messageClicked.emit()
+    assert passes == [True]
+    tray_window.worker.waiting = 0
+    tray_window.on_finished()
+    assert tray_window.refresh_button.text() == "Refresh"
+    tray_window.refresh_button.click()
+    assert passes == [True, True]  # the button always starts the whole scoring
+
+
+def test_the_first_start_after_the_setup_scores_right_away(app, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "jobs.db")
+    monkeypatch.setattr(MainWindow, "tray_available", staticmethod(lambda: False))
+    started = {}  # windows of earlier tests may start their first pass here too: only these two count
+    monkeypatch.setattr(worker.Worker, "start", lambda self, manual=False: started.setdefault(id(self), manual))
+    db.init()
+    windows = [MainWindow(score_now=True), MainWindow(score_now=False)]
+    QApplication.processEvents()
+    assert [started.get(id(w.worker)) for w in windows] == [True, False]
+    for w in windows:
+        w.deleteLater()

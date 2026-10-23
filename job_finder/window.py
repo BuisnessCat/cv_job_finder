@@ -173,7 +173,8 @@ class MainWindow(QMainWindow):
     exit_app = staticmethod(QApplication.quit)  # ends the event loop after Quit; tests replace it
     updates_on = config.FROZEN  # only the installed app looks for new versions: the sources are updated with git
 
-    def __init__(self):
+    def __init__(self, score_now: bool = False):
+        """score_now: right after the setup's Start search, the first scoring starts however big it is."""
         super().__init__()
         self.setWindowTitle("Job Finder")
         self.resize(1200, 750)
@@ -192,7 +193,7 @@ class MainWindow(QMainWindow):
 
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.setObjectName("primary")
-        self.refresh_button.clicked.connect(self.refresh)
+        self.refresh_button.clicked.connect(self.refresh_now)  # "Start scoring" when a big pass waits
         self.found_tab = QPushButton()
         self.found_tab.setObjectName("segmentLeft")
         self.applied_tab = QPushButton()
@@ -293,6 +294,8 @@ class MainWindow(QMainWindow):
 
         self.jobs_message = False  # the last tray message was about new jobs (clicking it opens the window)
         self.update_message = False  # the last tray message was about a new version
+        self.waiting_message = False  # the last tray message was about a big scoring that waits (clicking starts it)
+        self.notified_waiting = 0  # a waiting scoring of this many jobs was told about
         self.notified_version = ""  # a new version is told about once (and once more when it is ready)
         self.update_path = ""  # the downloaded setup of the newer version: installed on restart or Quit
         self.update_checker = updates.UpdateChecker()
@@ -313,7 +316,8 @@ class MainWindow(QMainWindow):
         self.retry_timer.timeout.connect(self.auto_refresh)
 
         self.load_rows()
-        QTimer.singleShot(0, self.refresh)  # refresh right after the window is shown
+        # Refresh right after the window is shown: new jobs are scored, a big pass waits for "Start scoring"
+        QTimer.singleShot(0, self.refresh_now if score_now else self.refresh)
         self.check_updates()
 
     def _build_details(self) -> QWidget:
@@ -939,18 +943,17 @@ class MainWindow(QMainWindow):
         self.d_description.setVisible(self.description_open)
         self.description_button.setText("Collapse" if self.description_open else "Show description")
 
-    def refresh(self) -> None:
+    def refresh(self, manual: bool = False) -> None:
+        """One pass: new jobs, then scoring; manual (the user asked for it): a big scoring runs too."""
         if self.refreshing:  # one pass at a time: the timer may fire while a modal window is open
             return
         self.refreshing = True
         self.refresh_button.setEnabled(False)
         if self.refresh_action is not None:
             self.refresh_action.setEnabled(False)
-        self.settings_button.setEnabled(False)  # the pass reads the settings once, at its start
-        self.settings_button.setToolTip("Available when the refresh finishes")
         self.load_rows()  # if the CV changed, old scores leave the list
         self.scored_urls = set()
-        self.worker.start()
+        self.worker.start(manual)
 
     def on_progress(self, done: int, total: int) -> None:
         self.progress.setMaximum(total)
@@ -978,9 +981,8 @@ class MainWindow(QMainWindow):
         self.refresh_button.setEnabled(True)
         if self.refresh_action is not None:
             self.refresh_action.setEnabled(True)
-        self.settings_button.setEnabled(True)
-        self.settings_button.setToolTip("")
         self.model_button.setVisible(self.worker.model_missing)
+        self.show_waiting(self.worker.waiting)
         self.load_rows()  # drop jobs that vanished from the source or were filtered out by location
         if self.views.currentIndex() == 1:
             self.render_insights()  # the numbers changed while the tab was open
@@ -990,14 +992,26 @@ class MainWindow(QMainWindow):
         self.scored_urls = set()
         if good and self.tray is not None and not self.isActiveWindow():  # hidden, minimized or behind
             jobs = "job" if len(good) == 1 else "jobs"
-            self.jobs_message, self.update_message = True, False
+            self.jobs_message, self.update_message, self.waiting_message = True, False, False
             self.tray.showMessage("Job Finder", f"{len(good)} new {jobs} with a score of {self.notify_score()}+",
                                   QSystemTrayIcon.Information, 10000)
         if self.worker.paused:
             self.retry_timer.start()  # a full-screen game started during scoring: the rest comes later
-        if self.refresh_again:
+        if self.refresh_again or self.worker.cv_changed:  # new settings or an edited CV: start over at once
             self.refresh_again = False
-            self.refresh()
+            self.refresh(manual=True)
+
+    def show_waiting(self, jobs: int) -> None:
+        """A big scoring that waits for the user: the Refresh button starts it (and a notification once)."""
+        minutes = max(1, round(jobs * config.SECONDS_PER_JOB / 60))
+        self.refresh_button.setText(f"Start scoring (about {minutes} min)" if jobs else "Refresh")
+        if not jobs or jobs == self.notified_waiting:
+            return
+        self.notified_waiting = jobs
+        if self.tray is not None and not self.isActiveWindow():
+            self.jobs_message, self.update_message, self.waiting_message = False, False, True
+            self.tray.showMessage("Job Finder", f"{jobs} jobs need scoring (about {minutes} min). Click here to "
+                                  "start.", QSystemTrayIcon.Information, 10000)
 
     def show_cv(self) -> None:
         """Show the "My CV" window with the current file; one window for the whole app."""
@@ -1024,10 +1038,12 @@ class MainWindow(QMainWindow):
         if self.cv_window is not None and self.cv_window.isVisible():
             self.cv_window.reload()  # the CV file may have changed; a closed window is read when it opens
         if old is None or _search_changed(old, self.settings):
-            if self.refreshing:
-                self.refresh_again = True  # the running pass read the old settings
+            if self.refreshing:  # the running pass read the old settings: it stops and starts over
+                self.worker.cancel()
+                self.refresh_again = True
+                self.status_label.setText("Settings changed: starting again with them…")
             else:
-                self.refresh()
+                self.refresh(manual=True)
 
     def open_job(self) -> None:
         QDesktopServices.openUrl(QUrl(self.current["url"]))
@@ -1089,6 +1105,8 @@ class MainWindow(QMainWindow):
     def on_message_clicked(self) -> None:
         if self.jobs_message:  # not the "keeps running in the tray" hint: that window was just closed
             self.show_window()
+        elif self.waiting_message:
+            self.refresh_now()
         elif self.update_message:
             self.on_update_button()
 
@@ -1106,7 +1124,7 @@ class MainWindow(QMainWindow):
             return
         self.notified_version = version
         if self.tray is not None and not self.isActiveWindow():  # in front, the button is enough
-            self.jobs_message, self.update_message = False, True
+            self.jobs_message, self.update_message, self.waiting_message = False, True, False
             self.tray.showMessage("Job Finder", f"Version {version} is out. Click here to download it.",
                                   QSystemTrayIcon.Information, 10000)
 
@@ -1120,7 +1138,7 @@ class MainWindow(QMainWindow):
             return
         self.notified_version = f"ready {version}"
         if self.tray is not None and not self.isActiveWindow():
-            self.jobs_message, self.update_message = False, True
+            self.jobs_message, self.update_message, self.waiting_message = False, True, False
             self.tray.showMessage("Job Finder", f"Version {version} is ready. Click here to restart and update.",
                                   QSystemTrayIcon.Information, 10000)
 
@@ -1147,13 +1165,13 @@ class MainWindow(QMainWindow):
         ready = dialog.panel.ready
         dialog.deleteLater()
         if ready:
-            self.refresh()
+            self.refresh(manual=True)  # got to score: a big first scoring starts too
 
     def on_model_downloaded(self, code: int) -> None:
         if self.refreshing:
             self.refresh_again = True
         else:
-            self.refresh()
+            self.refresh(manual=True)  # downloaded to score: a big first scoring starts too
 
     def open_releases(self) -> None:
         QDesktopServices.openUrl(QUrl(config.RELEASES_PAGE))
@@ -1184,7 +1202,7 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def refresh_now(self) -> None:
-        self.refresh()  # does nothing while a refresh runs
+        self.refresh(manual=True)  # does nothing while a refresh runs
 
     def auto_refresh(self) -> None:
         """The periodic refresh; while a full-screen game or presentation runs it waits a bit and tries again."""
@@ -1211,7 +1229,7 @@ class MainWindow(QMainWindow):
         self.hide()
         if not self.tray_hint_shown:
             self.tray_hint_shown = True
-            self.jobs_message = self.update_message = False
+            self.jobs_message = self.update_message = self.waiting_message = False
             self.tray.showMessage("Job Finder", TRAY_HINT, QSystemTrayIcon.Information, 8000)
 
     def closeEvent(self, event) -> None:

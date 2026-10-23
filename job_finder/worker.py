@@ -51,10 +51,19 @@ class Worker(QObject):
         self.model_loaded = False
         self.paused = False  # the last pass stopped for a full-screen app; the window tries again later
         self.model_missing = False  # the last pass had jobs to score but no LM Studio or model: the window offers it
+        self.manual = False  # started by the user (the button, Start search, Save in Settings): a big pass runs too
+        self.waiting = 0  # jobs of a big pass that waits for the user (the window offers "Start scoring")
+        self.cancelled = False  # the settings were saved during the pass: it stops after the current job
+        self.cv_changed = False  # the CV file was edited during the pass: it stops and starts over
 
-    def start(self) -> None:
+    def start(self, manual: bool = False) -> None:
+        self.manual, self.cancelled = manual, False
         # daemon: the window closes right away without waiting for the current model request
         threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        """Stop the running pass after the job it is scoring (Save in Settings)."""
+        self.cancelled = True
 
     def _run(self) -> None:
         try:
@@ -69,7 +78,8 @@ class Worker(QObject):
 
     def _refresh(self) -> str:
         """One refresh. Returns the final status line."""
-        self.paused = self.model_missing = False
+        self.paused = self.model_missing = self.cv_changed = False
+        self.waiting = 0
         s = settings.load()
         if s is None or settings.missing(s):
             return "Finish the setup in Settings first"
@@ -105,6 +115,12 @@ class Worker(QObject):
             if lmstudio.downloading:
                 return _join("Downloading the AI model: the jobs will be scored when it has finished", notes)
             return _join("The AI model isn't downloaded yet: click Get AI model", notes)
+        if self.cancelled:
+            return _join("Stopped: the settings changed, starting again", notes)
+        if len(todo) > config.BIG_PASS_JOBS and not self.manual:  # e.g. after an update: not without the user
+            self.waiting = len(todo)
+            minutes = max(1, round(len(todo) * config.SECONDS_PER_JOB / 60))
+            return _join(f"{len(todo)} jobs to score (about {minutes} min): click Start scoring", notes)
         if todo:
             self.status.emit("Starting LM Studio…")
             self.model_loaded = True
@@ -120,6 +136,10 @@ class Worker(QObject):
                 llm.release()
                 self.model_loaded = False
 
+        if self.cancelled:
+            return _join("Stopped: the settings changed, starting again", notes)
+        if self.cv_changed:
+            return _join("Your CV changed: starting again with the new version", notes)
         if self.paused:
             return _join("Paused while a full-screen app runs; the rest will be scored later", notes)
         suitable = len(db.list_jobs(cv_hash, s.min_score))
@@ -135,6 +155,12 @@ class Worker(QObject):
         rules = llm.render_rules(s)
         self.progress.emit(0, len(todo))
         for done, job in enumerate(todo, 1):
+            if self.cancelled:
+                break
+            stamp = settings.file_stamp(s.cv_path)
+            if stamp is not None and stamp != s.cv_stamp:  # the CV file was saved in its own program
+                self.cv_changed = True
+                break
             if self.pause_check():
                 self.paused = True
                 break

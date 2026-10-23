@@ -149,6 +149,13 @@ def store_cv(s: Settings, text: str) -> Settings:
     return replace(s, cv_stamp=file_stamp(s.cv_path) or "")
 
 
+def _remember_stamp(path: str, stamp: str) -> None:
+    """Save only which version of the file is copied: the settings may have been saved in the window meanwhile."""
+    current = load()
+    if current is not None and current.cv_path == path:
+        save(replace(current, cv_stamp=stamp))
+
+
 def sync_cv(s: Settings) -> tuple[Settings, str]:
     """Bring the copy up to date with the chosen file (at the start of every refresh): read the file only if it
     changed. Returns the settings and a note for the status line, said once ("" if there is nothing to say).
@@ -162,7 +169,7 @@ def sync_cv(s: Settings) -> tuple[Settings, str]:
             raise CvError(f"file not found: {s.cv_path}")
         note = "" if s.cv_stamp == "missing" else "your CV file isn't found, so the saved copy is used"
         s = replace(s, cv_stamp="missing")
-        save(s)
+        _remember_stamp(s.cv_path, s.cv_stamp)
         return s, note
     try:
         text = read_cv_text(s.cv_path)
@@ -170,11 +177,14 @@ def sync_cv(s: Settings) -> tuple[Settings, str]:
         if not has_copy:
             raise
         s = replace(s, cv_stamp=stamp)  # this version of the file is not read again
-        save(s)
+        _remember_stamp(s.cv_path, s.cv_stamp)
         return s, f"can't read your CV file ({error}), so the saved copy is used"
+    current = load()
+    if current is not None and current.cv_path != s.cv_path:
+        return s, ""  # another CV was chosen in Settings meanwhile: its copy is already made
     changed = has_copy and saved_copy() != text
     s = store_cv(s, text)
-    save(s)
+    _remember_stamp(s.cv_path, s.cv_stamp)
     return s, "your CV changed, so all jobs were scored again" if changed else ""
 
 

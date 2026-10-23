@@ -44,6 +44,10 @@ UPDATE_DIR = DATA_DIR / "update"  # the downloaded setup of the next version, re
 # While the app runs (also hidden in the tray) it looks for new jobs this often
 AUTO_REFRESH_HOURS = 3
 
+# A pass with more jobs to score than this doesn't start by itself (at start or every few hours): the user starts it
+BIG_PASS_JOBS = 40
+SECONDS_PER_JOB = 8  # one model answer on a mid-range GPU, for the "about N min" estimates
+
 # A Windows notification tells about new jobs scored at least this (or the minimum score, if higher)
 NOTIFY_SCORE = 7
 

@@ -8,13 +8,12 @@ from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDialog, QFil
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox, QProgressBar, QPushButton,
                                QScrollArea, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
-from job_finder import db, settings, skills, style
+from job_finder import config, db, settings, skills, style
 from job_finder.flow_layout import FlowLayout
 from job_finder.ready_window import ReadyPanel
 from job_finder.settings import Settings
 from job_finder.window import _label
 
-SECONDS_PER_JOB = 8  # one model answer on a mid-range GPU, for the "about N min" estimate
 PAGES = {  # page: title, one-line hint
     "cv": ("Your CV", "The file the AI compares jobs with, and the skills a job must mention to be scored."),
     "search": ("What you're looking for", "Where you want to work and at what level."),
@@ -515,7 +514,7 @@ class SettingsDialog(QDialog):
         self.accept()
 
     def confirm_rescore(self, jobs: int) -> bool:
-        minutes = max(1, round(jobs * SECONDS_PER_JOB / 60))
+        minutes = max(1, round(jobs * config.SECONDS_PER_JOB / 60))
         answer = QMessageBox.question(self, "Score again?",
                                       f"All jobs will be scored again (about {minutes} min). Save?",
                                       QMessageBox.Save | QMessageBox.Cancel, QMessageBox.Cancel)
