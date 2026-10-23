@@ -217,25 +217,19 @@ def _area(extraction: dict, s: Settings) -> dict:
     if wanted & {"Backend", "Frontend"}:
         wanted.add("Full-stack")
     shown = ", ".join(areas)
-    if any(area == "Other IT" or area in wanted for area in areas):
+    if areas == ["Other IT"] or any(area in wanted for area in areas):  # "Other IT" next to an area is no wildcard
         return _condition("Area", True, shown)
     return _condition("Area", False, f"{shown} · not one of your areas", f"{areas[0]} isn't one of your areas")
 
 
-def _foreign_languages(must: list[dict], nice: list[dict], job: Job, mine: set[str]) -> set[str]:
-    """The job's main programming languages when the CV has none of them (and has some language): those of the
-    title, else of the must-haves, else of the nice-to-haves (the model files "C#, Java or C++" there too)."""
+def _foreign_languages(job: Job, named: set[str], mine: set[str]) -> set[str]:
+    """The job's programming languages when the CV has none of them (and has some language): those of the title,
+    else all the ad names. Read from the ad itself: the model may list the CV's skills instead of the ad's, or
+    file "C#, Java or C++" under nice-to-haves."""
     if not mine:
         return set()
-    title = technologies(job.title) & LANGUAGES
-    if title:
-        return set() if title & mine else title
-    for items in (must, nice):
-        found = [technologies(_core(item["skill"])) & LANGUAGES for item in items]
-        found = [languages for languages in found if languages]
-        if found:
-            return set() if any(languages & mine for languages in found) else set().union(*found)
-    return set()
+    languages = (technologies(job.title) & LANGUAGES) or (named & LANGUAGES)
+    return set() if not languages or languages & mine else languages
 
 
 def _title_skills(must: list[dict], nice: list[dict], job: Job, known: set[str]) -> list[dict]:
@@ -264,7 +258,7 @@ def verdict(extraction: dict, job: Job, known: set[str], s: Settings) -> dict:
     count = f"{sum(i['match'] != 'no' for i in must)} of {len(must)} must-haves"
     if nice:
         count += f" · {sum(i['match'] != 'no' for i in nice)} of {len(nice)} nice-to-haves"
-    foreign = _foreign_languages(must, nice, job, mine)
+    foreign = _foreign_languages(job, named, mine)
     if failed:
         name, score, reason = OUT, 2 if len(failed) == 1 else 1, failed[0]["reason"]
     elif not conditions[-1]["ok"]:

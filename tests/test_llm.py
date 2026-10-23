@@ -168,7 +168,7 @@ def test_the_rules_ask_for_facts_not_a_judgement():
     assert "You do not judge" in rules and "a program compares them" in rules
     assert "C, C++ and C# are three different languages" in rules and "Java is not JavaScript" in rules
     assert "the technologies a program found in it" in rules and "rely on that list" in rules
-    assert "never add a technology the ad does not name" in rules
+    assert "nor a technology the ad does not name" in rules and "whether the candidate has it or not" in rules
     assert "Machine learning / AI" in rules and '"Not IT"' in rules  # the areas to choose from
     properties = llm.SCHEMA["properties"]
     areas = properties["areas"]["items"]["enum"]

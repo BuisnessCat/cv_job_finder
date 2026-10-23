@@ -72,8 +72,9 @@ Answer with a JSON object:
   programming language (Django or Flask for FastAPI, MySQL for PostgreSQL, React for Vue, Spring for
   Jakarta EE), any REST/HTTP API, any Git hosting; otherwise "no". Another programming language is never
   similar: C, C++ and C# are three different languages, and Java is not JavaScript.
-  Only skills written in the ad: never add a technology the ad does not name. Soft skills, years of experience,
-  degrees and spoken languages are not skills here.
+  List what the ad asks for, as the ad writes it, whether the candidate has it or not; never add the
+  candidate's skills the ad doesn't ask for, nor a technology the ad does not name. Soft skills, years of
+  experience, degrees and spoken languages are not skills here.
 - about — one sentence: what the person will do in this job.
 Write all texts in English, as plain text without Markdown.
 

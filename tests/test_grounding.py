@@ -221,3 +221,20 @@ def test_languages_only_welcomed_still_are_the_jobs_languages():
 def test_markdown_is_taken_out_of_the_about_line():
     assert verdict(facts(about="Builds **Python** services with `FastAPI`."))["about"] == \
         "Builds Python services with FastAPI."
+
+
+def test_the_ads_languages_count_even_when_the_model_lists_cv_skills():
+    emetlab = replace(AD, title="Junior Software Engineer",
+                      description="You write Python, C#, TypeScript or JavaScript. Networking and tests.")
+    known = grounding.cv_technologies(CPP_CV)
+    # The model listed what the CV has, not what the ad asks for
+    result = verdict(facts(must_have=[skill("Git"), skill("Networking (TCP/IP sockets)", "similar")],
+                           nice_to_have=[]), emetlab, known)
+    assert (result["verdict"], result["score"]) == ("Stretch", 4)
+    assert result["reason"] == "Main language Python, C#/.NET, JavaScript, TypeScript isn't in your CV"
+    assert verdict(facts(), emetlab)["verdict"] != "Stretch"  # Python is in this CV
+
+
+def test_other_it_is_no_wildcard_next_to_another_area():
+    result = verdict(facts(areas=["Machine learning / AI", "Other IT"]))
+    assert (result["verdict"], result["reason"]) == ("Other area", "Machine learning / AI isn't one of your areas")
