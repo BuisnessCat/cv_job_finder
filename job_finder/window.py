@@ -252,9 +252,12 @@ class MainWindow(QMainWindow):
                                    "moves here, and you can mark the answer and keep notes.\n\nThe jobs the app "
                                    "found are on the Found tab.")
         self.applied_empty.setAlignment(Qt.AlignCenter)
+        empty_card = QFrame()  # the same card as the list it stands for
+        empty_card.setObjectName("card")
+        QVBoxLayout(empty_card).addWidget(self.applied_empty)
         self.applied_pages = QStackedWidget()  # 0: the applications, 1: the hint while there are none
         self.applied_pages.addWidget(self.applied_table)
-        self.applied_pages.addWidget(self.applied_empty)
+        self.applied_pages.addWidget(empty_card)
         self.lists = QStackedWidget()  # 0: found, 1: applications
         self.lists.addWidget(self._build_found())
         self.lists.addWidget(self.applied_pages)
