@@ -127,6 +127,9 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
 
 - **Closing the window doesn't quit the app.** It stays in the tray next to the clock. To quit,
   right-click the icon and choose **Quit**.
+- **Your CV** is copied into the app when you choose it, so the app keeps working if the file is moved,
+  deleted or open in another program. When you edit the file itself (the same PDF or document), the app notices
+  on the next refresh, copies it again and scores the jobs for the new version.
 - **Settings**, at the top of the window, changes anything from the setup. If a change affects the
   scores, the app says how long scoring everything again will take and asks first.
 - **How the score is counted:** the AI lists up to 8 requirements of the ad and marks each one ✓ (you have it),

@@ -35,7 +35,7 @@ ICON_PATH = APP_DIR / "job_finder" / "icon.ico"
 
 # This version; bump it together with the GitHub release tag (v1.1.0 = "1.1.0"). The installed app compares it with
 # the latest release and offers the new one
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 RELEASES_API = "https://api.github.com/repos/BuisnessCat/cv_job_finder/releases/latest"
 RELEASES_PAGE = "https://github.com/BuisnessCat/cv_job_finder/releases/latest"
 RELEASE_DOWNLOADS = "https://github.com/BuisnessCat/cv_job_finder/releases/download/"  # only setups from here
