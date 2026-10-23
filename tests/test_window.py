@@ -1306,14 +1306,14 @@ def test_card_shows_the_verdict_band_conditions_and_skills(window):
     window.table.selectRow(0)
     assert not window.verdict_box.isHidden() and window.old_analysis.isHidden() and window.badge.isHidden()
     assert window.v_title.text() == "STRONG FIT · 8/10"
-    assert window.v_reason.text() == "2 of 2 must-haves · 0 of 1 nice-to-haves · all conditions met"
+    assert window.v_reason.text() == "2 of 2 must-haves · 0 of 2 nice-to-haves · all conditions met"
     assert [(mark.text(), name.text()) for mark, name, _ in window.v_conditions] == [
         ("✓", "Degree"), ("✓", "Experience"), ("✓", "Level"), ("✓", "Language"), ("✓", "Location"), ("✓", "Area")]
     assert window.v_conditions[2][2].text() == "Junior"
     assert window.v_must_caption.text() == "MUST-HAVE · 2 of 2"
     assert [chip.accessibleName() for chip in window.v_must_chips] == ["✓ skill 0", "✓ skill 1"]
-    assert window.v_nice_caption.text() == "NICE TO HAVE · 0 of 1"
-    assert [chip.accessibleName() for chip in window.v_nice_chips] == ["✕ skill 0"]
+    assert window.v_nice_caption.text() == "NICE TO HAVE · 0 of 2"
+    assert [chip.accessibleName() for chip in window.v_nice_chips] == ["✕ skill 0", "✕ skill 1"]
     assert window.v_about.text() == "Builds the backend of a booking site."
 
 

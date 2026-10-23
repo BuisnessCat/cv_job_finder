@@ -251,8 +251,8 @@ def verdict(extraction: dict, job: Job, known: set[str], s: Settings) -> dict:
     conditions = [_degree(extraction, ad, s), _experience(extraction, ad, s), _level(extraction, job, s),
                   _language(extraction, s), _location(extraction, s), _area(extraction, s)]
     failed = [c for c in conditions[:-1] if not c["ok"]]
-    points = sum(WEIGHTS[True] * MATCH[i["match"]] for i in must) + sum(MATCH[i["match"]] for i in nice)
-    total = WEIGHTS[True] * len(must) + len(nice)
+    points = sum(WEIGHTS[i["required"]] * MATCH[i["match"]] for i in must + nice)
+    total = sum(WEIGHTS[i["required"]] for i in must + nice)
     share = points / total if total else 0.0
     must_share = sum(MATCH[i["match"]] for i in must) / len(must) if must else 0.0
     count = f"{sum(i['match'] != 'no' for i in must)} of {len(must)} must-haves"

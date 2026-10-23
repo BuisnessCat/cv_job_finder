@@ -94,6 +94,12 @@ def test_skills_set_the_band():
     assert (result["verdict"], result["score"], result["reason"]) == ("Stretch", 4, "1 of 4 must-haves")
 
 
+def test_missing_nice_to_haves_weigh_a_quarter():
+    two_missing = facts(nice_to_have=[skill("Docker", "no"), skill("Kubernetes", "no")])
+    result = verdict(two_missing, with_text("Docker, Kubernetes"))
+    assert (result["verdict"], result["score"]) == ("Strong fit", 8)  # 4 of 5 = 0.8, not 4 of 6
+
+
 def test_no_concrete_requirements():
     result = verdict(facts(must_have=[], nice_to_have=[]), replace(AD, title="Junior Developer"))
     assert (result["verdict"], result["score"]) == ("Worth a try", 6)
