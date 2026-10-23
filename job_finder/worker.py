@@ -18,11 +18,11 @@ def cv_key(text: str, s: Settings) -> str:
 
 
 def read_cv(s: Settings | None) -> tuple[str, str] | None:
-    """CV text and the evaluation key, or None without settings or when the CV can't be read."""
+    """CV text (from the app's copy) and the evaluation key, or None without settings or when it can't be read."""
     if s is None:
         return None
     try:
-        text = settings.read_cv_text(s.cv_path)
+        text = settings.cv_text(s)
     except settings.CvError:
         return None
     return text, cv_key(text, s)
@@ -82,9 +82,12 @@ class Worker(QObject):
         notes = [f"{name}: error ({error})" for name, error in errors.items()]
 
         try:
-            cv_text = settings.read_cv_text(s.cv_path)
+            s, cv_note = settings.sync_cv(s)  # an edited CV file is copied again; a gone one leaves the copy
+            cv_text = settings.cv_text(s)
         except settings.CvError as error:
             return _join(f"Can't read your CV: {error}. Check it in Settings", notes)
+        if cv_note:
+            notes.append(cv_note)
         cv_hash = cv_key(cv_text, s)
         skill_list = s.skills
         if not skill_list:

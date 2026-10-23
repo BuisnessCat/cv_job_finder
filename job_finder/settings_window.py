@@ -246,9 +246,18 @@ class SettingsForm(QObject):
         self.changed.emit()
 
     def _read_cv(self) -> bool:
+        """Read the chosen file; the saved file that can't be read any more falls back to the app's copy of it."""
         try:
             self.cv_text = settings.read_cv_text(self.cv_path)
         except settings.CvError as error:
+            copy = settings.saved_copy() if self.cv_path == self.saved.cv_path else ""
+            if copy:
+                self.cv_text = copy
+                self.cv_error.setText(f"Can't read this file ({error}): the saved copy is used. Pick the file "
+                                      "again to update it.")
+                self.cv_error.show()
+                self.cv_readable = True
+                return False  # not a new file: the skills stay
             self.cv_error.setText(f"Can't read this file: {error}")
             self.cv_error.show()
             self.cv_readable = False
@@ -256,6 +265,10 @@ class SettingsForm(QObject):
         self.cv_error.hide()
         self.cv_readable = True
         return True
+
+    def with_cv_copy(self, s: Settings) -> Settings:
+        """The settings to save, with the CV's text copied for the scoring (spec section 20.5)."""
+        return settings.store_cv(s, self.cv_text) if self.cv_readable and self.cv_text.strip() else s
 
     def skill_chips(self) -> list[str]:
         return list(self._skills)
@@ -498,7 +511,7 @@ class SettingsDialog(QDialog):
             jobs = sum(1 for job in db.pending_jobs("") if skills.matches(job, new.skills))  # "": no key matches
             if not self.confirm_rescore(jobs):
                 return
-        settings.save(new)
+        settings.save(self.form.with_cv_copy(new))
         self.accept()
 
     def confirm_rescore(self, jobs: int) -> bool:
@@ -518,5 +531,5 @@ def first_run(cv: Path, model: str | None = None) -> bool:
     wizard = Wizard(saved or settings.initial(cv), model)
     if wizard.exec() != QDialog.Accepted:
         return False
-    settings.save(wizard.values())
+    settings.save(wizard.form.with_cv_copy(wizard.values()))
     return True

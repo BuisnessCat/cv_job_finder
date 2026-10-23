@@ -1189,3 +1189,23 @@ def test_ready_update_notified_once_from_the_tray(tray_window, applied, monkeypa
     assert messages == ["Version 9.0.0 is ready. Click here to restart and update."]
     tray_window.tray.messageClicked.emit()
     assert applied == [(SETUP_PATH, True)]
+
+
+def test_an_unreadable_cv_keeps_the_list(window):
+    use_settings(config.CV_PATH)
+    add_found("a", 8)
+    window.load_rows()
+    assert titles(window) == ["Job a"]
+    config.CV_PATH.unlink()  # the file and its copy are gone
+    if config.CV_COPY.exists():
+        config.CV_COPY.unlink()
+    window.load_rows()
+    assert titles(window) == ["Job a"]  # still there
+    assert "Can't read your CV" in window.status_label.text()
+
+
+def test_empty_applications_explain_themselves(window):
+    window.applied_tab.click()
+    assert window.applied_pages.currentIndex() == 1
+    assert "I applied" in window.applied_empty.text()
+    window.found_tab.click()

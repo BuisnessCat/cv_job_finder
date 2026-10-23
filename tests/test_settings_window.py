@@ -1,3 +1,4 @@
+from dataclasses import replace
 import weakref
 
 import pytest
@@ -154,7 +155,7 @@ def test_first_run_shows_wizard_only_for_missing_settings(app, cv, monkeypatch):
     done = Settings(cv_path=str(cv), skills=["Docker"], main_skill="Docker", languages={"English": "B2"})
     monkeypatch.setattr(Wizard, "exec", lambda wizard: QDialog.Accepted)
     monkeypatch.setattr(Wizard, "values", lambda wizard: done)
-    assert first_run(cv) is True and settings.load() == done
+    assert first_run(cv) is True and replace(settings.load(), cv_stamp="") == done  # + which file was copied
     monkeypatch.setattr(Wizard, "exec", lambda wizard: pytest.fail("the wizard must not show again"))
     assert first_run(cv) is True
 
@@ -306,3 +307,25 @@ def test_first_run_passes_the_model_to_the_wizard(app, cv, monkeypatch):
     first_run(cv, config.MODEL)
     first_run(cv)
     assert models == [5, 4]
+
+
+def test_a_gone_cv_file_with_a_copy_still_saves(app, cv):
+    s = Settings(cv_path=str(cv), skills=["Python"], main_skill="Python", languages={"English": "B2"})
+    settings.save(settings.store_cv(s, cv.read_text(encoding="utf-8")))
+    cv.unlink()
+    dialog = SettingsDialog(settings.load())
+    assert dialog.save_button.isEnabled()  # the scoring goes on with the copy
+    assert "saved copy" in dialog.form.cv_error.text()
+
+
+def test_the_chosen_cv_is_copied_when_the_setup_is_saved(app, cv, monkeypatch):
+    done = Settings(cv_path=str(cv), skills=["Python"], main_skill="Python", languages={"English": "B2"})
+    monkeypatch.setattr(Wizard, "exec", lambda wizard: QDialog.Accepted)
+    monkeypatch.setattr(Wizard, "values", lambda wizard: done)
+    assert first_run(cv)
+    assert config.CV_COPY.read_text(encoding="utf-8") == "Python and Docker developer"
+    assert settings.load().cv_stamp == settings.file_stamp(str(cv))
+    cv.write_text("Python, Docker and SQL developer", encoding="utf-8")
+    dialog = SettingsDialog(settings.load())
+    dialog.save()  # the file was read again when the dialog opened
+    assert config.CV_COPY.read_text(encoding="utf-8") == "Python, Docker and SQL developer"

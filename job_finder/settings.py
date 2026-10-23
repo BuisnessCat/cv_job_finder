@@ -2,10 +2,10 @@
 (spec section 15). Stored as one JSON row in the database; filled by the first-run wizard."""
 import os
 import re
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
-from job_finder import db, insights
+from job_finder import config, db, insights
 
 # junior.guru regions the app can filter by
 CITIES = ["Praha", "Brno", "Ostrava", "Plzeň", "Olomouc", "Liberec", "České Budějovice", "Hradec Králové",
@@ -52,6 +52,7 @@ class Settings:
     min_score: int = 5
     stale_days: int = 14
     stale_job_days: int = 21
+    cv_stamp: str = ""  # the chosen CV file (path, time, size) when its text was last copied; "missing" if gone
 
 
 class CvError(Exception):
@@ -114,6 +115,66 @@ def read_cv_text(path: str) -> str:
     if not text.strip():
         raise CvError("no text found in the file (a scanned PDF?)")
     return text
+
+
+def file_stamp(path: str) -> str | None:
+    """The file's path, modification time and size: it changes when the file is edited; None if there is none."""
+    try:
+        stat = Path(path).stat()
+    except OSError:
+        return None
+    return f"{os.path.normcase(os.path.abspath(path))}|{stat.st_mtime_ns}|{stat.st_size}"
+
+
+def saved_copy() -> str:
+    """The app's copy of the CV, "" if there is none yet."""
+    try:
+        return config.CV_COPY.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def cv_text(s: Settings) -> str:
+    """The CV the app scores with: its saved copy, so a moved, deleted or busy file (a PDF open elsewhere, a synced
+    folder) doesn't stop it; the chosen file itself only before the first copy."""
+    text = saved_copy()
+    return text if text.strip() else read_cv_text(s.cv_path)
+
+
+def store_cv(s: Settings, text: str) -> Settings:
+    """Save the CV's text as the app's copy; the settings remember which version of the file it is."""
+    config.CV_COPY.parent.mkdir(parents=True, exist_ok=True)
+    config.CV_COPY.write_text(text, encoding="utf-8", newline="\n")
+    return replace(s, cv_stamp=file_stamp(s.cv_path) or "")
+
+
+def sync_cv(s: Settings) -> tuple[Settings, str]:
+    """Bring the copy up to date with the chosen file (at the start of every refresh): read the file only if it
+    changed. Returns the settings and a note for the status line, said once ("" if there is nothing to say).
+    CvError: neither the file nor a copy can be read."""
+    stamp = file_stamp(s.cv_path)
+    has_copy = config.CV_COPY.is_file()
+    if has_copy and stamp == s.cv_stamp:
+        return s, ""
+    if stamp is None:
+        if not has_copy:
+            raise CvError(f"file not found: {s.cv_path}")
+        note = "" if s.cv_stamp == "missing" else "your CV file isn't found, so the saved copy is used"
+        s = replace(s, cv_stamp="missing")
+        save(s)
+        return s, note
+    try:
+        text = read_cv_text(s.cv_path)
+    except CvError as error:
+        if not has_copy:
+            raise
+        s = replace(s, cv_stamp=stamp)  # this version of the file is not read again
+        save(s)
+        return s, f"can't read your CV file ({error}), so the saved copy is used"
+    changed = has_copy and config.CV_COPY.read_text(encoding="utf-8") != text
+    s = store_cv(s, text)
+    save(s)
+    return s, "your CV changed, so all jobs were scored again" if changed else ""
 
 
 def _cv_mentions(name: str, text: str) -> int:

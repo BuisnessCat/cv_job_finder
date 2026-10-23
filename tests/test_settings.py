@@ -118,3 +118,65 @@ def test_initial_prefills_cv_skills_and_main_skill(tmp_path):
     cv.write_text("Docker and Python", encoding="utf-8")
     assert settings.initial(cv) == Settings(cv_path=str(cv), skills=["Python", "Docker"], main_skill="Python")
     assert settings.initial(tmp_path / "none.md") == Settings()
+
+
+def edit(path, text):
+    """Change a file so that its stamp changes even within the same clock tick."""
+    import os
+    before = path.stat().st_mtime_ns if path.exists() else 0
+    path.write_text(text, encoding="utf-8")
+    os.utime(path, ns=(before + 10**9, before + 10**9))
+
+
+def test_the_cv_is_scored_from_its_copy(tmp_path):
+    cv = tmp_path / "cv.md"
+    edit(cv, "Python developer")
+    s = settings.store_cv(filled(cv_path=str(cv)), "Python developer")
+    assert config.CV_COPY.read_text(encoding="utf-8") == "Python developer"
+    assert s.cv_stamp == settings.file_stamp(str(cv))
+    cv.unlink()  # moved away, deleted, or in use by another program
+    assert settings.cv_text(s) == "Python developer"
+
+
+def test_cv_text_before_the_first_copy(tmp_path):
+    cv = tmp_path / "cv.md"
+    edit(cv, "Python developer")
+    assert settings.cv_text(filled(cv_path=str(cv))) == "Python developer"  # an older version's settings
+
+
+def test_the_copy_follows_the_file(tmp_path, monkeypatch):
+    cv = tmp_path / "cv.md"
+    edit(cv, "Python developer")
+    s = filled(cv_path=str(cv))
+    settings.save(s)
+    s, note = settings.sync_cv(s)  # the first refresh of an older version: the copy is made, nothing to say
+    assert note == "" and config.CV_COPY.read_text(encoding="utf-8") == "Python developer"
+    assert settings.load().cv_stamp == s.cv_stamp
+    real = settings.read_cv_text
+    monkeypatch.setattr(settings, "read_cv_text", lambda path: pytest.fail("the file didn't change: not read"))
+    assert settings.sync_cv(s) == (s, "")
+    monkeypatch.setattr(settings, "read_cv_text", real)
+    edit(cv, "Python and SQL developer")  # edited in its own program
+    s, note = settings.sync_cv(s)
+    assert note == "your CV changed, so all jobs were scored again"
+    assert settings.cv_text(s) == "Python and SQL developer"
+
+
+def test_a_missing_or_broken_file_keeps_the_copy(tmp_path):
+    cv = tmp_path / "cv.pdf"
+    cv.write_bytes(b"%PDF-1.4 a real one")
+    s = settings.store_cv(filled(cv_path=str(cv)), "Python developer")
+    settings.save(s)
+    edit(cv, "not a PDF any more")
+    s, note = settings.sync_cv(s)
+    assert "saved copy" in note and settings.cv_text(s) == "Python developer"
+    assert settings.sync_cv(s)[1] == ""  # said once, not on every refresh
+    cv.unlink()
+    s, note = settings.sync_cv(s)
+    assert note == "your CV file isn't found, so the saved copy is used"
+    assert settings.sync_cv(s)[1] == "" and settings.cv_text(s) == "Python developer"
+
+
+def test_no_file_and_no_copy_is_an_error(tmp_path):
+    with pytest.raises(settings.CvError):
+        settings.sync_cv(filled(cv_path=str(tmp_path / "gone.pdf")))

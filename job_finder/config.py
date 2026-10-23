@@ -28,6 +28,7 @@ def lock_path(environ) -> Path:
 DATA_DIR = data_dir(FROZEN, os.environ)
 LOCK_PATH = lock_path(os.environ)
 CV_PATH = DATA_DIR / "master_cv.md"  # if it exists, the first-run wizard offers it as the CV
+CV_COPY = DATA_DIR / "cv.md"  # the text of the chosen CV: scoring reads it, the file itself only when it changes
 DB_PATH = DATA_DIR / "jobs.db"
 LOG_PATH = DATA_DIR / "job_finder.log"
 ICON_PATH = APP_DIR / "job_finder" / "icon.ico"

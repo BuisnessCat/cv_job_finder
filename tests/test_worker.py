@@ -143,3 +143,14 @@ def test_no_model_no_loading(setup, monkeypatch):
     monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": model_answer(6))
     assert w._refresh() == "Done: 3 matches out of 3 evaluated"
     assert not w.model_missing
+
+
+def test_scoring_goes_on_with_the_copy_when_the_cv_file_is_gone(setup, monkeypatch):
+    monkeypatch.setattr(llm, "evaluate", lambda cv_text, job, rules, facts="": model_answer(7))
+    worker.Worker()._refresh()  # the copy is made
+    key = worker.read_cv(settings.load())[1]
+    Path(settings.load().cv_path).unlink()
+    monkeypatch.setattr(llm, "evaluate", lambda *args: pytest.fail("nothing new to score"))
+    message = worker.Worker()._refresh()
+    assert "the saved copy is used" in message
+    assert worker.read_cv(settings.load())[1] == key  # same key: nothing is scored again

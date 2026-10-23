@@ -65,8 +65,13 @@ class CvWindow(QDialog):
             text = settings.read_cv_text(self.path)
         except settings.CvError as error:
             self.modified_label.setText("—")
-            self.body.setPlainText(f"Can't read your CV: {error}. Pick the file in Settings.")
             self.open_button.setEnabled(False)
+            copy = settings.saved_copy()
+            if copy.strip():  # the scoring goes on with it
+                self.path_label.setText(f"{self.path} (can't be read: {error}; showing the saved copy)")
+                self.body.setPlainText(copy)
+            else:
+                self.body.setPlainText(f"Can't read your CV: {error}. Pick the file in Settings.")
             return
         modified = datetime.fromtimestamp(Path(self.path).stat().st_mtime)
         self.modified_label.setText(modified.strftime("%Y-%m-%d %H:%M"))

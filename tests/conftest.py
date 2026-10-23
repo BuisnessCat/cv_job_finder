@@ -24,3 +24,10 @@ def own_downloader(monkeypatch):
     from job_finder import lmstudio, ready_window
     monkeypatch.setattr(ready_window, "_downloader", None)
     monkeypatch.setattr(lmstudio, "downloading", False)
+
+
+@pytest.fixture(autouse=True)
+def cv_copy_in_tmp(tmp_path, monkeypatch):
+    # The app's copy of the CV: never the real one in the data folder
+    from job_finder import config
+    monkeypatch.setattr(config, "CV_COPY", tmp_path / "cv-copy" / "cv.md")

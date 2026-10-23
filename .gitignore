@@ -1,5 +1,6 @@
 # Personal data and app data: never commit
 master_cv.md
+/cv.md
 *.db
 *.db-*
 *.log

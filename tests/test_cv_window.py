@@ -82,3 +82,13 @@ def test_links_use_theme_color(app, cv_path):
     style.apply_app_theme(app)
     cv_path.write_text("Email: [me@example.cz](mailto:me@example.cz)", encoding="utf-8")
     assert link_color(CvWindow()) == style.COLORS["link"]
+
+
+def test_shows_the_saved_copy_when_the_file_is_gone(app, cv_path):
+    from job_finder import settings
+    settings.save(settings.store_cv(settings.load(), CV))
+    cv_path.unlink()  # moved or deleted after it was chosen
+    window = CvWindow()
+    assert "Test CV" in window.body.toPlainText()
+    assert "saved copy" in window.path_label.text()
+    assert not window.open_button.isEnabled()

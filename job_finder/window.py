@@ -247,9 +247,17 @@ class MainWindow(QMainWindow):
         self.table.itemSelectionChanged.connect(self.on_select)
         self.applied_table = _make_table(APPLIED_COLUMNS, 5)
         self.applied_table.itemSelectionChanged.connect(self.on_select_applied)
+        self.applied_empty = _label("muted")
+        self.applied_empty.setText("No applications yet. When you apply to a job, click I applied in its card: it "
+                                   "moves here, and you can mark the answer and keep notes.\n\nThe jobs the app "
+                                   "found are on the Found tab.")
+        self.applied_empty.setAlignment(Qt.AlignCenter)
+        self.applied_pages = QStackedWidget()  # 0: the applications, 1: the hint while there are none
+        self.applied_pages.addWidget(self.applied_table)
+        self.applied_pages.addWidget(self.applied_empty)
         self.lists = QStackedWidget()  # 0: found, 1: applications
         self.lists.addWidget(self._build_found())
-        self.lists.addWidget(self.applied_table)
+        self.lists.addWidget(self.applied_pages)
         self._build_undo()
 
         splitter = QSplitter()
@@ -706,8 +714,12 @@ class MainWindow(QMainWindow):
         """Re-read found jobs (scored under the current CV) and applications from the database."""
         self.settings = settings.load()
         cv = read_cv(self.settings)
-        # Also jobs their source stopped listing in the last week: muted, with a note to check the link
-        self.rows = db.list_jobs(cv[1], self.settings.min_score, config.GONE_DAYS) if cv else []
+        if cv:  # also jobs their source stopped listing in the last week: muted, with a note to check the link
+            self.rows = db.list_jobs(cv[1], self.settings.min_score, config.GONE_DAYS)
+        elif self.settings is None:
+            self.rows = []
+        else:  # the CV can't be read: the list stays as it is, the status line says why
+            self.status_label.setText("Can't read your CV: check it in Settings")
         self.applied = db.list_applied()
         for row in self.applied:  # "probably filled" only if still searched for: after a city change it isn't fetched
             row["closed"] = row["closed"] and (self.settings is None
@@ -783,6 +795,7 @@ class MainWindow(QMainWindow):
 
         _fill_table(self.applied_table, self.applied, values, selected)
         self.applied_tab.setText(f"My applications · {len(self.applied)}")
+        self.applied_pages.setCurrentIndex(0 if self.applied else 1)
         if selected and selected not in (row["url"] for row in self.applied):
             self.show_details(None)
 
