@@ -129,7 +129,8 @@ def file_stamp(path: str) -> str | None:
 def saved_copy() -> str:
     """The app's copy of the CV, "" if there is none yet."""
     try:
-        return config.CV_COPY.read_text(encoding="utf-8")
+        with config.CV_COPY.open(encoding="utf-8", newline="") as file:  # as written: the key is counted from it
+            return file.read()
     except OSError:
         return ""
 
@@ -144,7 +145,7 @@ def cv_text(s: Settings) -> str:
 def store_cv(s: Settings, text: str) -> Settings:
     """Save the CV's text as the app's copy; the settings remember which version of the file it is."""
     config.CV_COPY.parent.mkdir(parents=True, exist_ok=True)
-    config.CV_COPY.write_text(text, encoding="utf-8", newline="\n")
+    config.CV_COPY.write_text(text, encoding="utf-8", newline="")
     return replace(s, cv_stamp=file_stamp(s.cv_path) or "")
 
 
@@ -171,7 +172,7 @@ def sync_cv(s: Settings) -> tuple[Settings, str]:
         s = replace(s, cv_stamp=stamp)  # this version of the file is not read again
         save(s)
         return s, f"can't read your CV file ({error}), so the saved copy is used"
-    changed = has_copy and config.CV_COPY.read_text(encoding="utf-8") != text
+    changed = has_copy and saved_copy() != text
     s = store_cv(s, text)
     save(s)
     return s, "your CV changed, so all jobs were scored again" if changed else ""

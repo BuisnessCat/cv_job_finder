@@ -180,3 +180,9 @@ def test_a_missing_or_broken_file_keeps_the_copy(tmp_path):
 def test_no_file_and_no_copy_is_an_error(tmp_path):
     with pytest.raises(settings.CvError):
         settings.sync_cv(filled(cv_path=str(tmp_path / "gone.pdf")))
+
+
+def test_the_copy_keeps_the_text_exactly(tmp_path):
+    text = "Python\r\nSQL\rDocker\n"  # whatever a PDF gives: the evaluation key is counted from it
+    settings.store_cv(filled(cv_path=str(tmp_path / "cv.pdf")), text)
+    assert settings.saved_copy() == text
