@@ -127,11 +127,15 @@ installs into your user folder and adds shortcuts to the desktop and the Start m
 
 - **Closing the window doesn't quit the app.** It stays in the tray next to the clock. To quit,
   right-click the icon and choose **Quit**.
+- **New jobs are scored by themselves**, at start and every 3 hours. A big scoring (after an update or a new
+  CV, more than 40 jobs) doesn't start on its own: the **Refresh** button turns into **Start scoring (about
+  N min)**, so you choose when the graphics card is busy.
 - **Your CV** is copied into the app when you choose it, so the app keeps working if the file is moved,
   deleted or open in another program. When you edit the file itself (the same PDF or document), the app notices
-  on the next refresh, copies it again and scores the jobs for the new version.
-- **Settings**, at the top of the window, changes anything from the setup. If a change affects the
-  scores, the app says how long scoring everything again will take and asks first.
+  it, even during a scoring, and scores the jobs again for the new version.
+- **Settings**, at the top of the window, changes anything from the setup, also while jobs are being scored.
+  If a change affects the scores, the app says how long scoring everything again will take and asks first; then
+  it stops the scoring that runs and starts again with the new settings.
 - **How the score is counted:** the AI lists up to 8 requirements of the ad and marks each one ✓ (you have it),
   ≈ (a similar skill) or ✕. A must-have counts 2, a nice-to-have 1, a similar skill 70 %, and the score is
   1 + 9 × the share you get. A blocker such as "3+ years of experience" doesn't subtract, it sets a ceiling.
