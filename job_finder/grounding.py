@@ -13,7 +13,7 @@ LANGUAGES = set(settings.PROGRAMMING_LANGUAGES)
 
 STRONG, WORTH, STRETCH, OUT, OTHER = "Strong fit", "Worth a try", "Stretch", "Out of reach", "Other area"
 MATCH = {"yes": 1.0, "similar": 0.7, "no": 0.0}  # the share of a skill's weight the candidate gets
-WEIGHTS = {True: 2, False: 1}  # a must-have, a nice-to-have
+WEIGHTS = {True: 2, False: 0.5}  # a must-have, a nice-to-have (optional by its name: it weighs a quarter)
 DEGREES = ["none", "bachelor", "master", "phd"]  # the lowest first
 DEGREE_NAMES = {"bachelor": "Bachelor's degree", "master": "Master's degree", "phd": "PhD"}
 EDUCATION_RANK = {"none": 0, "studying": 0.5, "bachelor": 1, "master": 2, "phd": 3}
@@ -180,7 +180,7 @@ def _language(extraction: dict, s: Settings) -> dict:
         text = f"{name} {level}" if need else name
         have = next((lvl for known, lvl in s.languages.items() if known.lower() == name.lower()), None)
         texts.append(text)
-        if have is None or (need and RANKS.get(have.upper(), 0) < need):
+        if have is None or (need and RANKS.get(have.upper(), 0) < need - 1):  # one level short is worth a try
             missing.append((text, have))
     if not missing:
         return _condition("Language", True, ", ".join(texts))
@@ -207,32 +207,43 @@ def _location(extraction: dict, s: Settings) -> dict:
 
 
 def _area(extraction: dict, s: Settings) -> dict:
-    area = extraction.get("area") or "Other IT"
-    if area == "Not IT":
+    """The job fits if one of its areas (one or two: a job between Embedded and Backend) is the candidate's."""
+    areas = [area for area in extraction.get("areas") or [extraction.get("area")] if area] or ["Other IT"]
+    if all(area == "Not IT" for area in areas):
         return _condition("Area", False, "Not an IT job", "Not an IT job")
     wanted = set(s.areas)
     if "Full-stack" in wanted:
         wanted |= {"Backend", "Frontend"}
     if wanted & {"Backend", "Frontend"}:
         wanted.add("Full-stack")
-    if area == "Other IT" or area in wanted:
-        return _condition("Area", True, area)
-    return _condition("Area", False, f"{area} · not one of your areas", f"{area} isn't one of your areas")
+    shown = ", ".join(areas)
+    if any(area == "Other IT" or area in wanted for area in areas):
+        return _condition("Area", True, shown)
+    return _condition("Area", False, f"{shown} · not one of your areas", f"{areas[0]} isn't one of your areas")
 
 
-def _foreign_languages(must: list[dict], job: Job, mine: set[str]) -> set[str]:
-    """The job's main programming languages when the CV has none of them (and has some language)."""
+def _foreign_languages(must: list[dict], nice: list[dict], job: Job, mine: set[str]) -> set[str]:
+    """The job's main programming languages when the CV has none of them (and has some language): those of the
+    title, else of the must-haves, else of the nice-to-haves (the model files "C#, Java or C++" there too)."""
     if not mine:
         return set()
     title = technologies(job.title) & LANGUAGES
     if title:
         return set() if title & mine else title
-    foreign = set()
-    for item in must:
-        languages = technologies(_core(item["skill"])) & LANGUAGES
-        if languages and not languages & mine:
-            foreign |= languages
-    return foreign
+    for items in (must, nice):
+        found = [technologies(_core(item["skill"])) & LANGUAGES for item in items]
+        found = [languages for languages in found if languages]
+        if found:
+            return set() if any(languages & mine for languages in found) else set().union(*found)
+    return set()
+
+
+def _title_skills(must: list[dict], nice: list[dict], job: Job, known: set[str]) -> list[dict]:
+    """Technologies in the title are the core of the job: the ones the model left out become must-haves."""
+    listed = set().union(*(technologies(_core(item["skill"])) for item in must + nice))
+    missing = technologies(job.title) - listed
+    return [{"skill": name, "required": True, "match": "yes" if name in known else "no"}
+            for name in insights.REQUIREMENTS if name in missing]
 
 
 def verdict(extraction: dict, job: Job, known: set[str], s: Settings) -> dict:
@@ -242,6 +253,7 @@ def verdict(extraction: dict, job: Job, known: set[str], s: Settings) -> dict:
     mine = _with_families(known & LANGUAGES)
     must = _skills(extraction.get("must_have"), True, named, known, mine)
     nice = _skills(extraction.get("nice_to_have"), False, named, known, mine)
+    must += _title_skills(must, nice, job, known)
     conditions = [_degree(extraction, ad, s), _experience(extraction, ad, s), _level(extraction, job, s),
                   _language(extraction, s), _location(extraction, s), _area(extraction, s)]
     failed = [c for c in conditions[:-1] if not c["ok"]]
@@ -252,7 +264,7 @@ def verdict(extraction: dict, job: Job, known: set[str], s: Settings) -> dict:
     count = f"{sum(i['match'] != 'no' for i in must)} of {len(must)} must-haves"
     if nice:
         count += f" · {sum(i['match'] != 'no' for i in nice)} of {len(nice)} nice-to-haves"
-    foreign = _foreign_languages(must, job, mine)
+    foreign = _foreign_languages(must, nice, job, mine)
     if failed:
         name, score, reason = OUT, 2 if len(failed) == 1 else 1, failed[0]["reason"]
     elif not conditions[-1]["ok"]:

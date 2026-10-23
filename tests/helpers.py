@@ -32,12 +32,12 @@ def model_answer(score: int) -> dict:
     def skills(yes, no):
         return [{"skill": f"skill {i}", "match": "yes" if i < yes else "no"} for i in range(yes + no)]
 
-    facts = {"area": "Backend", "seniority": "junior", "min_years": 0, "degree": "none", "students_welcome": False,
+    facts = {"areas": ["Backend"], "seniority": "junior", "min_years": 0, "degree": "none", "students_welcome": False,
              "languages": [], "workplace": "not stated", "place": "", "must_have": skills(2, 0), "nice_to_have": [],
              "about": "A job."}
     shapes = {10: dict(), 9: dict(must_have=skills(5, 0), nice_to_have=skills(0, 1)),
-              8: dict(nice_to_have=skills(0, 1)), 7: dict(nice_to_have=skills(0, 2)), 6: dict(must_have=skills(1, 1)),
-              5: dict(must_have=skills(1, 2)), 4: dict(must_have=skills(1, 3)), 3: dict(area="QA / testing"),
+              8: dict(nice_to_have=skills(0, 1)), 7: dict(must_have=skills(3, 1)), 6: dict(must_have=skills(1, 1)),
+              5: dict(must_have=skills(1, 2)), 4: dict(must_have=skills(1, 3)), 3: dict(areas=["QA / testing"]),
               2: dict(workplace="office", place="Brno"),
               1: dict(workplace="office", place="Brno", languages=[{"language": "German", "level": "C1"}])}
     return {**facts, **shapes[score]}

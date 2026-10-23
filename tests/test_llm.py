@@ -171,6 +171,7 @@ def test_the_rules_ask_for_facts_not_a_judgement():
     assert "never add a technology the ad does not name" in rules
     assert "Machine learning / AI" in rules and '"Not IT"' in rules  # the areas to choose from
     properties = llm.SCHEMA["properties"]
-    assert properties["area"]["enum"][:2] == ["Backend", "Frontend"] and "Not IT" in properties["area"]["enum"]
+    areas = properties["areas"]["items"]["enum"]
+    assert areas[:2] == ["Backend", "Frontend"] and "Not IT" in areas
     assert properties["degree"]["enum"] == list(grounding.DEGREES)
     assert set(llm.SCHEMA["required"]) == set(properties)

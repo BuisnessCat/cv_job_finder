@@ -25,7 +25,7 @@ _SKILLS = {"type": "array", "items": {
 SCHEMA = {
     "type": "object",
     "properties": {
-        "area": {"type": "string", "enum": [*AREAS, "Other IT", "Not IT"]},
+        "areas": {"type": "array", "items": {"type": "string", "enum": [*AREAS, "Other IT", "Not IT"]}},
         "seniority": {"type": "string", "enum": [*LEVELS, "not stated"]},
         "min_years": {"type": "integer"},
         "degree": {"type": "string", "enum": ["none", "bachelor", "master", "phd"]},
@@ -44,7 +44,7 @@ SCHEMA = {
         "nice_to_have": _SKILLS,
         "about": {"type": "string"},
     },
-    "required": ["area", "seniority", "min_years", "degree", "students_welcome", "languages", "workplace", "place",
+    "required": ["areas", "seniority", "min_years", "degree", "students_welcome", "languages", "workplace", "place",
                  "must_have", "nice_to_have", "about"],
     "additionalProperties": False,
 }
@@ -55,8 +55,9 @@ Each ad ends with the technologies a program found in it and which of them are i
 it is reliable.
 
 Answer with a JSON object:
-- area — the kind of work: one of {areas}; "Other IT" if none of them fits,
-  "Not IT" if it is not an IT job;
+- areas — the kind of work: one or two of {areas} (two when the job mixes
+  them, e.g. "Embedded / hardware" and "Backend"); "Other IT" if none of them fits, "Not IT" if it is not an
+  IT job;
 - seniority — the level the ad asks for: intern, junior, mid, senior, lead, or "not stated";
 - min_years — the minimum years of work experience the ad requires; 0 if it doesn't say;
 - degree — the minimum degree the ad requires: none, bachelor, master or phd; "none" if a degree is only

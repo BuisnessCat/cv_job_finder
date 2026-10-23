@@ -21,7 +21,7 @@ def skill(name, match="yes"):
 
 def facts(**overrides):
     """What the model takes out of an ad (spec section 21.2)."""
-    base = {"area": "Backend", "seniority": "junior", "min_years": 0, "degree": "none", "students_welcome": False,
+    base = {"areas": ["Backend"], "seniority": "junior", "min_years": 0, "degree": "none", "students_welcome": False,
             "languages": [{"language": "English", "level": "B2"}], "workplace": "hybrid", "place": "Prague",
             "must_have": [skill("Python"), skill("SQL")], "nice_to_have": [skill("Docker", "no")],
             "about": "Backend services in Python."}
@@ -73,7 +73,7 @@ def test_czech_word_forms_count():
 
 def test_a_strong_fit():
     result = verdict(facts())
-    # must-have 2 of 2 (weight 2), nice-to-have 0 of 1 (weight 1): 4 of 5 = 0.8
+    # must-have 2 of 2 (weight 2), nice-to-have 0 of 1 (weight 0.5): 4 of 4.5 = 0.89
     assert (result["verdict"], result["score"]) == ("Strong fit", 8)
     assert result["reason"] == "2 of 2 must-haves · 0 of 1 nice-to-haves · all conditions met"
     assert all(c["ok"] for c in result["conditions"])
@@ -95,7 +95,7 @@ def test_skills_set_the_band():
 
 
 def test_no_concrete_requirements():
-    result = verdict(facts(must_have=[], nice_to_have=[]))
+    result = verdict(facts(must_have=[], nice_to_have=[]), replace(AD, title="Junior Developer"))
     assert (result["verdict"], result["score"]) == ("Worth a try", 6)
     assert result["reason"] == "The ad names few concrete requirements: read it before applying"
 
@@ -148,6 +148,7 @@ def test_spoken_languages():
     result = verdict(czech)
     assert (result["verdict"], result["reason"]) == ("Out of reach", "Requires Czech C1")
     assert condition(result, "Language")["detail"] == "Czech C1 · you: B1"
+    assert condition(verdict(facts(languages=[{"language": "English", "level": "C1"}])), "Language")["ok"]  # B2
     assert condition(verdict(facts(languages=[{"language": "english", "level": "not stated"}])), "Language")["ok"]
     german = verdict(facts(languages=[{"language": "German", "level": "not stated"}]))
     assert condition(german, "Language")["detail"] == "German · you: not listed"
@@ -166,14 +167,19 @@ def test_the_place_of_work():
 
 
 def test_another_area_is_kept_aside():
-    qa = verdict(facts(area="QA / testing"))
+    qa = verdict(facts(areas=["QA / testing"]))
     assert (qa["verdict"], qa["score"], qa["reason"]) == ("Other area", 3, "QA / testing isn't one of your areas")
-    assert condition(verdict(facts(area="Other IT")), "Area")["ok"]
-    assert verdict(facts(area="Not IT"))["reason"] == "Not an IT job"
-    assert condition(verdict(facts(area="Full-stack")), "Area")["ok"]  # Backend covers it
+    assert condition(verdict(facts(areas=["Other IT"])), "Area")["ok"]
+    assert verdict(facts(areas=["Not IT"]))["reason"] == "Not an IT job"
+    assert condition(verdict(facts(areas=["Full-stack"])), "Area")["ok"]  # Backend covers it
     frontend = replace(S, areas=["Full-stack"])
-    assert condition(verdict(facts(area="Frontend"), s=frontend), "Area")["ok"]
-    both = verdict(facts(area="QA / testing", degree="phd"), with_text("PhD required"))
+    assert condition(verdict(facts(areas=["Frontend"]), s=frontend), "Area")["ok"]
+    # A job between two areas fits if one of them is yours (Python integrations of 3D printers)
+    mixed = verdict(facts(areas=["Embedded / hardware", "Backend"]))
+    assert condition(mixed, "Area") == {"name": "Area", "ok": True, "detail": "Embedded / hardware, Backend",
+                                        "reason": ""}
+    assert condition(verdict({**facts(), "area": "Backend"} | {"areas": []}), "Area")["ok"]  # an older answer
+    both = verdict(facts(areas=["QA / testing"], degree="phd"), with_text("PhD required"))
     assert (both["verdict"], both["score"]) == ("Out of reach", 2)  # a rule-out comes first
     two = verdict(facts(degree="phd", seniority="senior"), replace(with_text("PhD required"), title="Developer"))
     assert two["score"] == 1
@@ -194,6 +200,22 @@ def test_skills_are_checked_against_the_ad_and_the_cv():
     known = grounding.cv_technologies(CPP_CV)
     cpp = verdict(facts(must_have=[skill("C# programming (similar to C++)"), skill("Git")]), CSHARP_AD, known)
     assert [s["match"] for s in cpp["must"]] == ["no", "yes"]  # C# is not C++
+
+
+def test_technologies_in_the_title_are_must_haves():
+    sarvify = replace(AD, title="Intern - HTML/CSS JS Python", description="Python, REST APIs, Git.")
+    result = verdict(facts(must_have=[skill("Python"), skill("Git")], nice_to_have=[]), sarvify)
+    assert [(s["skill"], s["match"]) for s in result["must"]] == [
+        ("Python", "yes"), ("Git", "yes"), ("JavaScript", "no"), ("HTML/CSS", "no")]  # the model left them out
+    assert result["verdict"] == "Worth a try"
+
+
+def test_languages_only_welcomed_still_are_the_jobs_languages():
+    fnz = replace(AD, title="Graduate Analyst Developer", description="Znalost C#, Java nebo C++.")
+    result = verdict(facts(must_have=[], nice_to_have=[skill("C#", "no"), skill("Java", "no"), skill("C++", "no")]),
+                     fnz)
+    assert (result["verdict"], result["score"]) == ("Stretch", 4)
+    assert result["reason"] == "Main language Java, C#/.NET, C/C++ isn't in your CV"
 
 
 def test_markdown_is_taken_out_of_the_about_line():
